@@ -204,16 +204,104 @@ symbols in this file:
 
 /* ---------- headers */
 
+#include "cseries/cseries.h"
+#include "cseries/cseries_windows.h"
+#include "network_connection.h"
+
 /* ---------- constants */
+
+enum
+{
+	_connection_create_server_bit = 0,
+};
 
 /* ---------- macros */
 
 /* ---------- structures */
+
+struct network_connection
+{
+	byte __unknown0[8];
+	unsigned long keep_alive_time;
+	void *connection_rejection_procedure;
+	byte __unknown10[0x20];
+	unsigned long flags;
+	byte __unknown34[0x18];
+	boolean allow_client_connections;
+};
 
 /* ---------- prototypes */
 
 /* ---------- globals */
 
 /* ---------- public code */
+
+void network_connection_initialize(
+	void)
+{
+	return;
+}
+
+void network_connection_set_connection_rejection_procedure(
+	struct network_connection *connection,
+	void *connection_rejection_procedure)
+{
+	match_assert(
+		"c:\\halo\\SOURCE\\networking\\network_connection.c",
+		0x318,
+		connection);
+
+	connection->connection_rejection_procedure = connection_rejection_procedure;
+
+	return;
+}
+
+boolean network_connection_active(
+	struct network_connection *connection)
+{
+	match_assert(
+		"c:\\halo\\SOURCE\\networking\\network_connection.c",
+		0x330,
+		connection);
+
+	return !TEST_FLAG(connection->flags, 4);
+}
+
+boolean network_connection_going_stale(
+	struct network_connection *connection)
+{
+	match_assert(
+		"c:\\halo\\SOURCE\\networking\\network_connection.c",
+		0x338,
+		connection);
+
+	return TEST_FLAG(connection->flags, 5);
+}
+
+void network_connection_keep_alive(
+	struct network_connection *connection)
+{
+	connection->keep_alive_time = system_milliseconds();
+
+	return;
+}
+
+void network_server_allow_client_connections(
+	struct network_connection *server_connection,
+	boolean allow_client_connections)
+{
+	match_assert(
+		"c:\\halo\\SOURCE\\networking\\network_connection.c",
+		0x151,
+		server_connection);
+	match_assert(
+		"c:\\halo\\SOURCE\\networking\\network_connection.c",
+		0x152,
+		server_connection->flags&FLAG(_connection_create_server_bit));
+
+	server_connection->allow_client_connections = allow_client_connections;
+
+	return;
+}
 
 /* ---------- private code */
