@@ -8,6 +8,10 @@ symbols in this file:
 
 /* ---------- headers */
 
+#include "cseries.h"
+#include "effects/effect_definitions.h"
+#include "tag_files/tag_groups.h"
+
 /* ---------- constants */
 
 /* ---------- macros */
@@ -17,6 +21,13 @@ symbols in this file:
 /* ---------- prototypes */
 
 /* ---------- globals */
+
+struct tag_reference_definition global_effect_reference =
+{
+	0,
+	EFFECT_DEFINITION_TAG,
+	NULL,
+};
 
 /* ---------- public code */
 
