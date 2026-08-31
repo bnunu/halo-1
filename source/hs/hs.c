@@ -2769,16 +2769,4018 @@ symbols in this file:
 
 /* ---------- headers */
 
+#include "cseries/cseries.h"
+#include "hs.h"
+#include "object_lists.h"
+#include "hs_scenario_definitions.h"
+#include "math/real_math.h"
+#include "memory/data.h"
+#include "scenario/scenario_definitions.h"
+#include "ai/ai_scenario_definitions.h"
+#include "cutscene/recorded_animation_definitions.h"
+#include "interface/interface.h"
+#include "tag_files/files.h"
+
 /* ---------- constants */
+
+enum
+{
+	hs_function_table_count = 418,
+	scenario_starting_profile_size = 0x68,
+	scenario_conversation_definition_size = 0x74,
+	scenario_cutscene_flag_size = 0x5C,
+	scenario_cutscene_chapter_title_size = 0x60,
+	hud_globals_group_tag = 'hudg',
+	hud_message_text_group_tag = 'hmt ',
+};
 
 /* ---------- macros */
 
+#define HS_EVALUATE_NO_ARGUMENTS(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	function(); \
+	hs_return(thread_index, 0); \
+	return; \
+}
+
+#define HS_EVALUATE_NO_OP(evaluator) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	hs_return(thread_index, 0); \
+	return; \
+}
+
+#define HS_EVALUATE_RETURN_LONG(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	hs_return(thread_index, function()); \
+	return; \
+}
+
+#define HS_EVALUATE_RETURN_SHORT(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	union hs_short_result result; \
+	result.value = 0; \
+	result.short_value = function(); \
+	hs_return(thread_index, result.value); \
+	return; \
+}
+
+#define HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	union hs_boolean_result result; \
+	result.value = 0; \
+	result.boolean = function(); \
+	hs_return(thread_index, result.value); \
+	return; \
+}
+
+#define HS_EVALUATE_SHORT_FROM_LONG(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	long *arguments; \
+	union hs_short_result result; \
+	result.value = 0; \
+	arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		result.short_value = function(arguments[0]); \
+		hs_return(thread_index, result.value); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_SHORT_FROM_UNSIGNED_SHORT(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	union hs_evaluation_argument *arguments; \
+	union hs_short_result result; \
+	result.value = 0; \
+	arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		result.short_value = function(arguments[0].unsigned_short_value); \
+		hs_return(thread_index, result.value); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_RETURN_SHORT_FROM_ARGUMENTS(evaluator, arguments_type, expression) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	arguments_type const *arguments; \
+	union hs_short_result result; \
+	result.value = 0; \
+	arguments = (arguments_type const *)hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		result.short_value = expression; \
+		hs_return(thread_index, result.value); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_LONG_FROM_LONG(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	long *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+		hs_return(thread_index, function(arguments[0])); \
+	return; \
+}
+
+#define HS_EVALUATE_REAL_FROM_LONG(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	long *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		union hs_real_value result; \
+		result.real_value = function(arguments[0]); \
+		hs_return(thread_index, result.long_value); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_REAL_FROM_UNSIGNED_SHORT(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	unsigned short *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		union hs_real_value result; \
+		result.real_value = function(arguments[0]); \
+		hs_return(thread_index, result.long_value); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_VOID_LONG(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	long *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		function(arguments[0]); \
+		hs_return(thread_index, 0); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_VOID_BOOLEAN(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	union hs_evaluation_argument *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		function(arguments[0].boolean_value); \
+		hs_return(thread_index, 0); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_VOID_UNSIGNED_SHORT(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	union hs_evaluation_argument *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		function(arguments[0].unsigned_short_value); \
+		hs_return(thread_index, 0); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_VOID_LONG_BOOLEAN(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	union hs_evaluation_argument *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		function(arguments[0].long_value, arguments[1].boolean_value); \
+		hs_return(thread_index, 0); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_VOID_LONG_LONG(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	long *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		function(arguments[0], arguments[1]); \
+		hs_return(thread_index, 0); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_VOID_LONG_LONG_LONG(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	long *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		function(arguments[0], arguments[1], arguments[2]); \
+		hs_return(thread_index, 0); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_VOID_SHORT_SHORT(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	union hs_evaluation_argument *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		function(arguments[0].short_value, arguments[1].unsigned_short_value); \
+		hs_return(thread_index, 0); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_VOID_LONG_UNSIGNED_SHORT(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	union hs_evaluation_argument *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		function(arguments[0].long_value, arguments[1].unsigned_short_value); \
+		hs_return(thread_index, 0); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_VOID_UNSIGNED_SHORT(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	union hs_evaluation_argument *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		function(arguments[0].unsigned_short_value); \
+		hs_return(thread_index, 0); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_VOID_BOOLEAN(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	union hs_evaluation_argument *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		function(arguments[0].boolean_value); \
+		hs_return(thread_index, 0); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_VOID_STRING(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	struct hs_arguments_string *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		function(arguments->value); \
+		hs_return(thread_index, 0); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_VOID_LONG_STRING(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	struct hs_arguments_long_string *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		function(arguments->value0, arguments->value1); \
+		hs_return(thread_index, 0); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_VOID_LONG_LONG_STRING(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	struct hs_arguments_long_long_string *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		function(arguments->value0, arguments->value1, arguments->value2); \
+		hs_return(thread_index, 0); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_VOID_SHORT_BOOLEAN(evaluator, function) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	union hs_evaluation_argument *arguments = hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		function(arguments[0].short_value, arguments[1].boolean_value); \
+		hs_return(thread_index, 0); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_VOID_FROM_ARGUMENTS(evaluator, arguments_type, expression) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	arguments_type const *arguments; \
+	arguments = (arguments_type const *)hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		expression; \
+		hs_return(thread_index, 0); \
+	} \
+	return; \
+}
+
+#define hud_globals_definition_get(index) \
+	((struct hud_globals_definition *)tag_get(hud_globals_group_tag, (index)))
+#define hud_message_text_definition_get(index) \
+	((struct hud_message_text_definition *)tag_get(hud_message_text_group_tag, (index)))
+
+#define HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(evaluator, arguments_type, real_index, expression) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	arguments_type const *arguments; \
+	arguments = (arguments_type const *)hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		real real_argument = arguments[real_index].real_value; \
+		expression; \
+		hs_return(thread_index, 0); \
+	} \
+	return; \
+}
+
+#define HS_EVALUATE_RETURN_BOOLEAN(evaluator, arguments_type, expression) \
+void evaluator( \
+	short function_index, \
+	long thread_index, \
+	boolean initialize) \
+{ \
+	arguments_type const *arguments; \
+	union hs_boolean_result result; \
+	result.value = 0; \
+	arguments = (arguments_type const *)hs_macro_function_evaluate(function_index, thread_index, initialize); \
+	if (arguments) \
+	{ \
+		result.boolean = expression; \
+		hs_return(thread_index, result.value); \
+	} \
+	return; \
+}
+
 /* ---------- structures */
+
+struct hs_object_list_get_element_arguments
+{
+	long object_list_index;
+	unsigned short element_index;
+};
+
+union hs_real_value
+{
+	real real_value;
+	long long_value;
+};
+
+union hs_short_result
+{
+	short short_value;
+	long value;
+};
+
+union hs_evaluation_argument
+{
+	long long_value;
+	real real_value;
+	short short_value;
+	unsigned short unsigned_short_value;
+	boolean boolean_value;
+};
+
+struct hs_arguments_boolean
+{
+	boolean value;
+};
+
+struct hs_arguments_long
+{
+	long value;
+};
+
+struct hs_arguments_word
+{
+	word value;
+};
+
+struct hs_arguments_short_long
+{
+	short value0;
+	word pad0;
+	long value1;
+};
+
+struct hs_arguments_long_word
+{
+	long value0;
+	word value1;
+};
+
+struct hs_arguments_string
+{
+	char const *value;
+};
+
+struct hs_arguments_long_string
+{
+	long value0;
+	char const *value1;
+};
+
+struct hs_arguments_long_long
+{
+	long value0;
+	long value1;
+};
+
+struct hs_arguments_long_long_string
+{
+	long value0;
+	long value1;
+	char const *value2;
+};
+
+struct hs_arguments_short_word
+{
+	short value0;
+	word pad0;
+	word value1;
+};
+
+struct hs_arguments_long_long_long
+{
+	long value0;
+	char const *value1;
+	long value2;
+};
+
+struct hs_function_definition
+{
+	short return_type;
+	short flags;
+	char const *name;
+	void *parse;
+	void *evaluate;
+	char const *help;
+	char const *usage;
+	short parameter_count;
+	short parameter_types[1];
+};
+
+struct hs_external_global_definition
+{
+	char const *name;
+	short type;
+};
+
+struct hs_profile_section
+{
+	char const *name;
+	long section_index;
+	boolean active;
+	short stack_depth;
+	long field_C;
+	unsigned __int64 field_10;
+	byte unknown18[1460];
+	long field_5CC;
+	byte unknown5D0[40];
+};
+
+struct hud_globals_definition
+{
+	byte reserved_000[0x160];
+	struct tag_block waypoint_arrows;
+};
+
+struct hud_message_text_definition
+{
+	byte reserved_000[0x20];
+	struct tag_block messages;
+};
+
+struct hud_message_definition
+{
+	byte reserved[0x40];
+};
+
+struct hud_waypoint_arrow_definition
+{
+	byte reserved[0x68];
+};
+
+typedef void (*hs_token_enumerator)(
+	void);
+
+struct hs_function_table_storage
+{
+	struct hs_function_definition *functions[418];
+	struct hs_profile_section profile;
+	hs_token_enumerator token_enumerators[18];
+};
+
+struct hs_arguments_long_string_string
+{
+	long value0;
+	char const *value1;
+	char const *value2;
+};
+
+struct hs_arguments_long_string_long_string
+{
+	long value0;
+	char const *value1;
+	long value2;
+	char const *value3;
+};
+
+struct hs_arguments_long_long_string_word
+{
+	long value0;
+	long value1;
+	char const *value2;
+	word value3;
+};
+
+struct hs_arguments_long_long_long_boolean
+{
+	long value0;
+	long value1;
+	char const *value2;
+	boolean value3;
+};
+
+struct hs_arguments_long_long_long_boolean_word
+{
+	long value0;
+	long value1;
+	char const *value2;
+	boolean value3;
+	byte pad3[3];
+	word value4;
+};
+
+struct hs_arguments_real
+{
+	real value;
+};
+
+struct hs_arguments_real_real
+{
+	real value0;
+	real value1;
+};
+
+struct hs_arguments_real_real_real
+{
+	real value0;
+	real value1;
+	real value2;
+};
+
+struct hs_arguments_real_real_real_real
+{
+	real value0;
+	real value1;
+	real value2;
+	real value3;
+};
+
+struct hs_arguments_word_word_word_real
+{
+	word value0;
+	word pad0;
+	word value1;
+	word pad1;
+	word value2;
+	word pad2;
+	real value3;
+};
+
+struct hs_arguments_word_word_long_real
+{
+	word value0;
+	word pad0;
+	word value1;
+	word pad1;
+	long value2;
+	real value3;
+};
+
+struct hs_arguments_real_real_real_real_boolean_real
+{
+	real value0;
+	real value1;
+	real value2;
+	real value3;
+	boolean value4;
+	byte pad4[3];
+	real value5;
+};
+
+struct hs_arguments_long_real_word
+{
+	long value0;
+	real value1;
+	word value2;
+};
+
+struct hs_arguments_long_real_real
+{
+	long value0;
+	real value1;
+	real value2;
+};
+
+struct hs_arguments_long_real_real_word
+{
+	long value0;
+	real value1;
+	real value2;
+	word value3;
+};
+
+struct hs_arguments_short_word_real_real_real
+{
+	short value0;
+	word pad0;
+	word value1;
+	word pad1;
+	real value2;
+	real value3;
+	real value4;
+};
+
+struct hs_arguments_word_word_word
+{
+	word value0;
+	word pad0;
+	word value1;
+	word pad1;
+	word value2;
+};
+
+struct hs_arguments_word_word_long
+{
+	word value0;
+	word pad0;
+	word value1;
+	word pad1;
+	long value2;
+};
+
+struct hs_arguments_long_word_boolean
+{
+	long value0;
+	word value1;
+	word pad1;
+	boolean value2;
+};
+
+union hs_boolean_result
+{
+	boolean boolean;
+	long value;
+};
 
 /* ---------- prototypes */
 
+void hs_return(
+	long thread_index,
+	long value);
+void *hs_macro_function_evaluate(
+	short function_index,
+	long thread_index,
+	boolean initialize);
+void hs_runtime_evaluate(
+	long expression_index);
+void hs_runtime_update(
+	void);
+void hs_runtime_initialize(
+	void);
+void profile_enter_private(
+	struct hs_profile_section *section);
+void profile_exit_private(
+	struct hs_profile_section *section);
+void console_printf(
+	boolean clear,
+	char const *format,
+	...);
+long code_000b33b0(
+	char const **left,
+	char const **right);
+struct scenario *global_scenario_get(
+	void);
+struct hs_external_global_definition *hs_global_external_get(
+	short global_index);
+void hs_teleport_players_not_in_trigger_volume(
+	short trigger_volume_index,
+	word cutscene_flag_index);
+void hs_object_set_shield(
+	long object_index,
+	real shield_vitality);
+void hs_object_set_permutation(
+	long object_index,
+	char const *region_name,
+	char const *permutation_name);
+void hs_effect_new_from_object_marker(
+	long effect_definition_index,
+	long object_index,
+	char const *marker_name);
+boolean hs_objects_can_see_object(
+	long object_list_index,
+	long object_index,
+	real degrees);
+boolean hs_objects_can_see_flag(
+	long object_list_index,
+	word cutscene_flag_index,
+	real degrees);
+void hs_sound_set_gain(
+	long sound_index,
+	real gain);
+void objects_scripting_set_scale(
+	long object_index,
+	real scale,
+	short interpolation_frame_count);
+void objects_scripting_attach(
+	long parent_object_index,
+	char const *parent_marker_name,
+	long child_object_index,
+	char const *child_marker_name);
+void object_beautify(
+	long object_index,
+	boolean beautiful);
+void scenery_animation_start(
+	long object_index,
+	long animation_graph_index,
+	char const *animation_name);
+void scenery_animation_start_at_frame(
+	long object_index,
+	long animation_graph_index,
+	char const *animation_name,
+	short frame_index);
+void unit_scripting_set_maximum_vitality(
+	long unit_index,
+	real body_vitality,
+	real shield_vitality);
+void units_scripting_set_maximum_vitality(
+	long object_list_index,
+	real body_vitality,
+	real shield_vitality);
+void unit_scripting_set_current_vitality(
+	long unit_index,
+	real body_vitality,
+	real shield_vitality);
+void units_scripting_set_current_vitality(
+	long object_list_index,
+	real body_vitality,
+	real shield_vitality);
+void device_set_power(
+	long device_index,
+	real power);
+boolean device_set_desired_position(
+	long device_index,
+	real position);
+void device_set_actual_position(
+	long device_index,
+	real position);
+boolean device_group_set_desired_value(
+	short group_index,
+	real desired_value);
+void device_group_set_actual_value(
+	short group_index,
+	real actual_value);
+void ai_scripting_vehicle_enterable_distance(
+	long ai_reference,
+	real distance);
+void ai_scripting_follow_distance(
+	long ai_reference,
+	real distance);
+void player_effect_screen_fade_in(
+	long color,
+	real initial_opacity,
+	real final_opacity,
+	short duration_ticks);
+void player_effect_screen_fade_out(
+	long color,
+	real initial_opacity,
+	real final_opacity,
+	short duration_ticks);
+void cinematic_set_title_delayed(
+	short title_index,
+	real delay);
+void scripted_sound_new(
+	long sound_index,
+	long source_object_index,
+	real gain);
+void scripted_looping_sound_start(
+	long sound_index,
+	long source_object_index,
+	real gain);
+void scripted_looping_sound_set_scale(
+	long sound_index,
+	real scale);
+void debug_sound_classes_set_distances(
+	char const *name,
+	real minimum_distance,
+	real maximum_distance);
+void debug_sound_classes_set_wet(
+	char const *name,
+	real wet);
+void sound_class_set_gain(
+	char const *name,
+	real gain,
+	short interpolation_ticks);
+void hud_unit_activate_nav_point_with_flag(
+	word player_index,
+	long unit_index,
+	word flag_index,
+	real vertical_offset);
+void hud_unit_activate_nav_point_with_object(
+	word player_index,
+	long unit_index,
+	long object_index,
+	real vertical_offset);
+void hud_activate_team_nav_point_with_flag(
+	word player_index,
+	word team,
+	word flag_index,
+	real vertical_offset);
+void hud_activate_team_nav_point_with_object(
+	word player_index,
+	word team,
+	long object_index,
+	real vertical_offset);
+void scripted_player_effect_set_translation(
+	real horizontal,
+	real vertical,
+	real depth);
+void scripted_player_effect_set_rotation(
+	real yaw,
+	real pitch,
+	real roll);
+void scripted_player_effect_set_rumble(
+	real left_motor,
+	real right_motor);
+void scripted_player_effect_start(
+	real maximum_intensity,
+	real attack_time);
+void rasterizer_model_ambient_reflection_tint(
+	real alpha,
+	real red,
+	real green,
+	real blue);
+void rasterizer_script_screen_effect_set_value(
+	word effect_index,
+	real value);
+void rasterizer_screen_effect_set_convolution(
+	short convolution_type,
+	word source,
+	real value0,
+	real value1,
+	real value2);
+void rasterizer_screen_effect_set_filter(
+	real value0,
+	real value1,
+	real value2,
+	real value3,
+	boolean enabled,
+	real value4);
+void rasterizer_screen_effect_set_filter_desaturation_tint(
+	real red,
+	real green,
+	real blue);
+void rasterizer_screen_effect_set_video(
+	word video_index,
+	real value);
+short object_list_count(
+	long object_list_index);
+short numeric_countdown_timer_get(
+	short digit_index);
+short recorded_animation_get_time_left(
+	long unit_index);
+short scenery_get_animation_time(
+	long scenery_index);
+short unit_get_custom_animation_time(
+	long unit_index);
+short unit_scripting_get_grenade_count(
+	long unit_index);
+short ai_scripting_command_list_status(
+	long ai_reference);
+short ai_scripting_going_to_vehicle(
+	long ai_reference);
+short ai_scripting_living_count(
+	long ai_reference);
+short ai_scripting_swarm_count(
+	long ai_reference);
+short ai_scripting_nonswarm_count(
+	long ai_reference);
+short ai_scripting_status(
+	long ai_reference);
+short ai_scripting_conversation_line(
+	word conversation_index);
+short ai_scripting_conversation_status(
+	word conversation_index);
+short scripted_camera_time(
+	void);
+short game_difficulty_level_get_ignore_easy(
+	void);
+short game_difficulty_level_get(
+	void);
+short global_structure_bsp_index_get(
+	void);
+short scripted_hud_get_timer_ticks(
+	void);
+short vehicle_scripting_load_magic(
+	long vehicle_index,
+	char const *seat_name,
+	long object_list_index);
+short vehicle_scripting_unload(
+	long vehicle_index,
+	char const *seat_name);
+boolean unit_solo_player_integrated_night_vision_is_active(
+	void);
+void scripted_hud_set_flashing_state(
+	boolean enabled);
+void hud_unit_deactivate_nav_point_with_flag(
+	long unit_index,
+	word flag_index);
+void hud_unit_deactivate_nav_point_with_object(
+	long unit_index,
+	long object_index);
+void hud_deactivate_team_nav_point_with_flag(
+	short team,
+	word flag_index);
+void hud_deactivate_team_nav_point_with_object(
+	short team,
+	long object_index);
+void errors_overflow_suppression_enable(
+	boolean enabled);
+void scripted_player_effect_stop(
+	real decay_time);
+void scripted_hud_show_health(
+	boolean show);
+void scripted_hud_blink_health(
+	boolean blink);
+void scripted_hud_show_shield(
+	boolean show);
+void scripted_hud_blink_shield(
+	boolean blink);
+void scripted_hud_show_motion_sensor(
+	boolean show);
+void scripted_hud_blink_motion_sensor(
+	boolean blink);
+void scripted_hud_show_crosshair(
+	boolean show);
+void scripted_hud_set_state_message(
+	word message_index);
+void scripted_hud_set_objective(
+	word message_index);
+void scripted_hud_set_timer_time(
+	short minutes,
+	word seconds);
+void scripted_hud_set_timer_warning_cutoff(
+	short minutes,
+	word seconds);
+void scripted_hud_set_timer_position(
+	word x,
+	word y,
+	word corner);
+void scripted_hud_show_timer(
+	boolean show);
+void scripted_hud_pause_timer(
+	boolean pause);
+void scripted_hud_time_code_show(
+	boolean show);
+void scripted_hud_time_code_start(
+	boolean start);
+void rasterizer_screen_effect_start(
+	boolean clear);
+void rasterizer_set_near_clip_distance(
+	real distance);
+void player0_look_invert_pitch(
+	boolean invert);
+void ui_widget_debug_show_path(
+	boolean show);
+void display_scenario_help(
+	word string_index);
+void xbox_set_machine_name(
+	char const *machine_name);
+void hs_help(
+	char const *function_name);
+boolean hs_not(
+	boolean value);
+boolean scenario_trigger_volume_test_object(
+	short trigger_volume_index,
+	long object_index);
+boolean hs_trigger_volume_test_objects_any(
+	short trigger_volume_index,
+	long object_list_index);
+boolean hs_trigger_volume_test_objects_all(
+	short trigger_volume_index,
+	long object_list_index);
+boolean recorded_animation_play(
+	long unit_index,
+	word recording_index);
+boolean recorded_animation_play_and_delete(
+	long unit_index,
+	word recording_index);
+boolean recorded_animation_play_and_hover(
+	long unit_index,
+	word recording_index);
+boolean lights_enable(
+	boolean enable);
+boolean unit_start_user_animation(
+	long unit_index,
+	long animation_graph_index,
+	char const *animation_name,
+	boolean interpolate);
+boolean unit_scripting_start_user_animation_list(
+	long object_list_index,
+	long animation_graph_index,
+	char const *animation_name,
+	boolean interpolate);
+boolean unit_custom_animation_at_frame(
+	long unit_index,
+	long animation_graph_index,
+	char const *animation_name,
+	boolean interpolate,
+	word frame_index);
+boolean unit_is_playing_custom_animation(
+	long unit_index);
+boolean unit_scripting_vehicle_test_seat_list(
+	long vehicle_index,
+	char const *seat_name,
+	long object_list_index);
+boolean unit_scripting_vehicle_test_seat(
+	long vehicle_index,
+	char const *seat_name,
+	long unit_index);
+boolean unit_scripting_has_weapon(
+	long unit_index,
+	long weapon_definition_index);
+boolean unit_scripting_has_weapon_readied(
+	long unit_index,
+	long weapon_definition_index);
+boolean unit_get_current_flashlight_state(
+	long unit_index);
+boolean ai_scripting_is_attacking(
+	long encounter_index);
+boolean ai_scripting_conversation(
+	word conversation_index);
+boolean ai_scripting_allegiance_broken(
+	short team0,
+	word team1);
+boolean scripted_player_control_set_camera_control(
+	boolean enabled);
+boolean scripted_show_hud(
+	boolean show);
+boolean scripted_show_hud_help_text(
+	boolean show);
+long hs_players(
+	void);
+long game_time_get(
+	void);
+long unit_scripting_unit_riders(
+	long unit_index);
+long unit_scripting_unit_driver(
+	long unit_index);
+long unit_scripting_unit_gunner(
+	long unit_index);
+long object_list_from_ai_reference(
+	long ai_reference);
+long scripted_sound_time(
+	long sound_index);
+long hs_object_list_get_element(
+	long object_list_index,
+	unsigned short element_index);
+void hs_object_destroy(
+	long object_index);
+void hs_object_create(
+	word object_name_index);
+void hs_object_create_anew(
+	word object_name_index);
+void object_pvs_set_camera_point(
+	word camera_point_index);
+void cheat_active_camouflage_local_player(
+	word player_index);
+void breakable_surfaces_enable(
+	boolean enabled);
+void render_effects(
+	boolean enabled);
+void ai_globals_ai_active(
+	boolean enabled);
+void ai_globals_dialogue_triggers_enabled(
+	boolean enabled);
+void ai_globals_grenades_enabled(
+	boolean enabled);
+void recorded_animation_kill(
+	long unit_index);
+void object_cannot_take_damage(
+	long object_list_index);
+void object_can_take_damage(
+	long object_list_index);
+void hs_objects_predict(
+	long object_list_index);
+void object_definition_predict(
+	long definition_index);
+void object_pvs_set_object(
+	long object_index);
+void object_pvs_activate(
+	long object_index);
+void unit_open(
+	long unit_index);
+void unit_close(
+	long unit_index);
+void unit_kill(
+	long unit_index);
+void unit_kill_silent(
+	long unit_index);
+void unit_stop_custom_animation(
+	long unit_index);
+void unit_scripting_exit_vehicle(
+	long unit_index);
+void unit_scripting_doesnt_drop_items(
+	long unit_index);
+void ai_scripting_free(
+	long ai_reference);
+void ai_scripting_free_units(
+	long ai_reference);
+void ai_scripting_detach_unit(
+	long unit_index);
+void ai_scripting_detach_units(
+	long object_list_index);
+void ai_scripting_place(
+	long ai_reference);
+void ai_scripting_kill(
+	long ai_reference);
+void ai_scripting_kill_silent(
+	long ai_reference);
+void ai_scripting_erase(
+	long ai_reference);
+void ai_scripting_select(
+	long ai_reference);
+void ai_scripting_spawn_actor(
+	long ai_reference);
+void ai_scripting_magically_see_players(
+	long ai_reference);
+void ai_scripting_timer_start(
+	long ai_reference);
+void ai_scripting_timer_expire(
+	long ai_reference);
+void ai_scripting_attack(
+	long ai_reference);
+void ai_scripting_defend(
+	long ai_reference);
+void ai_scripting_retreat(
+	long ai_reference);
+void hs_print(
+	char const *message);
+void hs_object_create_containing(
+	char const *object_name);
+void hs_object_create_anew_containing(
+	char const *object_name);
+void hs_object_destroy_containing(
+	char const *object_name);
+void hs_objects_delete_by_definition(
+	long definition_index);
+void scripting_set_magic_base_seat(
+	char const *seat_name);
+void object_set_ranged_attack_inhibited(
+	long object_index,
+	boolean inhibited);
+void object_set_melee_attack_inhibited(
+	long object_index,
+	boolean inhibited);
+void object_scripting_set_collideable(
+	long object_index,
+	boolean collideable);
+void unit_scripting_can_blink(
+	long unit_index,
+	boolean can_blink);
+void unit_aim_without_turning(
+	long unit_index,
+	boolean enabled);
+void unit_set_enterable_by_player(
+	long unit_index,
+	boolean enterable);
+void unit_scripting_impervious(
+	long object_list_index,
+	boolean impervious);
+void unit_scripting_suspended(
+	long unit_index,
+	boolean suspended);
+void units_set_desired_flashlight_state(
+	long object_list_index,
+	boolean desired_state);
+void unit_set_desired_flashlight_state(
+	long unit_index,
+	boolean desired_state);
+void device_set_never_appears_locked(
+	long device_index,
+	boolean never_locked);
+void device_one_sided_set(
+	long device_index,
+	boolean one_sided);
+void device_operates_automatically_set(
+	long device_index,
+	boolean automatic);
+void ai_scripting_set_respawn(
+	long ai_reference,
+	boolean respawn);
+void ai_scripting_set_deaf(
+	long ai_reference,
+	boolean deaf);
+void ai_scripting_set_blind(
+	long ai_reference,
+	boolean blind);
+void hs_damage_object(
+	long damage_definition_index,
+	long object_index);
+void objects_scripting_detach(
+	long parent_object_index,
+	long child_object_index);
+void ai_scripting_attach_unit(
+	long ai_reference,
+	long unit_index);
+void ai_scripting_attach_units(
+	long ai_reference,
+	long object_list_index);
+void ai_scripting_attach_free(
+	long ai_reference,
+	long unit_index);
+void ai_scripting_magically_see_encounter(
+	long ai_reference,
+	long encounter_index);
+void ai_scripting_magically_see_unit(
+	long ai_reference,
+	long unit_index);
+void ai_scripting_magically_see_units(
+	long ai_reference,
+	long object_list_index);
+void hs_object_teleport(
+	long object_index,
+	word cutscene_flag_index);
+void hs_object_set_facing(
+	long object_index,
+	word cutscene_flag_index);
+void hs_effect_new(
+	long effect_definition_index,
+	word cutscene_flag_index);
+void hs_damage_new(
+	long damage_definition_index,
+	word cutscene_flag_index);
+void numeric_countdown_timer_set(
+	long milliseconds,
+	boolean auto_start);
+void unit_scripting_set_emotion_animation(
+	long unit_index,
+	char const *animation_name);
+void unit_scripting_set_seat(
+	long unit_index,
+	char const *seat_name);
+void device_group_change_only_once_more_set(
+	long device_group_index,
+	boolean change_only_once_more);
+void unit_set_emotion(
+	long unit_index,
+	word emotion_index);
+void unit_scripting_enter_vehicle(
+	long unit_index,
+	long vehicle_index,
+	char const *seat_name);
+real hs_sound_get_gain(
+	long sound_index);
+real unit_scripting_get_health(
+	long unit_index);
+real unit_scripting_get_shield(
+	long unit_index);
+real device_get_power(
+	long device_index);
+real device_get_position(
+	long device_index);
+real device_group_get_value(
+	short device_group_index);
+real ai_scripting_living_fraction(
+	long ai_reference);
+real ai_scripting_strength(
+	long ai_reference);
+void hs_object_destroy_all(
+	void);
+void numeric_countdown_timer_stop(
+	void);
+void numeric_countdown_timer_restart(
+	void);
+void objects_dump_memory(
+	void);
+void garbage_collect_now(
+	void);
+void object_pvs_clear(
+	void);
+void breakable_surfaces_reset(
+	void);
+void cheat_all_powerups(
+	void);
+void cheat_all_weapons(
+	void);
+void cheat_all_vehicles(
+	void);
+void cheat_teleport_to_camera(
+	void);
+void cheat_active_camouflage(
+	void);
+void scripting_magic_melee_attack(
+	void);
+void cheats_load(
+	void);
+void ai_scripting_erase_all(
+	void);
+void ai_scripting_deselect(
+	void);
+void ai_scripting_reconnect(
+	void);
+void director_save_camera(
+	void);
+void director_load_camera(
+	void);
+void players_unzoom_all(
+	void);
+void player_control_action_test_reset(
+	void);
+void main_reset_map(
+	void);
+void main_print_version(
+	void);
+void main_set_game_connection_to_film_playback(
+	void);
+void texture_cache_flush(
+	void);
+void sound_cache_flush(
+	void);
+void debug_dump_memory(
+	void);
+void debug_dump_memory_by_file(
+	void);
+void profile_initialize(
+	void);
+short ai_profile_change_render_spray(
+	void);
+void ai_debug_sound_point_set(
+	void);
+void cinematic_start(
+	void);
+void cinematic_stop(
+	void);
+void cinematic_skip_start(
+	void);
+void cinematic_skip_stop(
+	void);
+void attract_mode_start(
+	void);
+void main_won_map(
+	void);
+void main_lost_map(
+	void);
+void main_save_map_safe(
+	void);
+void main_save_cancel(
+	void);
+void main_save_map_no_timeout(
+	void);
+void main_save_map_nonsafe(
+	void);
+void main_revert_map(
+	void);
+void main_load_core(
+	void);
+void main_load_core_at_startup(
+	void);
+void main_save_core(
+	void);
+void scripted_hud_restart_flashing(
+	void);
+void terminal_clear(
+	void);
+void structure_lens_flares_place(
+	void);
+void scripted_hud_messages_clear(
+	void);
+void scripted_hud_time_code_reset(
+	void);
+void rasterizer_decals_flush(
+	void);
+void rasterizer_fps_accumulate(
+	void);
+void rasterizer_lights_reset_for_new_map(
+	void);
+void rasterizer_screen_effect_stop(
+	void);
+void enumerate_memory_units_test(
+	void);
+void saved_game_files_delete_all_custom_profiles(
+	void);
+void player_ui_fast_setup_network_server(
+	void);
+void player_ui_activate_all_solo_levels(
+	void);
+void network_game_client_request_immediate_start(
+	void);
+void hs_doc(
+	void);
+void ai_scripting_maneuver(
+	long ai_index);
+void ai_scripting_maneuver_enable(
+	long ai_index,
+	boolean enable);
+void ai_scripting_migrate(
+	long source_ai_index,
+	long destination_ai_index);
+void ai_scripting_migrate_and_speak(
+	long source_ai_index,
+	long destination_ai_index,
+	long dialogue_index);
+void ai_scripting_migrate_by_unit(
+	long unit_index,
+	long destination_ai_index);
+void ai_scripting_allegiance(
+	short team_a,
+	unsigned short team_b);
+void ai_scripting_allegiance_remove(
+	short team_a,
+	unsigned short team_b);
+void ai_scripting_go_to_vehicle(
+	long ai_index,
+	long unit_index,
+	long vehicle_index);
+void ai_scripting_go_to_vehicle_override(
+	long ai_index,
+	long unit_index,
+	long vehicle_index);
+void ai_scripting_exit_vehicle(
+	long ai_index);
+void ai_scripting_braindead(
+	long ai_index,
+	boolean braindead);
+void ai_scripting_braindead_by_unit(
+	long unit_index,
+	boolean braindead);
+void ai_scripting_ignore(
+	long ai_index,
+	boolean ignore);
+void ai_scripting_prefer_target(
+	long ai_index,
+	boolean prefer);
+void ai_scripting_teleport_starting_location(
+	long ai_index);
+void ai_scripting_teleport_starting_location_if_unsupported(
+	long ai_index);
+void ai_scripting_renew(
+	long ai_index);
+void ai_scripting_try_to_fight_nothing(
+	long ai_index);
+void ai_scripting_try_to_fight(
+	long source_ai_index,
+	long target_ai_index);
+void ai_scripting_try_to_fight_player(
+	long ai_index);
+void ai_scripting_command_list(
+	long ai_index,
+	unsigned short command_list_index);
+void ai_scripting_command_list_by_unit(
+	long unit_index,
+	unsigned short command_list_index);
+void ai_scripting_command_list_advance(
+	long ai_index);
+void ai_scripting_command_list_advance_by_unit(
+	long unit_index);
+void ai_scripting_force_active(
+	long ai_index,
+	boolean force_active);
+void ai_scripting_force_active_by_unit(
+	long unit_index,
+	boolean force_active);
+void ai_scripting_set_return_state(
+	long ai_index,
+	unsigned short state);
+void ai_scripting_set_current_state(
+	long ai_index,
+	unsigned short state);
+void ai_scripting_playfight(
+	long ai_index,
+	boolean playfight);
+void ai_scripting_vehicle_encounter(
+	long vehicle_index,
+	long encounter_index);
+void ai_scripting_vehicle_enterable_team(
+	long object_list_index,
+	unsigned short team);
+void ai_scripting_vehicle_enterable_actor_type(
+	long object_list_index,
+	unsigned short actor_type);
+void ai_scripting_vehicle_enterable_actors(
+	long vehicle_index,
+	long actor_list_index);
+void ai_scripting_vehicle_enterable_disable(
+	long vehicle_index);
+void ai_scripting_look_at_object(
+	long ai_index,
+	long object_index);
+void ai_scripting_stop_looking(
+	long ai_index);
+void ai_scripting_automatic_migration_target(
+	long ai_index,
+	boolean enable);
+void ai_scripting_follow_target_disable(
+	long ai_index);
+void ai_scripting_follow_target_players(
+	long ai_index);
+void ai_scripting_follow_target_unit(
+	long ai_index,
+	long unit_index);
+void ai_scripting_follow_target_ai(
+	long ai_index,
+	long target_ai_index);
+void ai_scripting_conversation_stop(
+	unsigned short conversation_index);
+void ai_scripting_conversation_advance(
+	unsigned short conversation_index);
+void ai_scripting_link_activation(
+	long source_ai_index,
+	long target_ai_index);
+void ai_scripting_berserk(
+	long ai_index,
+	boolean enable);
+void ai_scripting_set_team(
+	long ai_index,
+	unsigned short team);
+void ai_scripting_allow_charge(
+	long ai_index,
+	boolean allow_charge);
+void ai_scripting_allow_dormant(
+	long ai_index,
+	boolean allow_dormant);
+void scripted_camera_set_first_person(
+	long object_index);
+void scripted_camera_set_dead(
+	long object_index);
+void game_set_game_variant_from_name(
+	char const *name);
+void player_input_enable(
+	boolean enable);
+boolean player_control_action_test_jump(
+	void);
+boolean player_control_action_test_primary_trigger(
+	void);
+boolean player_control_action_test_grenade_trigger(
+	void);
+boolean player_control_action_test_zoom(
+	void);
+boolean player_control_action_test_action(
+	void);
+boolean player_control_action_test_accept(
+	void);
+boolean player_control_action_test_back(
+	void);
+boolean player_control_action_test_look_relative_up(
+	void);
+boolean player_control_action_test_look_relative_down(
+	void);
+boolean player_control_action_test_look_relative_left(
+	void);
+boolean player_control_action_test_look_relative_right(
+	void);
+boolean player_control_action_test_look_relative_all_directions(
+	void);
+boolean player_control_action_test_move_relative_all_directions(
+	void);
+boolean player0_look_pitch_is_inverted(
+	void);
+boolean player0_joystick_set_is_normal(
+	void);
+void main_set_map_name(
+	char const *map_name);
+void main_set_multiplayer_map_name(
+	char const *map_name);
+void main_set_difficulty(
+	unsigned short difficulty);
+void main_crash(
+	char const *reason);
+void debug_dump_memory_for_file(
+	char const *file_name);
+void profile_dump_to_file(
+	char const *file_name);
+void profile_sections_activate(
+	char const *section_name);
+void profile_sections_deactivate(
+	char const *section_name);
+void profile_graph_toggle(
+	char const *graph_name);
+void debug_pvs(
+	boolean enable);
+void ai_debug_vocalize(
+	long ai_index,
+	char const *vocalization);
+void ai_debug_teleport_to(
+	long ai_index);
+void ai_debug_speak(
+	char const *vocalization);
+void ai_debug_speak_list(
+	char const *list_name);
+void director_script_camera(
+	boolean scripted);
+void scripted_camera_set_absolute(
+	short camera_point_index,
+	word transition_time);
+void scripted_camera_set(
+	word camera_point_index0,
+	word camera_point_index1,
+	long transition_time);
+void scripted_camera_set_animation(
+	long animation_index,
+	long object_index);
+void game_time_set_speed(
+	real speed);
+void player_add_equipment(
+	long player_index,
+	word equipment_definition_index,
+	boolean force);
+void debug_player_teleport(
+	short player_index,
+	word location_index);
+boolean scenario_switch_structure_bsp(
+	word structure_bsp_index);
+void cinematic_show_letterbox(
+	boolean show);
+void cinematic_set_title(
+	unsigned short title_index);
+void cinematic_suppress_bsp_object_creation(
+	boolean suppress);
+void main_load_core_name(
+	char const *core_name);
+void main_load_core_name_at_startup(
+	char const *core_name);
+void main_save_core_name(
+	char const *core_name);
+void main_skip(
+	unsigned short skip_type);
+void scripted_sound_stop(
+	long sound_index);
+void scripted_foley_predict(
+	long object_index);
+void scripted_looping_sound_stop(
+	long sound_index);
+void scripted_looping_sound_set_alternate(
+	long sound_index,
+	boolean alternate);
+void debug_sound_classes_enable(
+	long sound_class,
+	boolean enable);
+void sound_enable(
+	boolean enable);
+void vehicle_hover(
+	long vehicle_index,
+	boolean hover);
+void hs_runtime_dispose_from_old_map(
+	void);
+void hs_runtime_initialize_for_new_map(
+	void);
+void hs_dispose_from_old_map(
+	void);
+void hs_compile_initialize(
+	boolean compiling_scenario);
+void hs_compile_dispose(
+	void);
+long hs_compile(
+	long source_size,
+	char const *source,
+	char const **error_source,
+	char const **error_message);
+long code_000b3b10(
+	struct file_reference const *left,
+	struct file_reference const *right);
+boolean tag_data_resize(
+	struct tag_data *data,
+	long size);
+boolean tag_block_resize(
+	struct tag_block *block,
+	long count);
+long tag_block_add_element(
+	struct tag_block *block);
+long hs_compile_expression(
+	long source_size,
+	char const *source,
+	char const **error_source,
+	char const **error_message);
+boolean hs_compile_postprocess(
+	char const **error_message,
+	char const **error_source);
+int isspace(
+	int character);
+boolean hs_scenario_merge(
+	struct scenario *scenario,
+	struct scenario *source_scenario);
+void code_000b2f00(
+	void);
+boolean code_000b3b60(
+	void);
+boolean code_000b3d10(
+	void);
+boolean hs_scenario_postprocess(
+	boolean restore_syntax_data);
+void object_lists_dispose(
+	void);
+boolean game_safe_to_save(
+	void);
+boolean game_all_quiet(
+	void);
+boolean game_safe_to_speak(
+	void);
+boolean game_is_cooperative(
+	void);
+boolean main_saving_map(
+	void);
+boolean game_state_reverted(
+	void);
+
+/* ---------- constants */
+
+#define MAXIMUM_HS_SYNTAX_NODES_PER_SCENARIO 19001
+
 /* ---------- globals */
 
+byte bss_00453468[0x12] = { 0 };
+#define hs_enumeration_result_count (*(short *)&bss_00453468[0])
+#define hs_enumeration_maximum_count (*(short *)&bss_00453468[4])
+#define enumeration_results (*(char const ***)&bss_00453468[8])
+#define hs_enumeration_substring (*(char const **)&bss_00453468[12])
+#define hs_token_enumerators hs_function_table.token_enumerators
+struct data_array *hs_syntax_data;
+extern long global_scenario_index;
+extern boolean profile_global_enable;
+extern struct hs_function_table_storage hs_function_table;
+extern short hs_external_global_count;
+extern struct hs_external_global_definition *hs_external_globals[];
+extern char const *hs_script_type_names[];
+extern char const *hs_type_names[];
+
 /* ---------- public code */
+
+boolean hs_scenario_merge(
+	struct scenario *scenario,
+	struct scenario *source_scenario)
+{
+	boolean success = TRUE;
+	struct tag_block *source_files;
+	short source_file_index;
+
+	source_file_index = 0;
+	source_files = &source_scenario->hs_source_files;
+
+	for (; source_file_index<source_files->count; source_file_index++)
+	{
+		struct hs_source_file *source_file;
+		struct tag_block *files;
+		short file_index;
+
+		source_file = TAG_BLOCK_GET_ELEMENT(source_files, source_file_index, struct hs_source_file);
+		files = &scenario->hs_source_files;
+		for (file_index = 0; file_index<files->count; file_index++)
+		{
+			struct hs_source_file *file;
+
+			file = TAG_BLOCK_GET_ELEMENT(files, file_index, struct hs_source_file);
+			if (_stricmp(source_file->name, file->name) == 0)
+				break;
+		}
+		if (file_index == files->count)
+		{
+			short new_file_index;
+
+			new_file_index = tag_block_add_element(files);
+			if (new_file_index != NONE)
+			{
+				struct hs_source_file *file;
+
+				file = TAG_BLOCK_GET_ELEMENT(files, new_file_index, struct hs_source_file);
+				csstrcpy(file->name, source_file->name);
+				if (tag_data_resize(&file->source, source_file->source.size))
+				{
+					csmemcpy(file->source.address, source_file->source.address, source_file->source.size);
+				}
+				else
+				{
+					success = FALSE;
+				}
+			}
+			else
+			{
+				success = FALSE;
+			}
+		}
+	}
+	tag_block_resize(&scenario->hs_scripts, 0);
+
+	return success;
+}
+
+void code_000b2f00(
+	void)
+{
+	struct scenario *scenario;
+
+	scenario = global_scenario_index != NONE ? global_scenario_get() : NULL;
+	if (scenario &&
+		scenario->hs_syntax_data.size ==
+			sizeof(struct data_array)+MAXIMUM_HS_SYNTAX_NODES_PER_SCENARIO*sizeof(struct hs_syntax_node))
+	{
+		return;
+	}
+
+	hs_syntax_data = data_new(
+		"script node",
+		MAXIMUM_HS_SYNTAX_NODES_PER_SCENARIO,
+		sizeof(struct hs_syntax_node));
+	if (hs_syntax_data)
+	{
+		data_make_valid(hs_syntax_data);
+		if (scenario)
+		{
+			match_free("c:\\halo\\SOURCE\\hs\\hs.c", 336, scenario->hs_syntax_data.address);
+			scenario->hs_syntax_data.address = hs_syntax_data;
+			scenario->hs_syntax_data.size =
+				sizeof(struct data_array)+MAXIMUM_HS_SYNTAX_NODES_PER_SCENARIO*sizeof(struct hs_syntax_node);
+			tag_data_resize(&scenario->hs_string_constants, 0x400);
+			tag_block_resize(&scenario->hs_scripts, 0);
+		}
+		else
+		{
+			bss_00453468[0x11] = TRUE;
+		}
+	}
+	else
+	{
+		error(0, "couldn't allocate script syntax data");
+	}
+	return;
+}
+
+void hs_dispose(
+	void)
+{
+	hs_runtime_dispose_from_old_map();
+	object_lists_dispose();
+	return;
+}
+
+void hs_initialize(
+	void)
+{
+	struct scenario *scenario;
+
+	match_vassert(
+		"c:\\halo\\SOURCE\\hs\\hs.c",
+		245,
+		hs_type_names[48],
+		"you can't add an hs type without defining its name.");
+	object_lists_initialize();
+	hs_runtime_initialize();
+	scenario = global_scenario_index != NONE ? global_scenario_get() : NULL;
+	code_000b2f00();
+	if (scenario && scenario->hs_syntax_data.size)
+		hs_scenario_postprocess(FALSE);
+	object_lists_initialize_for_new_map();
+	hs_runtime_initialize_for_new_map();
+	return;
+}
+
+void hs_hack(
+	void)
+{
+	struct scenario *scenario;
+
+	if (code_000b3b60())
+	{
+		code_000b3d10();
+		hs_dispose_from_old_map();
+		scenario = global_scenario_index != NONE ? global_scenario_get() : NULL;
+		code_000b2f00();
+		if (scenario && scenario->hs_syntax_data.size)
+			hs_scenario_postprocess(FALSE);
+		object_lists_initialize_for_new_map();
+		hs_runtime_initialize_for_new_map();
+	}
+	return;
+}
+
+static void code_000b3ca0(
+	struct hs_source_file const *source_file,
+	char *error_message,
+	char const *source,
+	char const *error_source)
+{
+	char *newline = NULL;
+
+	if (error_message)
+	{
+		newline = strchr(error_message, '\n');
+		if (newline)
+			*newline = 0;
+	}
+
+	if (source_file && newline)
+	{
+		short line = 1;
+
+		while (newline > source)
+		{
+			if (*newline == '\n')
+				line++;
+			newline--;
+		}
+		error(2, "[%s line %d] %s: %s", source_file->name, line, error_source, error_message);
+	}
+	else
+	{
+		error(2, "%s: %s", error_source, error_message);
+	}
+	return;
+}
+
+boolean code_000b3d10(
+	void)
+{
+	struct scenario *scenario;
+	struct tag_block const *source_files;
+	boolean success;
+	char const *error_source;
+	char const *error_message;
+	short source_file_index;
+
+	scenario = global_scenario_get();
+	success = TRUE;
+	hs_compile_initialize(TRUE);
+	source_file_index = 0;
+	source_files = &scenario->hs_source_files;
+	while (source_file_index<source_files->count)
+	{
+		struct hs_source_file const *source_file;
+		char const *source;
+
+		source_file = TAG_BLOCK_GET_ELEMENT(
+			source_files,
+			source_file_index,
+			struct hs_source_file);
+		hs_compile(
+			source_file->source.size,
+			tag_data_get_pointer(
+				&source_file->source,
+				0,
+				source_file->source.size),
+			&error_source,
+			&error_message);
+		if (error_source)
+		{
+			source = tag_data_get_pointer(
+				&source_file->source,
+				0,
+				source_file->source.size);
+			code_000b3ca0(
+				source_file,
+				(char *)error_message,
+				source,
+				error_source);
+			success = FALSE;
+		}
+		source_file_index++;
+	}
+
+	if (success)
+		console_printf(FALSE, "scripts successfully compiled.");
+	hs_compile_dispose();
+	return success;
+}
+
+static boolean code_000b3a00(
+	struct file_reference *file)
+{
+	struct scenario *scenario;
+	struct tag_block *source_files;
+	struct hs_source_file *source_file;
+	void *source;
+	unsigned long source_size;
+	short source_file_index;
+	char name[MAXIMUM_FILENAME_LENGTH+1];
+
+	scenario = global_scenario_get();
+	if (file_exists(file))
+	{
+		source_files = &scenario->hs_source_files;
+		source_file_index = tag_block_add_element(source_files);
+		if (source_file_index != NONE)
+		{
+			source_file = TAG_BLOCK_GET_ELEMENT(
+				source_files,
+				source_file_index,
+				struct hs_source_file);
+			source = file_read_into_memory(file, &source_size);
+			if (source)
+			{
+				if (tag_data_resize(&source_file->source, source_size))
+				{
+					file_reference_get_name(file, FLAG(_name_filename_bit), name);
+					csstrncpy(source_file->name, name, NUMBEROF(source_file->name)-1);
+					source_file->name[NUMBEROF(source_file->name)-1] = 0;
+					csmemcpy(
+						tag_data_get_pointer(&source_file->source, 0, source_size),
+						source,
+						source_size);
+					return TRUE;
+				}
+				error(2, "maximum source file size exceeded.");
+				return FALSE;
+			}
+			error(2, "couldn't read source file into memory.");
+			return FALSE;
+		}
+		error(2, "maximum source files per scenario exceeded.");
+	}
+	return FALSE;
+}
+
+boolean code_000b3b60(
+	void)
+{
+	boolean success = TRUE;
+	char scenario_path[MAXIMUM_FILENAME_LENGTH+1];
+	struct file_reference global_scripts;
+	char extension[MAXIMUM_FILENAME_LENGTH+1];
+	struct file_reference scripts_directory;
+	struct file_reference source_files[8];
+	short source_file_count;
+	short source_file_index;
+
+	tag_block_resize(&global_scenario_get()->hs_source_files, 0);
+	sprintf(scenario_path, "data\\%s", tag_get_name(global_scenario_index));
+	sprintf(strrchr(scenario_path, '\\') + 1, "scripts");
+	file_reference_create_from_path(
+		&global_scripts,
+		"data\\global_scripts.hsc",
+		FALSE);
+	if (file_exists(&global_scripts))
+		success = code_000b3a00(&global_scripts);
+
+	file_reference_create_from_path(&scripts_directory, scenario_path, TRUE);
+	source_file_count = (short)find_files(
+		0,
+		&scripts_directory,
+		NUMBEROF(source_files),
+		source_files);
+	qsort(
+		source_files,
+		source_file_count,
+		sizeof(struct file_reference),
+		(int (__cdecl *)(void const *, void const *))code_000b3b10);
+	for (source_file_index = 0; source_file_index<source_file_count; source_file_index++)
+	{
+		file_reference_get_name(
+			&source_files[source_file_index],
+			FLAG(_name_extension_bit),
+			extension);
+		if (csstrcmp(extension, "hsc") == 0 &&
+			!code_000b3a00(&source_files[source_file_index]))
+		{
+			success = FALSE;
+		}
+	}
+	return success;
+}
+
+void hs_update(
+	void)
+{
+	if (profile_global_enable && hs_function_table.profile.active)
+		profile_enter_private(&hs_function_table.profile);
+	hs_runtime_update();
+	if (profile_global_enable && hs_function_table.profile.active)
+		profile_exit_private(&hs_function_table.profile);
+	return;
+}
+
+void hs_node_gc(
+	void)
+{
+	long syntax_node_index;
+
+	for (syntax_node_index = data_next_index(hs_syntax_data, NONE);
+		syntax_node_index != NONE;
+		syntax_node_index = data_next_index(hs_syntax_data, syntax_node_index))
+	{
+		struct hs_syntax_node *syntax_node;
+
+		syntax_node = (struct hs_syntax_node *)datum_get(hs_syntax_data, syntax_node_index);
+		if (!(((byte)syntax_node->flags) & 8))
+			datum_delete(hs_syntax_data, syntax_node_index);
+	}
+	return;
+}
+
+void hs_initialize_for_new_map(
+	void)
+{
+	struct scenario *scenario;
+
+	scenario = global_scenario_index != NONE ? global_scenario_get() : NULL;
+	code_000b2f00();
+	if (scenario && scenario->hs_syntax_data.size)
+		hs_scenario_postprocess(FALSE);
+	object_lists_initialize_for_new_map();
+	hs_runtime_initialize_for_new_map();
+	return;
+}
+
+void hs_dispose_from_old_map(
+	void)
+{
+	if (hs_syntax_data)
+	{
+		hs_node_gc();
+		if (bss_00453468[0x11])
+		{
+			data_make_invalid(hs_syntax_data);
+			data_dispose(hs_syntax_data);
+			bss_00453468[0x11] = FALSE;
+		}
+		hs_syntax_data = NULL;
+	}
+	hs_runtime_dispose_from_old_map();
+	object_lists_dispose_from_old_map();
+	return;
+}
+
+void hs_recompile(
+	void)
+{
+	bss_00453468[0x10] = TRUE;
+	return;
+}
+
+struct hs_function_definition *hs_function_get(
+	short function_index)
+{
+	match_assert(
+		"c:\\halo\\SOURCE\\hs\\hs.c",
+		522,
+		function_index>=0 && function_index<hs_function_table_count);
+
+	return hs_function_table.functions[function_index];
+}
+
+short hs_find_script_by_name(
+	char const *name)
+{
+	short script_index;
+
+	if (global_scenario_index != NONE)
+	{
+		struct scenario *scenario;
+
+		scenario = global_scenario_get();
+		for (script_index = 0; script_index<scenario->hs_scripts.count; script_index++)
+		{
+			struct hs_script const *script;
+
+			script = TAG_BLOCK_GET_ELEMENT(&scenario->hs_scripts, script_index, struct hs_script);
+			if (csstrcmp(name, script->name) == 0)
+				return script_index;
+		}
+	}
+
+	return NONE;
+}
+
+short hs_find_global_by_name(
+	char const *name)
+{
+	short global_index;
+
+	for (global_index = 0; global_index<hs_external_global_count; global_index++)
+	{
+		if (_stricmp(name, hs_global_external_get(global_index)->name) == 0)
+			return global_index | 0x8000;
+	}
+
+	if (global_scenario_index != NONE)
+	{
+		struct scenario *scenario;
+
+		scenario = global_scenario_get();
+		for (global_index = 0; global_index<scenario->hs_globals.count; global_index++)
+		{
+			struct hs_global const *global;
+
+			global = TAG_BLOCK_GET_ELEMENT(
+				&global_scenario_get()->hs_globals,
+				global_index,
+				struct hs_global);
+			if (_stricmp(name, global->name) == 0)
+				return global_index & ~0x8000;
+		}
+	}
+
+	return NONE;
+}
+
+short hs_find_tag_reference_by_index(
+	long tag_index)
+{
+	short reference_index;
+
+	if (global_scenario_index != NONE)
+	{
+		struct scenario *scenario;
+
+		scenario = global_scenario_get();
+		for (reference_index = 0; reference_index<scenario->hs_references.count; reference_index++)
+		{
+			struct hs_reference const *reference;
+
+			reference = TAG_BLOCK_GET_ELEMENT(&scenario->hs_references, reference_index, struct hs_reference);
+			if (reference->reference.index == tag_index)
+				return reference_index;
+		}
+	}
+
+	return NONE;
+}
+
+struct hs_external_global_definition *hs_global_external_get(
+	short global_index)
+{
+	match_assert(
+		"c:\\halo\\SOURCE\\hs\\hs.c",
+		576,
+		global_index>=0 && global_index<hs_external_global_count);
+
+	return hs_external_globals[global_index];
+}
+
+short hs_global_get_type(
+	short global_index)
+{
+	if (global_index & 0x8000)
+		return hs_global_external_get(global_index & 0x7FFF)->type;
+
+	return TAG_BLOCK_GET_ELEMENT(
+		&global_scenario_get()->hs_globals,
+		global_index & 0x7FFF,
+		struct hs_global)->type;
+}
+
+char const *hs_global_get_name(
+	short global_index)
+{
+	if (global_index & 0x8000)
+		return hs_global_external_get(global_index & 0x7FFF)->name;
+
+	return TAG_BLOCK_GET_ELEMENT(
+		&global_scenario_get()->hs_globals,
+		global_index & 0x7FFF,
+		struct hs_global)->name;
+}
+
+short hs_find_function_by_name(
+	char const *name)
+{
+	short function_index;
+
+	for (function_index = 0; function_index<hs_function_table_count; function_index++)
+	{
+		if (_stricmp(hs_function_table.functions[function_index]->name, name) == 0)
+			return function_index;
+	}
+
+	return NONE;
+}
+
+boolean hs_evaluate_by_name(
+	char const *name)
+{
+	short script_index;
+
+	script_index = hs_find_script_by_name(name);
+	if (script_index != NONE)
+	{
+		struct hs_script const *script;
+
+		script = TAG_BLOCK_GET_ELEMENT(
+			&global_scenario_get()->hs_scripts,
+			script_index,
+			struct hs_script);
+		hs_runtime_evaluate(script->root_expression_index);
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+static void code_000b3de0(
+	short function_index,
+	char *result)
+{
+	struct hs_function_definition const *function;
+	short parameter_index;
+
+	function = hs_function_get(function_index);
+	sprintf(result, "(%s", function->name);
+	if (function->usage)
+	{
+		sprintf(result + csstrlen(result), " %s", function->usage);
+	}
+	else
+	{
+		for (parameter_index = 0; parameter_index<function->parameter_count; parameter_index++)
+		{
+			csstrcat(result, " <");
+			csstrcat(result, hs_type_names[function->parameter_types[parameter_index]]);
+			csstrcat(result, ">");
+		}
+	}
+	csstrcat(result, ")");
+	return;
+}
+
+static void code_000b3e80(
+	short function_index,
+	char *result)
+{
+	csstrcpy(result, hs_function_get(function_index)->help);
+
+	return;
+}
+
+void hs_help(
+	char const *function_name)
+{
+	char result[2048];
+	short function_index;
+
+	function_index = hs_find_function_by_name(function_name);
+	if (function_index != NONE)
+	{
+		code_000b3de0(function_index, result);
+		console_printf(FALSE, result);
+		code_000b3e80(function_index, result);
+		console_printf(FALSE, result);
+	}
+	return;
+}
+
+void hs_doc(
+	void)
+{
+	char result[2048];
+	FILE *file;
+	short function_index;
+
+	file = fopen("hs_doc.txt", "w");
+	for (function_index = 0; function_index<hs_function_table_count; function_index++)
+	{
+		hs_function_get(function_index);
+		code_000b3de0(function_index, result);
+		fprintf(file, "%s\r\n", result);
+		csstrcpy(result, hs_function_get(function_index)->help);
+		fprintf(file, "%s\r\n\r\n", result);
+	}
+	fclose(file);
+	return;
+}
+
+short hs_tokens_enumerate(
+	char const *substring,
+	long type_flags,
+	char const **results,
+	short maximum_count)
+{
+	short type_index;
+
+	match_assert(
+		"c:\\halo\\SOURCE\\hs\\hs.c",
+		920,
+		!enumeration_results);
+	hs_enumeration_maximum_count = maximum_count;
+	hs_enumeration_result_count = 0;
+	enumeration_results = results;
+	hs_enumeration_substring = substring;
+	if (!substring)
+		hs_enumeration_substring = "";
+
+	for (type_index = 0; type_index<18; type_index++)
+	{
+		match_assert(
+			"c:\\halo\\SOURCE\\hs\\hs.c",
+			929,
+			hs_token_enumerators[type_index]);
+		if (type_flags & (1 << type_index))
+			hs_token_enumerators[type_index]();
+	}
+
+	qsort(
+		(void *)results,
+		hs_enumeration_result_count,
+		sizeof(*results),
+		(int (__cdecl *)(void const *, void const *))code_000b33b0);
+	enumeration_results = NULL;
+	return hs_enumeration_result_count;
+}
+
+static void code_000b33d0(
+	char const *token)
+{
+	match_assert(
+		"c:\\halo\\SOURCE\\hs\\hs.c",
+		666,
+		enumeration_results);
+	if (hs_enumeration_result_count<hs_enumeration_maximum_count &&
+		_strnicmp(token, hs_enumeration_substring, csstrlen(hs_enumeration_substring)) == 0)
+	{
+		short result_index;
+		short new_result_count;
+
+		result_index = *(short *)&bss_00453468[0];
+		new_result_count = (short)(result_index + 1);
+		enumeration_results[result_index] = token;
+		hs_enumeration_result_count = new_result_count;
+	}
+	return;
+}
+
+static void code_000b3490(
+	struct tag_block const *block,
+	short name_offset,
+	long element_size)
+{
+	short element_index;
+
+	for (element_index = 0; element_index<block->count; element_index++)
+	{
+		byte const *element;
+
+		element = (byte const *)tag_block_get_element_with_size(
+			block,
+			element_index,
+			element_size);
+		code_000b33d0((char const *)(element + name_offset));
+	}
+	return;
+}
+
+void code_000b34d0(
+	short block_offset,
+	short name_offset,
+	long element_size)
+{
+	if (global_scenario_index != NONE)
+	{
+		struct tag_block const *block;
+
+		block = (struct tag_block const *)((byte const *)global_scenario_get() + block_offset);
+		code_000b3490(block, name_offset, element_size);
+	}
+	return;
+}
+
+static void code_000b3450(
+	char const **names,
+	short first,
+	short last)
+{
+	short index;
+
+	for (index = first; index<last; index++)
+		code_000b33d0(names[index]);
+	return;
+}
+
+void code_000b3500(
+	void)
+{
+	code_000b33d0("script");
+	code_000b33d0("global");
+	return;
+}
+
+void code_000b3520(
+	void)
+{
+	code_000b3450(hs_script_type_names, 0, 5);
+	return;
+}
+
+void code_000b3550(
+	void)
+{
+	code_000b3450(hs_type_names, 4, 49);
+	return;
+}
+
+void code_000b3580(
+	void)
+{
+	short function_index;
+
+	for (function_index = 0; function_index<hs_function_table_count; function_index++)
+		code_000b33d0(hs_function_get(function_index)->name);
+	return;
+}
+
+void code_000b35e0(
+	void)
+{
+	if (global_scenario_index != NONE)
+	{
+		struct scenario *scenario;
+		struct tag_block const *scripts;
+
+		scenario = global_scenario_get();
+		scripts = (struct tag_block const *)scenario;
+		scripts = (struct tag_block const *)((byte const *)scripts + offsetof(struct scenario, hs_scripts));
+		code_000b3490(scripts, 0, sizeof(struct hs_script));
+	}
+	return;
+}
+
+void code_000b3610(
+	void)
+{
+	short global_index;
+
+	for (global_index = 0; global_index<hs_external_global_count; global_index++)
+		code_000b33d0(hs_global_external_get(global_index)->name);
+
+	if (global_scenario_index != NONE)
+	{
+		struct scenario *scenario;
+		struct tag_block const *globals;
+
+		scenario = global_scenario_get();
+		globals = &scenario->hs_globals;
+		for (global_index = 0; global_index<globals->count; global_index++)
+		{
+			struct hs_global const *global;
+
+			global = TAG_BLOCK_GET_ELEMENT(globals, global_index, struct hs_global);
+			code_000b33d0(global->name);
+		}
+	}
+	return;
+}
+
+void code_000b36c0(
+	void)
+{
+	if (global_scenario_index != NONE)
+	{
+		struct scenario *scenario;
+		struct tag_block const *encounters;
+
+		scenario = global_scenario_get();
+		encounters = (struct tag_block const *)scenario;
+		encounters = (struct tag_block const *)((byte const *)encounters + offsetof(struct scenario, ai_encounters));
+		code_000b3490(encounters, 0, sizeof(struct encounter_definition));
+	}
+	return;
+}
+
+void code_000b36f0(
+	void)
+{
+	if (global_scenario_index != NONE)
+	{
+		struct scenario *scenario;
+		struct tag_block const *command_lists;
+
+		scenario = global_scenario_get();
+		command_lists = (struct tag_block const *)scenario;
+		command_lists = (struct tag_block const *)((byte const *)command_lists + offsetof(struct scenario, ai_command_lists));
+		code_000b3490(command_lists, 0, sizeof(struct ai_command_list_definition));
+	}
+	return;
+}
+
+void code_000b3720(
+	void)
+{
+	if (global_scenario_index != NONE)
+	{
+		struct scenario *scenario;
+		struct tag_block const *starting_profiles;
+
+		scenario = global_scenario_get();
+		starting_profiles = (struct tag_block const *)scenario;
+		starting_profiles = (struct tag_block const *)((byte const *)starting_profiles + offsetof(struct scenario, starting_profiles));
+		code_000b3490(starting_profiles, 0, scenario_starting_profile_size);
+	}
+	return;
+}
+
+void code_000b3750(
+	void)
+{
+	if (global_scenario_index != NONE)
+	{
+		struct scenario *scenario;
+		struct tag_block const *conversations;
+
+		scenario = global_scenario_get();
+		conversations = (struct tag_block const *)scenario;
+		conversations = (struct tag_block const *)((byte const *)conversations + offsetof(struct scenario, ai_conversations));
+		code_000b3490(conversations, 0, scenario_conversation_definition_size);
+	}
+	return;
+}
+
+void code_000b3780(
+	void)
+{
+	if (global_scenario_index != NONE)
+	{
+		struct scenario *scenario;
+		struct tag_block const *object_names;
+
+		scenario = global_scenario_get();
+		object_names = (struct tag_block const *)scenario;
+		object_names = (struct tag_block const *)((byte const *)object_names + offsetof(struct scenario, object_names));
+		code_000b3490(object_names, 0, sizeof(struct scenario_object_name));
+	}
+	return;
+}
+
+void code_000b37b0(
+	void)
+{
+	if (global_scenario_index != NONE)
+	{
+		struct scenario *scenario;
+		struct tag_block const *trigger_volumes;
+
+		scenario = global_scenario_get();
+		trigger_volumes = (struct tag_block const *)scenario;
+		trigger_volumes = (struct tag_block const *)((byte const *)trigger_volumes + offsetof(struct scenario, trigger_volumes));
+		code_000b3490(trigger_volumes, 4, sizeof(struct scenario_trigger_volume));
+	}
+	return;
+}
+
+void code_000b37e0(
+	void)
+{
+	if (global_scenario_index != NONE)
+	{
+		struct scenario *scenario;
+		struct tag_block const *cutscene_flags;
+
+		scenario = global_scenario_get();
+		cutscene_flags = (struct tag_block const *)scenario;
+		cutscene_flags = (struct tag_block const *)((byte const *)cutscene_flags + offsetof(struct scenario, cutscene_flags));
+		code_000b3490(cutscene_flags, 4, scenario_cutscene_flag_size);
+	}
+	return;
+}
+
+void code_000b3810(
+	void)
+{
+	if (global_scenario_index != NONE)
+	{
+		struct scenario *scenario;
+		struct tag_block const *camera_points;
+
+		scenario = global_scenario_get();
+		camera_points = (struct tag_block const *)scenario;
+		camera_points = (struct tag_block const *)((byte const *)camera_points + offsetof(struct scenario, cutscene_camera_points));
+		code_000b3490(camera_points, 4, sizeof(struct scenario_cutscene_camera_point));
+	}
+	return;
+}
+
+void code_000b3840(
+	void)
+{
+	if (global_scenario_index != NONE)
+	{
+		struct scenario *scenario;
+		struct tag_block const *chapter_titles;
+
+		scenario = global_scenario_get();
+		chapter_titles = (struct tag_block const *)scenario;
+		chapter_titles = (struct tag_block const *)((byte const *)chapter_titles + offsetof(struct scenario, cutscene_chapter_titles));
+		code_000b3490(chapter_titles, 4, scenario_cutscene_chapter_title_size);
+	}
+	return;
+}
+
+void code_000b3870(
+	void)
+{
+	if (global_scenario_index != NONE)
+	{
+		struct scenario *scenario;
+		struct tag_block const *recorded_animations;
+
+		scenario = global_scenario_get();
+		recorded_animations = (struct tag_block const *)scenario;
+		recorded_animations = (struct tag_block const *)((byte const *)recorded_animations + offsetof(struct scenario, recorded_animations));
+		code_000b3490(recorded_animations, 0, sizeof(struct recorded_animation_definition));
+	}
+	return;
+}
+
+void code_000b38a0(
+	void)
+{
+	long hud_globals_index;
+
+	hud_globals_index = interface_get_tag_index(_interface_hud_globals);
+	if (hud_globals_index != NONE)
+	{
+		struct hud_globals_definition const *hud_globals;
+
+		hud_globals = hud_globals_definition_get(
+			interface_get_tag_index(_interface_hud_globals));
+		code_000b3490(
+			&hud_globals->waypoint_arrows,
+			0,
+			sizeof(struct hud_waypoint_arrow_definition));
+	}
+	return;
+}
+
+void code_000b38e0(
+	void)
+{
+	if (global_scenario_get()->hud_messages.index != NONE)
+	{
+		struct hud_message_text_definition const *hud_messages;
+
+		hud_messages = hud_message_text_definition_get(
+			global_scenario_get()->hud_messages.index);
+		code_000b3490(&hud_messages->messages, 0, sizeof(struct hud_message_definition));
+	}
+	return;
+}
+
+long code_000b3b10(
+	struct file_reference const *left,
+	struct file_reference const *right)
+{
+	char left_name[MAXIMUM_FILENAME_LENGTH+1];
+	char right_name[MAXIMUM_FILENAME_LENGTH+1];
+
+	file_reference_get_name(left, FLAG(_name_filename_bit), left_name);
+	file_reference_get_name(right, FLAG(_name_filename_bit), right_name);
+	return _stricmp(left_name, right_name);
+}
+
+long code_000b33b0(
+	char const **left,
+	char const **right)
+{
+	return _stricmp(*left, *right);
+}
+
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b18c0, game_safe_to_save)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b18f0, game_all_quiet)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b1920, game_safe_to_speak)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b1950, game_is_cooperative)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b1a00, main_saving_map)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b1bb0, game_state_reverted)
+
+HS_EVALUATE_NO_ARGUMENTS(code_000ad5f0, hs_object_destroy_all)
+HS_EVALUATE_NO_ARGUMENTS(code_000ada90, numeric_countdown_timer_stop)
+HS_EVALUATE_NO_ARGUMENTS(code_000adab0, numeric_countdown_timer_restart)
+HS_EVALUATE_NO_ARGUMENTS(code_000add10, objects_dump_memory)
+HS_EVALUATE_NO_ARGUMENTS(code_000ade30, garbage_collect_now)
+HS_EVALUATE_NO_ARGUMENTS(code_000ae010, object_pvs_clear)
+HS_EVALUATE_NO_ARGUMENTS(code_000af0b0, breakable_surfaces_reset)
+HS_EVALUATE_NO_ARGUMENTS(code_000af0d0, cheat_all_powerups)
+HS_EVALUATE_NO_ARGUMENTS(code_000af0f0, cheat_all_weapons)
+HS_EVALUATE_NO_ARGUMENTS(code_000af110, cheat_all_vehicles)
+HS_EVALUATE_NO_ARGUMENTS(code_000af130, cheat_teleport_to_camera)
+HS_EVALUATE_NO_ARGUMENTS(code_000af150, cheat_active_camouflage)
+HS_EVALUATE_NO_ARGUMENTS(code_000ae980, scripting_magic_melee_attack)
+HS_EVALUATE_NO_ARGUMENTS(code_000af1b0, cheats_load)
+HS_EVALUATE_NO_ARGUMENTS(code_000af550, ai_scripting_erase_all)
+HS_EVALUATE_NO_ARGUMENTS(code_000af5b0, ai_scripting_deselect)
+HS_EVALUATE_NO_ARGUMENTS(code_000b0050, ai_scripting_reconnect)
+HS_EVALUATE_NO_ARGUMENTS(code_000b0b90, director_save_camera)
+HS_EVALUATE_NO_ARGUMENTS(code_000b0bb0, director_load_camera)
+HS_EVALUATE_NO_ARGUMENTS(code_000b0cd0, players_unzoom_all)
+HS_EVALUATE_NO_ARGUMENTS(code_000b0d80, player_control_action_test_reset)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1090, main_reset_map)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1220, main_print_version)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1240, main_set_game_connection_to_film_playback)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1260, texture_cache_flush)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1280, sound_cache_flush)
+HS_EVALUATE_NO_ARGUMENTS(code_000b12a0, debug_dump_memory)
+HS_EVALUATE_NO_ARGUMENTS(code_000b12c0, debug_dump_memory_by_file)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1340, profile_initialize)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1500, ai_profile_change_render_spray)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1520, ai_debug_sound_point_set)
+HS_EVALUATE_NO_ARGUMENTS(code_000b16e0, cinematic_start)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1700, cinematic_stop)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1720, cinematic_skip_start)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1740, cinematic_skip_stop)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1860, attract_mode_start)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1880, main_won_map)
+HS_EVALUATE_NO_ARGUMENTS(code_000b18a0, main_lost_map)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1980, main_save_map_safe)
+HS_EVALUATE_NO_ARGUMENTS(code_000b19a0, main_save_cancel)
+HS_EVALUATE_NO_ARGUMENTS(code_000b19c0, main_save_map_no_timeout)
+HS_EVALUATE_NO_ARGUMENTS(code_000b19e0, main_save_map_nonsafe)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1a30, main_revert_map)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1a50, main_load_core)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1a70, main_load_core_at_startup)
+HS_EVALUATE_NO_ARGUMENTS(code_000b1b10, main_save_core)
+HS_EVALUATE_NO_ARGUMENTS(code_000b2050, scripted_hud_restart_flashing)
+HS_EVALUATE_NO_ARGUMENTS(code_000b22b0, terminal_clear)
+HS_EVALUATE_NO_ARGUMENTS(code_000b2310, structure_lens_flares_place)
+HS_EVALUATE_NO_ARGUMENTS(code_000b2650, scripted_hud_messages_clear)
+HS_EVALUATE_NO_ARGUMENTS(code_000b28f0, scripted_hud_time_code_reset)
+HS_EVALUATE_NO_ARGUMENTS(code_000b2910, rasterizer_decals_flush)
+HS_EVALUATE_NO_ARGUMENTS(code_000b2930, rasterizer_fps_accumulate)
+HS_EVALUATE_NO_ARGUMENTS(code_000b29a0, rasterizer_lights_reset_for_new_map)
+HS_EVALUATE_NO_ARGUMENTS(code_000b2b90, rasterizer_screen_effect_stop)
+HS_EVALUATE_NO_ARGUMENTS(code_000b2bf0, enumerate_memory_units_test)
+HS_EVALUATE_NO_ARGUMENTS(code_000b2c10, saved_game_files_delete_all_custom_profiles)
+HS_EVALUATE_NO_ARGUMENTS(code_000b2c30, player_ui_fast_setup_network_server)
+HS_EVALUATE_NO_ARGUMENTS(code_000b2c50, player_ui_activate_all_solo_levels)
+HS_EVALUATE_NO_ARGUMENTS(code_000b2d90, network_game_client_request_immediate_start)
+HS_EVALUATE_NO_ARGUMENTS(code_000b4390, hs_doc)
+HS_EVALUATE_NO_OP(code_000b1320)
+HS_EVALUATE_NO_OP(code_000b14a0)
+HS_EVALUATE_NO_OP(code_000b14c0)
+HS_EVALUATE_NO_OP(code_000b14e0)
+HS_EVALUATE_RETURN_LONG(code_000ad320, hs_players)
+HS_EVALUATE_RETURN_LONG(code_000b0c50, game_time_get)
+HS_EVALUATE_RETURN_SHORT(code_000b0b60, scripted_camera_time)
+HS_EVALUATE_RETURN_SHORT(code_000b0c70, game_difficulty_level_get_ignore_easy)
+HS_EVALUATE_RETURN_SHORT(code_000b0ca0, game_difficulty_level_get)
+HS_EVALUATE_RETURN_SHORT(code_000b11f0, global_structure_bsp_index_get)
+HS_EVALUATE_RETURN_SHORT(code_000b2840, scripted_hud_get_timer_ticks)
+HS_EVALUATE_SHORT_FROM_LONG(code_000ad750, object_list_count)
+HS_EVALUATE_SHORT_FROM_UNSIGNED_SHORT(code_000ada40, numeric_countdown_timer_get)
+HS_EVALUATE_SHORT_FROM_LONG(code_000adc40, recorded_animation_get_time_left)
+HS_EVALUATE_SHORT_FROM_LONG(code_000ae0c0, scenery_get_animation_time)
+HS_EVALUATE_SHORT_FROM_LONG(code_000ae320, unit_get_custom_animation_time)
+HS_EVALUATE_SHORT_FROM_LONG(code_000aeae0, unit_scripting_get_grenade_count)
+HS_EVALUATE_SHORT_FROM_LONG(code_000b0600, ai_scripting_command_list_status)
+HS_EVALUATE_SHORT_FROM_LONG(code_000b0650, ai_scripting_going_to_vehicle)
+HS_EVALUATE_SHORT_FROM_LONG(code_000b06a0, ai_scripting_living_count)
+HS_EVALUATE_SHORT_FROM_LONG(code_000b0770, ai_scripting_swarm_count)
+HS_EVALUATE_SHORT_FROM_LONG(code_000b07c0, ai_scripting_nonswarm_count)
+HS_EVALUATE_SHORT_FROM_LONG(code_000b0850, ai_scripting_status)
+HS_EVALUATE_SHORT_FROM_UNSIGNED_SHORT(code_000b08f0, ai_scripting_conversation_line)
+HS_EVALUATE_SHORT_FROM_UNSIGNED_SHORT(code_000b0940, ai_scripting_conversation_status)
+HS_EVALUATE_RETURN_SHORT_FROM_ARGUMENTS(code_000ae860, struct hs_arguments_long_long_long, (vehicle_scripting_load_magic(arguments->value0, arguments->value1, arguments->value2)))
+HS_EVALUATE_RETURN_SHORT_FROM_ARGUMENTS(code_000ae8b0, struct hs_arguments_long_long, (vehicle_scripting_unload(arguments->value0, (char const *)arguments->value1)))
+HS_EVALUATE_LONG_FROM_LONG(code_000ae9a0, unit_scripting_unit_riders)
+HS_EVALUATE_LONG_FROM_LONG(code_000ae9e0, unit_scripting_unit_driver)
+HS_EVALUATE_LONG_FROM_LONG(code_000aea20, unit_scripting_unit_gunner)
+HS_EVALUATE_LONG_FROM_LONG(code_000b0810, object_list_from_ai_reference)
+HS_EVALUATE_LONG_FROM_LONG(code_000b1c20, scripted_sound_time)
+HS_EVALUATE_VOID_LONG(code_000ad4b0, hs_object_destroy)
+HS_EVALUATE_VOID_LONG(code_000adc00, recorded_animation_kill)
+HS_EVALUATE_VOID_LONG(code_000ade50, object_cannot_take_damage)
+HS_EVALUATE_VOID_LONG(code_000ade90, object_can_take_damage)
+HS_EVALUATE_VOID_LONG(code_000adf10, hs_objects_predict)
+HS_EVALUATE_VOID_LONG(code_000adf50, object_definition_predict)
+HS_EVALUATE_VOID_LONG(code_000adf90, object_pvs_set_object)
+HS_EVALUATE_VOID_LONG(code_000ae030, object_pvs_activate)
+HS_EVALUATE_VOID_LONG(code_000ae220, unit_open)
+HS_EVALUATE_VOID_LONG(code_000ae260, unit_close)
+HS_EVALUATE_VOID_LONG(code_000ae2a0, unit_kill)
+HS_EVALUATE_VOID_LONG(code_000ae2e0, unit_kill_silent)
+HS_EVALUATE_VOID_LONG(code_000ae370, unit_stop_custom_animation)
+HS_EVALUATE_VOID_LONG(code_000ae6e0, unit_scripting_exit_vehicle)
+HS_EVALUATE_VOID_LONG(code_000aebd0, unit_scripting_doesnt_drop_items)
+HS_EVALUATE_VOID_LONG(code_000af290, ai_scripting_free)
+HS_EVALUATE_VOID_LONG(code_000af2d0, ai_scripting_free_units)
+HS_EVALUATE_VOID_LONG(code_000af3d0, ai_scripting_detach_unit)
+HS_EVALUATE_VOID_LONG(code_000af410, ai_scripting_detach_units)
+HS_EVALUATE_VOID_LONG(code_000af450, ai_scripting_place)
+HS_EVALUATE_VOID_LONG(code_000af490, ai_scripting_kill)
+HS_EVALUATE_VOID_LONG(code_000af4d0, ai_scripting_kill_silent)
+HS_EVALUATE_VOID_LONG(code_000af510, ai_scripting_erase)
+HS_EVALUATE_VOID_LONG(code_000af570, ai_scripting_select)
+HS_EVALUATE_VOID_LONG(code_000af5d0, ai_scripting_spawn_actor)
+HS_EVALUATE_VOID_LONG(code_000af710, ai_scripting_magically_see_players)
+HS_EVALUATE_VOID_LONG(code_000af7d0, ai_scripting_timer_start)
+HS_EVALUATE_VOID_LONG(code_000af810, ai_scripting_timer_expire)
+HS_EVALUATE_VOID_LONG(code_000af850, ai_scripting_attack)
+HS_EVALUATE_VOID_LONG(code_000af890, ai_scripting_defend)
+HS_EVALUATE_VOID_LONG(code_000af8d0, ai_scripting_retreat)
+HS_EVALUATE_VOID_UNSIGNED_SHORT(code_000ad470, hs_object_create)
+HS_EVALUATE_VOID_UNSIGNED_SHORT(code_000ad4f0, hs_object_create_anew)
+HS_EVALUATE_VOID_UNSIGNED_SHORT(code_000adfd0, object_pvs_set_camera_point)
+HS_EVALUATE_VOID_UNSIGNED_SHORT(code_000af170, cheat_active_camouflage_local_player)
+HS_EVALUATE_VOID_BOOLEAN(code_000adad0, breakable_surfaces_enable)
+HS_EVALUATE_VOID_BOOLEAN(code_000ae1a0, render_effects)
+HS_EVALUATE_VOID_BOOLEAN(code_000af1d0, ai_globals_ai_active)
+HS_EVALUATE_VOID_BOOLEAN(code_000af210, ai_globals_dialogue_triggers_enabled)
+HS_EVALUATE_VOID_BOOLEAN(code_000af250, ai_globals_grenades_enabled)
+HS_EVALUATE_VOID_STRING(code_000ad2e0, hs_print)
+HS_EVALUATE_VOID_STRING(code_000ad530, hs_object_create_containing)
+HS_EVALUATE_VOID_STRING(code_000ad570, hs_object_create_anew_containing)
+HS_EVALUATE_VOID_STRING(code_000ad5b0, hs_object_destroy_containing)
+HS_EVALUATE_VOID_LONG(code_000ad940, hs_objects_delete_by_definition)
+HS_EVALUATE_VOID_STRING(code_000ae900, scripting_set_magic_base_seat)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000adc90, object_set_ranged_attack_inhibited)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000adcd0, object_set_melee_attack_inhibited)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000add30, object_scripting_set_collideable)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000ae1e0, unit_scripting_can_blink)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000ae500, unit_aim_without_turning)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000ae580, unit_set_enterable_by_player)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000aec10, unit_scripting_impervious)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000aec50, unit_scripting_suspended)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000aecc0, units_set_desired_flashlight_state)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000aed00, unit_set_desired_flashlight_state)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000aed90, device_set_never_appears_locked)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000aeff0, device_one_sided_set)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000af030, device_operates_automatically_set)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000af610, ai_scripting_set_respawn)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000af650, ai_scripting_set_deaf)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000af690, ai_scripting_set_blind)
+HS_EVALUATE_VOID_LONG_LONG(code_000ad860, hs_damage_object)
+HS_EVALUATE_VOID_LONG_LONG(code_000addf0, objects_scripting_detach)
+HS_EVALUATE_VOID_LONG_LONG(code_000af310, ai_scripting_attach_unit)
+HS_EVALUATE_VOID_LONG_LONG(code_000af350, ai_scripting_attach_units)
+HS_EVALUATE_VOID_LONG_LONG(code_000af390, ai_scripting_attach_free)
+HS_EVALUATE_VOID_LONG_LONG(code_000af6d0, ai_scripting_magically_see_encounter)
+HS_EVALUATE_VOID_LONG_LONG(code_000af750, ai_scripting_magically_see_unit)
+HS_EVALUATE_VOID_LONG_LONG(code_000af790, ai_scripting_magically_see_units)
+HS_EVALUATE_VOID_LONG_UNSIGNED_SHORT(code_000ad610, hs_object_teleport)
+HS_EVALUATE_VOID_LONG_UNSIGNED_SHORT(code_000ad650, hs_object_set_facing)
+HS_EVALUATE_VOID_LONG_UNSIGNED_SHORT(code_000ad7a0, hs_effect_new)
+HS_EVALUATE_VOID_LONG_UNSIGNED_SHORT(code_000ad820, hs_damage_new)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000ada00, numeric_countdown_timer_set)
+HS_EVALUATE_VOID_LONG_STRING(code_000ae6a0, unit_scripting_set_emotion_animation)
+HS_EVALUATE_VOID_LONG_STRING(code_000ae940, unit_scripting_set_seat)
+HS_EVALUATE_VOID_SHORT_BOOLEAN(code_000af070, device_group_change_only_once_more_set)
+HS_EVALUATE_VOID_LONG_UNSIGNED_SHORT(code_000ae540, unit_set_emotion)
+HS_EVALUATE_VOID_LONG_LONG_STRING(code_000ae5c0, unit_scripting_enter_vehicle)
+
+HS_EVALUATE_VOID_FROM_ARGUMENTS(
+	code_000ad340,
+	struct hs_arguments_short_word,
+	hs_teleport_players_not_in_trigger_volume(arguments->value0, arguments->value1))
+HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(
+	code_000ad690,
+	union hs_evaluation_argument,
+	1,
+	hs_object_set_shield(arguments[0].long_value, real_argument))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(
+	code_000ad6d0,
+	struct hs_arguments_long_string_string,
+	hs_object_set_permutation(arguments->value0, arguments->value1, arguments->value2))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(
+	code_000ad7e0,
+	struct hs_arguments_long_long_string,
+	hs_effect_new_from_object_marker(arguments->value0, arguments->value1, arguments->value2))
+void code_000ad8a0(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	union hs_evaluation_argument const *arguments;
+	union hs_boolean_result result;
+
+	result.value = 0;
+	arguments = (union hs_evaluation_argument const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double degrees = arguments[2].real_value;
+
+		result.boolean = hs_objects_can_see_object(arguments[0].long_value, arguments[1].long_value, degrees);
+		hs_return(thread_index, result.value);
+	}
+
+	return;
+}
+void code_000ad8f0(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	union hs_evaluation_argument const *arguments;
+	union hs_boolean_result result;
+
+	result.value = 0;
+	arguments = (union hs_evaluation_argument const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double degrees = arguments[2].real_value;
+
+		result.boolean = hs_objects_can_see_flag(arguments[0].long_value, arguments[1].unsigned_short_value, degrees);
+		hs_return(thread_index, result.value);
+	}
+
+	return;
+}
+HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(
+	code_000ad980,
+	union hs_evaluation_argument,
+	1,
+	hs_sound_set_gain(arguments[0].long_value, real_argument))
+void code_000add70(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_long_real_word const *arguments;
+
+	arguments = (struct hs_arguments_long_real_word const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value1 = arguments->value1;
+
+		objects_scripting_set_scale(arguments->value0, value1, arguments->value2);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+HS_EVALUATE_VOID_FROM_ARGUMENTS(
+	code_000addb0,
+	struct hs_arguments_long_string_long_string,
+	objects_scripting_attach(arguments->value0, arguments->value1, arguments->value2, arguments->value3))
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000aded0, object_beautify)
+HS_EVALUATE_VOID_FROM_ARGUMENTS(
+	code_000ae110,
+	struct hs_arguments_long_long_string,
+	scenery_animation_start(arguments->value0, arguments->value1, arguments->value2))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(
+	code_000ae150,
+	struct hs_arguments_long_long_string_word,
+	scenery_animation_start_at_frame(arguments->value0, arguments->value1, arguments->value2, arguments->value3))
+void code_000ae720(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_long_real_real const *arguments;
+
+	arguments = (struct hs_arguments_long_real_real const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value1 = arguments->value1;
+		double value2 = arguments->value2;
+
+		unit_scripting_set_maximum_vitality(arguments->value0, value1, value2);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+void code_000ae770(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_long_real_real const *arguments;
+
+	arguments = (struct hs_arguments_long_real_real const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value1 = arguments->value1;
+		double value2 = arguments->value2;
+
+		units_scripting_set_maximum_vitality(arguments->value0, value1, value2);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+void code_000ae7c0(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_long_real_real const *arguments;
+
+	arguments = (struct hs_arguments_long_real_real const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value1 = arguments->value1;
+		double value2 = arguments->value2;
+
+		unit_scripting_set_current_vitality(arguments->value0, value1, value2);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+void code_000ae810(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_long_real_real const *arguments;
+
+	arguments = (struct hs_arguments_long_real_real const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value1 = arguments->value1;
+		double value2 = arguments->value2;
+
+		units_scripting_set_current_vitality(arguments->value0, value1, value2);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(
+	code_000aedd0,
+	union hs_evaluation_argument,
+	1,
+	device_set_power(arguments[0].long_value, real_argument))
+void code_000aee50(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	union hs_evaluation_argument const *arguments;
+	union hs_boolean_result result;
+
+	result.value = 0;
+	arguments = (union hs_evaluation_argument const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double position = arguments[1].real_value;
+
+		result.boolean = device_set_desired_position(arguments[0].long_value, position);
+		hs_return(thread_index, result.value);
+	}
+
+	return;
+}
+HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(
+	code_000aeee0,
+	union hs_evaluation_argument,
+	1,
+	device_set_actual_position(arguments[0].long_value, real_argument))
+void code_000aef60(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	union hs_evaluation_argument const *arguments;
+	union hs_boolean_result result;
+
+	result.value = 0;
+	arguments = (union hs_evaluation_argument const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double desired_value = arguments[1].real_value;
+
+		result.boolean = device_group_set_desired_value(arguments[0].short_value, desired_value);
+		hs_return(thread_index, result.value);
+	}
+
+	return;
+}
+HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(
+	code_000aefb0,
+	union hs_evaluation_argument,
+	1,
+	device_group_set_actual_value(arguments[0].short_value, real_argument))
+HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(
+	code_000b00b0,
+	union hs_evaluation_argument,
+	1,
+	ai_scripting_vehicle_enterable_distance(arguments[0].long_value, real_argument))
+HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(
+	code_000b03b0,
+	union hs_evaluation_argument,
+	1,
+	ai_scripting_follow_distance(arguments[0].long_value, real_argument))
+void code_000b1640(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_long_real_real_word const *arguments;
+
+	arguments = (struct hs_arguments_long_real_real_word const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value1 = arguments->value1;
+		double value2 = arguments->value2;
+
+		player_effect_screen_fade_in(arguments->value0, value1, value2, arguments->value3);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+void code_000b1690(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_long_real_real_word const *arguments;
+
+	arguments = (struct hs_arguments_long_real_real_word const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value1 = arguments->value1;
+		double value2 = arguments->value2;
+
+		player_effect_screen_fade_out(arguments->value0, value1, value2, arguments->value3);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(
+	code_000b17e0,
+	union hs_evaluation_argument,
+	1,
+	cinematic_set_title_delayed(arguments[0].short_value, real_argument))
+HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(
+	code_000b1be0,
+	union hs_evaluation_argument,
+	2,
+	scripted_sound_new(arguments[0].long_value, arguments[1].long_value, real_argument))
+HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(
+	code_000b1ce0,
+	union hs_evaluation_argument,
+	2,
+	scripted_looping_sound_start(arguments[0].long_value, arguments[1].long_value, real_argument))
+HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(
+	code_000b1d60,
+	union hs_evaluation_argument,
+	1,
+	scripted_looping_sound_set_scale(arguments[0].long_value, real_argument))
+void code_000b1e20(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_long_real_real const *arguments;
+
+	arguments = (struct hs_arguments_long_real_real const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value1 = arguments->value1;
+		double value2 = arguments->value2;
+
+		debug_sound_classes_set_distances((char const *)arguments->value0, value1, value2);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(
+	code_000b1e70,
+	union hs_evaluation_argument,
+	1,
+	debug_sound_classes_set_wet((char const *)arguments[0].long_value, real_argument))
+void code_000b1eb0(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_long_real_word const *arguments;
+
+	arguments = (struct hs_arguments_long_real_word const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value1 = arguments->value1;
+
+		sound_class_set_gain((char const *)arguments->value0, value1, arguments->value2);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(
+	code_000b2070,
+	union hs_evaluation_argument,
+	3,
+	hud_unit_activate_nav_point_with_flag(arguments[0].unsigned_short_value, arguments[1].long_value, arguments[2].unsigned_short_value, real_argument))
+HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(
+	code_000b20c0,
+	union hs_evaluation_argument,
+	3,
+	hud_unit_activate_nav_point_with_object(arguments[0].unsigned_short_value, arguments[1].long_value, arguments[2].long_value, real_argument))
+void code_000b2110(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_word_word_word_real const *arguments;
+
+	arguments = (struct hs_arguments_word_word_word_real const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value3 = arguments->value3;
+
+		hud_activate_team_nav_point_with_flag(arguments->value0, arguments->value1, arguments->value2, value3);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+void code_000b2160(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_word_word_long_real const *arguments;
+
+	arguments = (struct hs_arguments_word_word_long_real const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value3 = arguments->value3;
+
+		hud_activate_team_nav_point_with_object(arguments->value0, arguments->value1, arguments->value2, value3);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+void code_000b2330(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_real_real_real const *arguments;
+
+	arguments = (struct hs_arguments_real_real_real const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value1 = arguments->value1;
+		double value2 = arguments->value2;
+
+		scripted_player_effect_set_translation(arguments->value0, value1, value2);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+void code_000b2380(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_real_real_real const *arguments;
+
+	arguments = (struct hs_arguments_real_real_real const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value1 = arguments->value1;
+		double value2 = arguments->value2;
+
+		scripted_player_effect_set_rotation(arguments->value0, value1, value2);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+void code_000b23d0(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_real_real const *arguments;
+
+	arguments = (struct hs_arguments_real_real const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value1 = arguments->value1;
+
+		scripted_player_effect_set_rumble(arguments->value0, value1);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+void code_000b2410(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_real_real const *arguments;
+
+	arguments = (struct hs_arguments_real_real const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value1 = arguments->value1;
+
+		scripted_player_effect_start(arguments->value0, value1);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+void code_000b2950(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_real_real_real_real const *arguments;
+
+	arguments = (struct hs_arguments_real_real_real_real const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value1 = arguments->value1;
+		double value2 = arguments->value2;
+		double value3 = arguments->value3;
+
+		rasterizer_model_ambient_reflection_tint(arguments->value0, value1, value2, value3);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(
+	code_000b29c0,
+	union hs_evaluation_argument,
+	1,
+	rasterizer_script_screen_effect_set_value(arguments[0].unsigned_short_value, real_argument))
+void code_000b2a40(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_short_word_real_real_real const *arguments;
+
+	arguments = (struct hs_arguments_short_word_real_real_real const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value2 = arguments->value2;
+		double value3 = arguments->value3;
+		double value4 = arguments->value4;
+
+		rasterizer_screen_effect_set_convolution(arguments->value0, arguments->value1, value2, value3, value4);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+void code_000b2aa0(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_real_real_real_real_boolean_real const *arguments;
+
+	arguments = (struct hs_arguments_real_real_real_real_boolean_real const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value1 = arguments->value1;
+		double value2 = arguments->value2;
+		double value3 = arguments->value3;
+		double value5 = arguments->value5;
+
+		rasterizer_screen_effect_set_filter(arguments->value0, value1, value2, value3, arguments->value4, value5);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+void code_000b2b00(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_arguments_real_real_real const *arguments;
+
+	arguments = (struct hs_arguments_real_real_real const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double value1 = arguments->value1;
+		double value2 = arguments->value2;
+
+		rasterizer_screen_effect_set_filter_desaturation_tint(arguments->value0, value1, value2);
+		hs_return(thread_index, 0);
+	}
+
+	return;
+}
+HS_EVALUATE_VOID_FROM_ARGUMENTS_WITH_REAL(
+	code_000b2b50,
+	union hs_evaluation_argument,
+	1,
+	rasterizer_screen_effect_set_video(arguments[0].unsigned_short_value, real_argument))
+
+void code_000ad710(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	struct hs_object_list_get_element_arguments *arguments;
+
+	arguments = hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		hs_return(
+			thread_index,
+			hs_object_list_get_element(arguments->object_list_index, arguments->element_index));
+	}
+
+	return;
+}
+
+HS_EVALUATE_REAL_FROM_LONG(code_000ad9c0, hs_sound_get_gain)
+HS_EVALUATE_REAL_FROM_LONG(code_000aea60, unit_scripting_get_health)
+HS_EVALUATE_REAL_FROM_LONG(code_000aeaa0, unit_scripting_get_shield)
+HS_EVALUATE_REAL_FROM_LONG(code_000aee10, device_get_power)
+HS_EVALUATE_REAL_FROM_LONG(code_000aeea0, device_get_position)
+HS_EVALUATE_REAL_FROM_UNSIGNED_SHORT(code_000aef20, device_group_get_value)
+HS_EVALUATE_REAL_FROM_LONG(code_000b06f0, ai_scripting_living_fraction)
+HS_EVALUATE_REAL_FROM_LONG(code_000b0730, ai_scripting_strength)
+HS_EVALUATE_VOID_LONG(code_000af910, ai_scripting_maneuver)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000af950, ai_scripting_maneuver_enable)
+HS_EVALUATE_VOID_LONG_LONG(code_000af990, ai_scripting_migrate)
+HS_EVALUATE_VOID_LONG_LONG_LONG(code_000af9d0, ai_scripting_migrate_and_speak)
+HS_EVALUATE_VOID_LONG_LONG(code_000afa10, ai_scripting_migrate_by_unit)
+HS_EVALUATE_VOID_SHORT_SHORT(code_000afa50, ai_scripting_allegiance)
+HS_EVALUATE_VOID_SHORT_SHORT(code_000afa90, ai_scripting_allegiance_remove)
+HS_EVALUATE_VOID_LONG_LONG_LONG(code_000afad0, ai_scripting_go_to_vehicle)
+HS_EVALUATE_VOID_LONG_LONG_LONG(code_000afb10, ai_scripting_go_to_vehicle_override)
+HS_EVALUATE_VOID_LONG(code_000afb50, ai_scripting_exit_vehicle)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000afb90, ai_scripting_braindead)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000afbd0, ai_scripting_braindead_by_unit)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000afc10, ai_scripting_ignore)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000afc50, ai_scripting_prefer_target)
+HS_EVALUATE_VOID_LONG(code_000afc90, ai_scripting_teleport_starting_location)
+HS_EVALUATE_VOID_LONG(code_000afcd0, ai_scripting_teleport_starting_location_if_unsupported)
+HS_EVALUATE_VOID_LONG(code_000afd10, ai_scripting_renew)
+HS_EVALUATE_VOID_LONG(code_000afd50, ai_scripting_try_to_fight_nothing)
+HS_EVALUATE_VOID_LONG_LONG(code_000afd90, ai_scripting_try_to_fight)
+HS_EVALUATE_VOID_LONG(code_000afdd0, ai_scripting_try_to_fight_player)
+HS_EVALUATE_VOID_LONG_UNSIGNED_SHORT(code_000afe10, ai_scripting_command_list)
+HS_EVALUATE_VOID_LONG_UNSIGNED_SHORT(code_000afe50, ai_scripting_command_list_by_unit)
+HS_EVALUATE_VOID_LONG(code_000afe90, ai_scripting_command_list_advance)
+HS_EVALUATE_VOID_LONG(code_000afed0, ai_scripting_command_list_advance_by_unit)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000aff10, ai_scripting_force_active)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000aff50, ai_scripting_force_active_by_unit)
+HS_EVALUATE_VOID_LONG_UNSIGNED_SHORT(code_000aff90, ai_scripting_set_return_state)
+HS_EVALUATE_VOID_LONG_UNSIGNED_SHORT(code_000affd0, ai_scripting_set_current_state)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000b0010, ai_scripting_playfight)
+HS_EVALUATE_VOID_LONG_LONG(code_000b0070, ai_scripting_vehicle_encounter)
+HS_EVALUATE_VOID_LONG_UNSIGNED_SHORT(code_000b00f0, ai_scripting_vehicle_enterable_team)
+HS_EVALUATE_VOID_LONG_UNSIGNED_SHORT(code_000b0130, ai_scripting_vehicle_enterable_actor_type)
+HS_EVALUATE_VOID_LONG_LONG(code_000b0170, ai_scripting_vehicle_enterable_actors)
+HS_EVALUATE_VOID_LONG(code_000b01b0, ai_scripting_vehicle_enterable_disable)
+HS_EVALUATE_VOID_LONG_LONG(code_000b01f0, ai_scripting_look_at_object)
+HS_EVALUATE_VOID_LONG(code_000b0230, ai_scripting_stop_looking)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000b0270, ai_scripting_automatic_migration_target)
+HS_EVALUATE_VOID_LONG(code_000b02b0, ai_scripting_follow_target_disable)
+HS_EVALUATE_VOID_LONG(code_000b02f0, ai_scripting_follow_target_players)
+HS_EVALUATE_VOID_LONG_LONG(code_000b0330, ai_scripting_follow_target_unit)
+HS_EVALUATE_VOID_LONG_LONG(code_000b0370, ai_scripting_follow_target_ai)
+HS_EVALUATE_VOID_UNSIGNED_SHORT(code_000b03f0, ai_scripting_conversation_stop)
+HS_EVALUATE_VOID_UNSIGNED_SHORT(code_000b0430, ai_scripting_conversation_advance)
+HS_EVALUATE_VOID_LONG_LONG(code_000b0470, ai_scripting_link_activation)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000b04b0, ai_scripting_berserk)
+HS_EVALUATE_VOID_LONG_UNSIGNED_SHORT(code_000b04f0, ai_scripting_set_team)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000b0530, ai_scripting_allow_charge)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000b0570, ai_scripting_allow_dormant)
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b09e0, struct hs_arguments_boolean, (director_script_camera(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b0a20, struct hs_arguments_short_word, (scripted_camera_set_absolute(arguments->value0, arguments->value1)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b0a60, struct hs_arguments_word_word_long, (scripted_camera_set(arguments->value0, arguments->value1, arguments->value2)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b0aa0, struct hs_arguments_long_long, (scripted_camera_set_animation(arguments->value0, arguments->value1)))
+HS_EVALUATE_VOID_LONG(code_000b0ae0, scripted_camera_set_first_person)
+HS_EVALUATE_VOID_LONG(code_000b0b20, scripted_camera_set_dead)
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b0bd0, struct hs_arguments_real, (game_time_set_speed(arguments->value)))
+HS_EVALUATE_VOID_STRING(code_000b0c10, game_set_game_variant_from_name)
+HS_EVALUATE_VOID_BOOLEAN(code_000b0cf0, player_input_enable)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b0da0, player_control_action_test_jump)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b0dd0, player_control_action_test_primary_trigger)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b0e00, player_control_action_test_grenade_trigger)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b0e30, player_control_action_test_zoom)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b0e60, player_control_action_test_action)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b0e90, player_control_action_test_accept)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b0ec0, player_control_action_test_back)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b0ef0, player_control_action_test_look_relative_up)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b0f20, player_control_action_test_look_relative_down)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b0f50, player_control_action_test_look_relative_left)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b0f80, player_control_action_test_look_relative_right)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b0fb0, player_control_action_test_look_relative_all_directions)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b0fe0, player_control_action_test_move_relative_all_directions)
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b1010, struct hs_arguments_long_word_boolean, (player_add_equipment(arguments->value0, arguments->value1, arguments->value2)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b1050, struct hs_arguments_short_word, (debug_player_teleport(arguments->value0, arguments->value1)))
+HS_EVALUATE_VOID_STRING(code_000b10b0, main_set_map_name)
+HS_EVALUATE_VOID_STRING(code_000b10f0, main_set_multiplayer_map_name)
+HS_EVALUATE_VOID_UNSIGNED_SHORT(code_000b1130, main_set_difficulty)
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b11b0, struct hs_arguments_word, (scenario_switch_structure_bsp(arguments->value)))
+HS_EVALUATE_VOID_STRING(code_000b1170, main_crash)
+HS_EVALUATE_VOID_STRING(code_000b12e0, debug_dump_memory_for_file)
+HS_EVALUATE_VOID_STRING(code_000b1360, profile_dump_to_file)
+HS_EVALUATE_VOID_STRING(code_000b13a0, profile_sections_activate)
+HS_EVALUATE_VOID_STRING(code_000b13e0, profile_sections_deactivate)
+HS_EVALUATE_VOID_STRING(code_000b1420, profile_graph_toggle)
+HS_EVALUATE_VOID_BOOLEAN(code_000b1460, debug_pvs)
+HS_EVALUATE_VOID_LONG_STRING(code_000b1540, ai_debug_vocalize)
+HS_EVALUATE_VOID_LONG(code_000b1580, ai_debug_teleport_to)
+HS_EVALUATE_VOID_STRING(code_000b15c0, ai_debug_speak)
+HS_EVALUATE_VOID_STRING(code_000b1600, ai_debug_speak_list)
+HS_EVALUATE_VOID_BOOLEAN(code_000b1760, cinematic_show_letterbox)
+HS_EVALUATE_VOID_UNSIGNED_SHORT(code_000b17a0, cinematic_set_title)
+HS_EVALUATE_VOID_BOOLEAN(code_000b1820, cinematic_suppress_bsp_object_creation)
+HS_EVALUATE_VOID_STRING(code_000b1a90, main_load_core_name)
+HS_EVALUATE_VOID_STRING(code_000b1ad0, main_load_core_name_at_startup)
+HS_EVALUATE_VOID_STRING(code_000b1b30, main_save_core_name)
+HS_EVALUATE_VOID_UNSIGNED_SHORT(code_000b1b70, main_skip)
+HS_EVALUATE_VOID_LONG(code_000b1c60, scripted_sound_stop)
+HS_EVALUATE_VOID_LONG(code_000b1ca0, scripted_foley_predict)
+HS_EVALUATE_VOID_LONG(code_000b1d20, scripted_looping_sound_stop)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000b1da0, scripted_looping_sound_set_alternate)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000b1de0, debug_sound_classes_enable)
+HS_EVALUATE_VOID_BOOLEAN(code_000b1ef0, sound_enable)
+HS_EVALUATE_VOID_LONG_BOOLEAN(code_000b1f30, vehicle_hover)
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2010, struct hs_arguments_boolean, (scripted_hud_set_flashing_state(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b21b0, struct hs_arguments_long_word, (hud_unit_deactivate_nav_point_with_flag(arguments->value0, arguments->value1)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b21f0, struct hs_arguments_long_long, (hud_unit_deactivate_nav_point_with_object(arguments->value0, arguments->value1)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2230, struct hs_arguments_short_word, (hud_deactivate_team_nav_point_with_flag(arguments->value0, arguments->value1)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2270, struct hs_arguments_short_long, (hud_deactivate_team_nav_point_with_object(arguments->value0, arguments->value1)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b22d0, struct hs_arguments_boolean, (errors_overflow_suppression_enable(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2450, struct hs_arguments_real, (scripted_player_effect_stop(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2490, struct hs_arguments_boolean, (scripted_hud_show_health(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b24d0, struct hs_arguments_boolean, (scripted_hud_blink_health(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2510, struct hs_arguments_boolean, (scripted_hud_show_shield(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2550, struct hs_arguments_boolean, (scripted_hud_blink_shield(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2590, struct hs_arguments_boolean, (scripted_hud_show_motion_sensor(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b25d0, struct hs_arguments_boolean, (scripted_hud_blink_motion_sensor(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2610, struct hs_arguments_boolean, (scripted_hud_show_crosshair(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2670, struct hs_arguments_word, (scripted_hud_set_state_message(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b26b0, struct hs_arguments_word, (scripted_hud_set_objective(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b26f0, struct hs_arguments_short_word, (scripted_hud_set_timer_time(arguments->value0, arguments->value1)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2730, struct hs_arguments_short_word, (scripted_hud_set_timer_warning_cutoff(arguments->value0, arguments->value1)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2770, struct hs_arguments_word_word_word, (scripted_hud_set_timer_position(arguments->value0, arguments->value1, arguments->value2)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b27c0, struct hs_arguments_boolean, (scripted_hud_show_timer(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2800, struct hs_arguments_boolean, (scripted_hud_pause_timer(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2870, struct hs_arguments_boolean, (scripted_hud_time_code_show(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b28b0, struct hs_arguments_boolean, (scripted_hud_time_code_start(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2a00, struct hs_arguments_boolean, (rasterizer_screen_effect_start(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2bb0, struct hs_arguments_real, (rasterizer_set_near_clip_distance(arguments->value)))
+HS_EVALUATE_VOID_FROM_ARGUMENTS(code_000b2c70, struct hs_arguments_boolean, (player0_look_invert_pitch(arguments->value)))
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b2cb0, player0_look_pitch_is_inverted)
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000b2ce0, player0_joystick_set_is_normal)
+HS_EVALUATE_VOID_BOOLEAN(code_000b2d10, ui_widget_debug_show_path)
+HS_EVALUATE_VOID_UNSIGNED_SHORT(code_000b2d50, display_scenario_help)
+HS_EVALUATE_VOID_STRING(code_000b2db0, xbox_set_machine_name)
+HS_EVALUATE_VOID_STRING(code_000b43b0, hs_help)
+HS_EVALUATE_RETURN_BOOLEAN(code_000ad290, struct hs_arguments_boolean, (hs_not(arguments->value)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000ad380, struct hs_arguments_short_long, (scenario_trigger_volume_test_object(arguments->value0, arguments->value1)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000ad3d0, struct hs_arguments_short_long, (hs_trigger_volume_test_objects_any(arguments->value0, arguments->value1)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000ad420, struct hs_arguments_short_long, (hs_trigger_volume_test_objects_all(arguments->value0, arguments->value1)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000adb10, struct hs_arguments_long_word, (recorded_animation_play(arguments->value0, arguments->value1)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000adb60, struct hs_arguments_long_word, (recorded_animation_play_and_delete(arguments->value0, arguments->value1)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000adbb0, struct hs_arguments_long_word, (recorded_animation_play_and_hover(arguments->value0, arguments->value1)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000ae070, struct hs_arguments_boolean, (lights_enable(arguments->value)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000ae3b0, struct hs_arguments_long_long_long_boolean, (unit_start_user_animation(arguments->value0, arguments->value1, arguments->value2, arguments->value3)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000ae400, struct hs_arguments_long_long_long_boolean, (unit_scripting_start_user_animation_list(arguments->value0, arguments->value1, arguments->value2, arguments->value3)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000ae450, struct hs_arguments_long_long_long_boolean_word, (unit_custom_animation_at_frame(arguments->value0, arguments->value1, arguments->value2, arguments->value3, arguments->value4)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000ae4b0, struct hs_arguments_long, (unit_is_playing_custom_animation(arguments->value)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000ae600, struct hs_arguments_long_long_long, (unit_scripting_vehicle_test_seat_list(arguments->value0, arguments->value1, arguments->value2)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000ae650, struct hs_arguments_long_long_long, (unit_scripting_vehicle_test_seat(arguments->value0, arguments->value1, arguments->value2)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000aeb30, struct hs_arguments_long_long, (unit_scripting_has_weapon(arguments->value0, arguments->value1)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000aeb80, struct hs_arguments_long_long, (unit_scripting_has_weapon_readied(arguments->value0, arguments->value1)))
+HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(code_000aec90, unit_solo_player_integrated_night_vision_is_active)
+HS_EVALUATE_RETURN_BOOLEAN(code_000aed40, struct hs_arguments_long, (unit_get_current_flashlight_state(arguments->value)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000b05b0, struct hs_arguments_long, (ai_scripting_is_attacking(arguments->value)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000b08a0, struct hs_arguments_word, (ai_scripting_conversation(arguments->value)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000b0990, struct hs_arguments_short_word, (ai_scripting_allegiance_broken(arguments->value0, arguments->value1)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000b0d30, struct hs_arguments_boolean, (scripted_player_control_set_camera_control(arguments->value)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000b1f70, struct hs_arguments_boolean, (scripted_show_hud(arguments->value)))
+HS_EVALUATE_RETURN_BOOLEAN(code_000b1fc0, struct hs_arguments_boolean, (scripted_show_hud_help_text(arguments->value)))
+
+void code_000b3ee0(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	bss_00453468[0x10] = TRUE;
+	hs_return(thread_index, 0);
+	return;
+}
+
+void code_000b3f00(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	union hs_short_result result;
+	union hs_evaluation_argument const *arguments;
+	word upper_bound;
+	short lower_bound;
+	result.value = 0;
+	arguments = (union hs_evaluation_argument const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		upper_bound = arguments[1].unsigned_short_value;
+		lower_bound = arguments[0].short_value;
+		result.short_value = seed_random_range(get_global_random_seed_address(), lower_bound, upper_bound);
+		hs_return(thread_index, result.value);
+	}
+	return;
+}
+
+void code_000b3f50(
+	short function_index,
+	long thread_index,
+	boolean initialize)
+{
+	union hs_real_value result;
+	union hs_evaluation_argument const *arguments;
+	real upper_bound;
+	real lower_bound;
+
+	arguments = (union hs_evaluation_argument const *)hs_macro_function_evaluate(function_index, thread_index, initialize);
+	if (arguments)
+	{
+		double upper = arguments[1].real_value;
+
+		upper_bound = (real)upper;
+		lower_bound = arguments[0].real_value;
+		result.real_value = real_seed_random_range(get_global_random_seed_address(), lower_bound, upper_bound);
+		hs_return(thread_index, result.long_value);
+	}
+	return;
+}
+
+boolean hs_scenario_postprocess(
+	boolean restore_syntax_data)
+{
+	boolean success = TRUE;
+	char const *error_source;
+	char const *error_message;
+	struct data_array *saved_syntax_data;
+	struct scenario *scenario;
+	boolean recompile;
+
+	scenario = global_scenario_get();
+	saved_syntax_data = hs_syntax_data;
+	code_000b2f00();
+	recompile = scenario->hs_scripts.count == 0 && scenario->hs_source_files.count>0;
+	hs_syntax_data = (struct data_array *)scenario->hs_syntax_data.address;
+	hs_syntax_data->data = (char *)hs_syntax_data+sizeof(struct data_array);
+	if (!recompile && hs_compile_postprocess(&error_message, &error_source))
+	{
+		if (scenario->hs_string_constants.size<0x400)
+		{
+			success = tag_data_resize(
+				&scenario->hs_string_constants,
+				scenario->hs_string_constants.size + 0x400);
+		}
+	}
+	else
+	{
+		if (recompile)
+			error(0, "recompiling scripts after scenarios were merged.");
+		else if (!error_message)
+			error(0, "an unspecified error occurred loading scripts");
+		else if (!error_source)
+			error(0, "%s", error_message);
+		else
+			error(0, "%s: %s", error_source, error_message);
+
+		if (code_000b3d10() && hs_compile_postprocess(&error_message, &error_source))
+		{
+			success = TRUE;
+		}
+		else
+		{
+			data_delete_all(hs_syntax_data);
+			if (!tag_block_resize(&scenario->hs_globals, 0) ||
+				!tag_block_resize(&scenario->hs_scripts, 0) ||
+				!tag_data_resize(&global_scenario_get()->hs_string_constants, 0x400))
+			{
+				error(0, "couldn't reset scripts.");
+			}
+			success = FALSE;
+		}
+	}
+	if (restore_syntax_data)
+		hs_syntax_data = saved_syntax_data;
+
+	return success;
+}
+
+boolean hs_compile_and_evaluate(
+	char const *expression)
+{
+	boolean success = FALSE;
+	char const *error_message;
+	char const *error_source;
+	char *character;
+	char buffer[1024];
+	char expanded[1024];
+
+	csstrncpy(buffer, expression, sizeof(buffer));
+	buffer[sizeof(buffer)-1] = 0;
+	if (strchr(buffer, ';'))
+		buffer[0] = 0;
+	character = buffer;
+	if (buffer[0] != 0)
+	{
+		do
+		{
+			if (!isspace(*character))
+			{
+			short type;
+			long expression_index;
+			char const *source;
+
+			type = 0;
+			source = expression;
+			hs_compile_initialize(FALSE);
+			if (buffer[0] != '(')
+			{
+				char *space;
+
+				space = strchr(buffer, ' ');
+				if (space)
+					*space = 0;
+				if (hs_find_global_by_name(buffer) == NONE)
+					type = 1;
+				else if (space)
+					type = 2;
+				if (space)
+					*space = ' ';
+			}
+			switch (type)
+			{
+			case 0:
+				break;
+			case 1:
+				sprintf(expanded, "(%s)", buffer);
+				source = expanded;
+				break;
+			case 2:
+				sprintf(expanded, "(set %s)", buffer);
+				source = expanded;
+				break;
+			default:
+				display_assert(NULL, "c:\\halo\\SOURCE\\hs\\hs.c", 1287, TRUE);
+				system_exit(-1);
+				break;
+			}
+			expression_index = hs_compile_expression(csstrlen(source), source, &error_source, &error_message);
+			if (expression_index != NONE)
+			{
+				success = TRUE;
+				hs_runtime_evaluate(expression_index);
+			}
+			else if (error_source)
+			{
+				if (error_message)
+				{
+					char *newline;
+
+					newline = strchr(error_message, '\n');
+					if (newline)
+						*newline = 0;
+				}
+				error(2, "%s: %s", error_source, error_message);
+			}
+			hs_compile_dispose();
+				break;
+			}
+			character++;
+		} while (*character != 0);
+	}
+	if (bss_00453468[0x10])
+	{
+		if (code_000b3b60())
+		{
+			struct scenario *scenario;
+
+			code_000b3d10();
+			if (hs_syntax_data)
+			{
+				hs_node_gc();
+				if (bss_00453468[0x11])
+				{
+					data_make_invalid(hs_syntax_data);
+					data_dispose(hs_syntax_data);
+					bss_00453468[0x11] = FALSE;
+				}
+				hs_syntax_data = NULL;
+			}
+			hs_runtime_dispose_from_old_map();
+			object_lists_dispose_from_old_map();
+			scenario = global_scenario_index != NONE ? global_scenario_get() : NULL;
+			code_000b2f00();
+			if (scenario && scenario->hs_syntax_data.size)
+				hs_scenario_postprocess(FALSE);
+			object_lists_initialize_for_new_map();
+			hs_runtime_initialize_for_new_map();
+		}
+		bss_00453468[0x10] = FALSE;
+	}
+
+	return success;
+}
 
 /* ---------- private code */
