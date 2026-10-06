@@ -425,7 +425,6 @@ void cinematic_render(
 
 			{
 				real_argb_color text_color;
-				long shadow_alpha;
 
 				pixel32_to_real_argb_color(
 					title->foreground_color,
@@ -448,15 +447,13 @@ void cinematic_render(
 					title->text_flags,
 					&text_color);
 
-				shadow_alpha = PIN(
-					fast_ftol(
-						(real)(long)(byte)(title->shadow_color >> 24) *
-						fade_amount),
-					0,
-					255);
-
 				rasterizer_text_set_shadow_color(
-					((pixel32)shadow_alpha << 24) |
+					((pixel32)PIN(
+						fast_ftol(
+							(real)(long)(byte)(title->shadow_color >> 24) *
+							fade_amount),
+						0,
+						255) << 24) |
 					(title->shadow_color & 0x00FFFFFF));
 
 				rasterizer_draw_unicode_string(
