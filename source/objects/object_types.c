@@ -471,10 +471,7 @@ struct object_type_definition *object_type_definitions[NUMBER_OF_OBJECT_TYPES] =
 };
 
 struct object_type_definition *first_object_type_definition;
-/* VC7 otherwise emits this tentative definition as a common symbol. */
-#pragma bss_seg(".bss")
 static word processed_bsp_flags;
-#pragma bss_seg()
 
 typedef char verify_object_type_definition_size[
 	sizeof(struct object_type_definition) == 0xA0 ? 1 : -1];

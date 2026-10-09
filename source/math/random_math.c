@@ -92,9 +92,7 @@ direction3d_from_table(
 
 /* ---------- globals */
 
-#pragma bss_seg(".bss")
 static struct random_math_globals random_math_globals;
-#pragma bss_seg()
 
 /* ---------- public code */
 
