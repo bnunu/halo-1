@@ -686,10 +686,8 @@ struct rasterizer_debug_options rasterizer_debug_options =
 	{ 0 }, /* pad8A[2] */
 };
 /* No PDB name survives for this target-owned BSS symbol. */
-#pragma bss_seg(".bss")
 static long bss_004662ec;
-real_argb_color *global_rasterizer_model_ambient_reflection_tint;
-#pragma bss_seg()
+real_argb_color *global_rasterizer_model_ambient_reflection_tint = NULL;
 
 /* ---------- public code */
 

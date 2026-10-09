@@ -45,9 +45,7 @@ enum
 
 /* ---------- globals */
 
-#pragma bss_seg(".bss")
-boolean debug_material_effects;
-#pragma bss_seg()
+boolean debug_material_effects = FALSE;
 
 /* ---------- public code */
 
