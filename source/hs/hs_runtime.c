@@ -266,7 +266,7 @@ symbols in this file:
 #include "ai/ai_script.h"
 #include "hs/hs.h"
 #include "hs/hs_library_internal.h"
-#include "hs/hs_library_internal_runtime.h"
+/* Empty reconstructed header removed; no declarations to include. */
 #include "hs/object_lists.h"
 #include "hs/hs_scenario_definitions.h"
 #include "math/real_math.h"

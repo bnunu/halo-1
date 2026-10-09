@@ -155,7 +155,7 @@ symbols in this file:
 #include "rasterizer/common/rasterizer_common.h"
 #include "rasterizer/rasterizer_geometry.h"
 #include "rasterizer/rasterizer_lights.h"
-#include "rasterizer/rasterizer_memory_pool.h"
+/* Empty reconstructed header removed; no declarations to include. */
 #include "rasterizer/rasterizer_transparent_geometry.h"
 #include "shaders/shader_definitions.h"
 #include "shaders/shaders.h"

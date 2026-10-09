@@ -68,11 +68,6 @@ enum
 	_xbox_texture_mode_cube_map = 3
 };
 
-enum
-{
-	NUMBER_OF_PIXEL_SHADER_STAGES = 8
-};
-
 /* ---------- macros */
 
 #define SHADER_STAGE_REGISTER_MASK 0x0f

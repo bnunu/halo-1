@@ -180,11 +180,6 @@ enum
 
 enum
 {
-	NUMBER_OF_PIXEL_SHADER_STAGES = 8,
-};
-
-enum
-{
 	_fog_definition_atmosphere_dominant_bit = 1,
 };
 

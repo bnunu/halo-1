@@ -413,7 +413,7 @@ symbols in this file:
 #include "ai/ai_script.h"
 #include "hs/hs.h"
 #include "hs/hs_library_internal.h"
-#include "hs/hs_library_internal_compile.h"
+/* Empty reconstructed header removed; no declarations to include. */
 #include "hs/hs_scenario_definitions.h"
 #include "interface/hud_definitions.h"
 #include "interface/interface.h"
