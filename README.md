@@ -18,7 +18,7 @@ This is a work-in-progress (99.5% byte matching) decompilation of Halo: Combat E
 
 ## Discord: https://discord.gg/DQRgPUq6B8
 
-## Android, PC, & Linux port: https://github.com/cybersecurity/halo-ce-universal
+## Android, PC, & Linux port: https://github.com/OpenCommunityEdition/OpenCE
 
 ## 128 player limit build: https://github.com/bnunu/halo-ce-universal
 
