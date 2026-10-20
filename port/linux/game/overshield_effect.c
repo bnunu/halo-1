@@ -10,8 +10,8 @@ Overshield, display.overshield_effect; off, the game's own):
   a full shield, or 3 seconds when the shield was down (the charge's from
   nothing); from any other shield, 2. Meanwhile the shield's own flares
   (its hits, its recharge) are not drawn over it.
-- The flare's energy moves at 30% of its speed, in the overshield's own
-  color (the powerup's).
+- The flare's energy moves at 30% of its speed. Above 200% shield it is
+  green; the remaining layer through 200% is reddish-pink.
 - On the first-person arms (with display.viewmodel_shield,
   viewmodel_shield.c) it comes up as the rise passes them, and stays.
 - A hit on it plays what a hit on an Elite's shield plays (the hitting
@@ -73,8 +73,9 @@ how much of it */
 definition's flags (its enum is effects.c's own) */
 #define EFFECT_MUST_BE_DETERMINISTIC_BIT 1
 
-/* the overshield's color: the powerup's */
+/* Remaining overshield layers: inner reddish-pink, outer green. */
 static real_rgb_color const overshield_effect_rgb = { 0.992f, 0.306f, 0.455f }; /* (253, 78, 116) */
+static real_rgb_color const overshield_effect_outer_rgb = { 0.306f, 0.992f, 0.455f }; /* (78, 253, 116) */
 
 /* the plasma shader's fields after its header (rasterizer_xbox_plasma_energy.c's) */
 struct overshield_effect_plasma
@@ -89,6 +90,7 @@ struct overshield_effect
 	real start; /* the game's seconds (render_interpolation_game_time_sec) */
 	real rise;
 	real last_seen;
+	real shield_vitality; /* current layer, shared by body and arms */
 	/* the values the unit's modifier shader is drawn with, its intensity's
 	full */
 	real body_values[4];
@@ -278,6 +280,7 @@ static struct overshield_effect *overshield_effect_get(
 			effect->start = now - MIN(shield - 1.f, effect->rise);
 	}
 	effect->last_seen = now;
+	effect->shield_vitality = unit->object.shield_vitality;
 	{
 		real t = PIN((now - effect->start) / effect->rise, 0.f, 1.f);
 
@@ -448,19 +451,32 @@ boolean overshield_effect_color(
 	real peak;
 	real perpendicular_brightness;
 	real parallel_brightness;
+	real_rgb_color const *color = &overshield_effect_rgb;
+	short index;
 
-	if (!overshield_effect_draw(values, &energy_speed, &inverse_softness, &height))
+	if (!overshield_effect_enabled() || !overshield_effect_draw(values, &energy_speed, &inverse_softness, &height))
 		return FALSE;
-	/* Keep the shader's brightness while using the powerup's hue. */
-	peak = MAX(overshield_effect_rgb.red, MAX(overshield_effect_rgb.green, overshield_effect_rgb.blue));
+	for (index = 0; index < OVERSHIELD_EFFECT_MAXIMUM; index++)
+	{
+		struct overshield_effect const *effect = &overshield_effects[index];
+
+		if (effect->unit_index != NONE && (values == effect->body_values || values == effect->arms_values))
+		{
+			if (effect->shield_vitality > 2.f)
+				color = &overshield_effect_outer_rgb;
+			break;
+		}
+	}
+	/* Keep the shader's brightness while using the overshield effect's hue. */
+	peak = MAX(color->red, MAX(color->green, color->blue));
 	perpendicular_brightness = MAX(perpendicular->red, MAX(perpendicular->green, perpendicular->blue));
 	parallel_brightness = MAX(parallel->red, MAX(parallel->green, parallel->blue));
-	perpendicular->red = overshield_effect_rgb.red / peak * perpendicular_brightness;
-	perpendicular->green = overshield_effect_rgb.green / peak * perpendicular_brightness;
-	perpendicular->blue = overshield_effect_rgb.blue / peak * perpendicular_brightness;
-	parallel->red = overshield_effect_rgb.red / peak * parallel_brightness;
-	parallel->green = overshield_effect_rgb.green / peak * parallel_brightness;
-	parallel->blue = overshield_effect_rgb.blue / peak * parallel_brightness;
+	perpendicular->red = color->red / peak * perpendicular_brightness;
+	perpendicular->green = color->green / peak * perpendicular_brightness;
+	perpendicular->blue = color->blue / peak * perpendicular_brightness;
+	parallel->red = color->red / peak * parallel_brightness;
+	parallel->green = color->green / peak * parallel_brightness;
+	parallel->blue = color->blue / peak * parallel_brightness;
 	return TRUE;
 }
 
