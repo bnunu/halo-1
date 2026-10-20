@@ -200,5 +200,63 @@ int main(int argc, char **argv)
 		CHECK(!overshield_effect_draw(effect.modifier_animation.values, &speed, &softness, &height),
 			"nor with display.overshield_effect off");
 	}
+	CASE("rasterizer-limit") {
+		struct render_model_effect effect;
+		real maximum = VIEWMODEL_SHIELD_STAND_OFF * 0.2f * half_tan_60;
+		setting = 1;
+		units[0].object.outgoing_function_values[0] = 2.f;
+		effect = drawn(0, 0);
+		CHECK(fabsf(plasma_offset(effect.modifier_animation.values, 0.5f, 1.f, 1) - maximum) < 1e-7f,
+			"the final displacement is capped after a function value above one");
+		CHECK(fabsf(plasma_offset(effect.modifier_animation.values, 0.5f, 2.f, 1) - maximum) < 1e-7f,
+			"the exponent cannot multiply the displacement past the cap");
+		units[0].object.outgoing_function_values[0] = 0.25f;
+		effect = drawn(0, 0);
+		CHECK(fabsf(plasma_offset(effect.modifier_animation.values, maximum * 2.f, 1.f, 1) -
+			maximum * 0.5f) < 1e-7f, "a final displacement below the cap retains its authored size");
+		CHECK(plasma_offset(effect.modifier_animation.values, 0.5f, 1.f, 0) == 0.f,
+			"an absent offset source keeps the stock zero displacement");
+	}
+	CASE("rasterizer-stock") {
+		real body[4] = {2.f, 0.f, 0.f, 0.f};
+		setting = 1;
+		(void)drawn(0, 0);
+		CHECK(plasma_offset(body, 0.5f, 2.f, 1) == 2.f, "body and weapon plasma keep their final displacement");
+		CHECK(plasma_offset(NULL, 0.5f, 2.f, 1) == 0.f, "no runtime values keep the stock displacement");
+		setting = 0;
+		CHECK(plasma_offset(body, 0.5f, 2.f, 1) == 2.f, "disabled, the stock calculation is unchanged");
+	}
+	CASE("toggle") {
+		struct render_model_effect effect;
+		setting = 1;
+		effect = drawn(0, 0);
+		CHECK(effect.modifier_shader == &plasma, "enabled");
+		setting = 0;
+		effect = drawn(0, 0);
+		CHECK(!effect.modifier_shader && !effect.modifier_animation.values, "disabling stops submission");
+		units[0].object.outgoing_function_values[1] = 0.75f;
+		setting = 1;
+		effect = drawn(0, 0);
+		CHECK(effect.modifier_animation.values[1] == 0.75f, "reenabling copies the current values");
+	}
+	CASE("replace-player") {
+		struct render_model_effect previous, current;
+		real speed, softness, height;
+		setting = 1;
+		overshield_effects[0].unit_index = 0;
+		overshield_effects[0].progress = 1.f;
+		overshield_unit[0] = &overshield_effects[0];
+		previous = drawn(0, 0);
+		CHECK(overshield_effect_draw(previous.modifier_animation.values, &speed, &softness, &height),
+			"the previous player's overshield owns this view's values");
+		units[1].object.outgoing_function_values[1] = 0.25f;
+		arms_at(0.4f);
+		current = drawn(0, 1);
+		CHECK(current.modifier_animation.values[1] == 0.25f, "a replacement unit supplies its own values");
+		CHECK(!overshield_effect_draw(current.modifier_animation.values, &speed, &softness, &height),
+			"reusing a local slot cannot retain the previous unit's overshield");
+		CHECK(fabsf(viewmodel_shield_offset_amount(current.modifier_animation.values, 0.5f) -
+			VIEWMODEL_SHIELD_STAND_OFF * 0.4f * half_tan_60) < 1e-6f, "the replacement's pose supplies its distance");
+	}
 	return 0;
 }

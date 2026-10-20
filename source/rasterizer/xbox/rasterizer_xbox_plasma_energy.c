@@ -156,7 +156,6 @@ void rasterizer_plasma_energy_draw(
 	real_rgb_color const *tint;
 	real intensity;
 	real offset;
-	real offset_amount; /* port: viewmodel_shield.c */
 	real primary_time;
 	real secondary_time;
 	real primary_scale;
@@ -184,8 +183,6 @@ void rasterizer_plasma_energy_draw(
 		intensity = 1.0f;
 		offset = 0.0f;
 		runtime = group->runtime_parameters;
-		/* port: the arms' flare alone, known by its copied values (viewmodel_shield.c) */
-		offset_amount = viewmodel_shield_offset_amount(runtime ? runtime->exponents : NULL, plasma->offset_amount);
 		if (runtime)
 		{
 			if (runtime->colors)
@@ -205,7 +202,10 @@ void rasterizer_plasma_energy_draw(
 				if (source >= 1 && source <= 4)
 					offset = (real)pow(
 						(double)runtime->exponents[source - 1],
-						(double)plasma->offset_exponent) * offset_amount;
+						(double)plasma->offset_exponent) * plasma->offset_amount;
+				/* port: cap the final displacement after the authored function
+				and exponent; only the arms' copied values identify this draw. */
+				offset = viewmodel_shield_offset_amount(runtime->exponents, offset);
 			}
 		}
 
