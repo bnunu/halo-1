@@ -535,7 +535,11 @@ added to `bans.txt` beside `debug.txt` (a line each, as in `cheaters.txt`,
 with `ip=` and `hwid=`): the host refuses a machine joining whose address or
 hardware id is in it (a line taken out unbans). Both are as the player's
 machine tells them: anyone with administrator or root access can change
-them, and players behind one address share it. The console's `kick <player
+them, and players behind one address share it. An internet play peer the
+tunnel reaches over IPv6 is known by its /64, the network its router hands
+out, in which it picks its addresses at will: `ip=2001:db8:1:2::/64`
+(`p2p_peer_endpoint_text`), and for the votes a stand-in address in
+240.0.0.0/4 made from it (`p2p_peer_endpoint_address`). The console's `kick <player
 name>` drops a player as `ban` does (every machine told), but adds no line
 and keeps no address out: the player may join again at once. Besides
 `bans.txt`, the host keeps out a machine dropped for cheating or banned for

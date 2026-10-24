@@ -388,3 +388,91 @@ posix_ulong posix_resolve_ipv4(const char *host)
 	freeaddrinfo(results);
 	return address;
 }
+
+/* ---------- IPv6 (internet play's tunnel) */
+
+int posix_socket_udp6(unsigned short port, unsigned short *bound_port)
+{
+	struct sockaddr_in6 address;
+	int length = sizeof(address);
+	DWORD only = 1;
+	int result = posix_socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+
+	if (result < 0)
+		return -1;
+	memset(&address, 0, sizeof(address));
+	address.sin6_family = AF_INET6;
+	address.sin6_port = port;
+	address.sin6_addr = in6addr_any;
+	/* (the IPv4 tunnel has its own socket, on the same port) */
+	if (setsockopt((SOCKET)result, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&only, sizeof(only)) == SOCKET_ERROR ||
+		bind((SOCKET)result, (struct sockaddr *)&address, sizeof(address)) == SOCKET_ERROR ||
+		getsockname((SOCKET)result, (struct sockaddr *)&address, &length) == SOCKET_ERROR ||
+		posix_socket_set_nonblocking(result, 1) < 0)
+	{
+		fail();
+		closesocket((SOCKET)result);
+		return -1;
+	}
+	if (bound_port)
+		*bound_port = address.sin6_port;
+	last_error = 0;
+	return result;
+}
+
+int posix_socket_sendto6(int socket, const void *buffer, int length, const unsigned char *address,
+	unsigned short port)
+{
+	struct sockaddr_in6 to;
+
+	memset(&to, 0, sizeof(to));
+	to.sin6_family = AF_INET6;
+	to.sin6_port = port;
+	memcpy(&to.sin6_addr, address, 16);
+	return posix_socket_sendto(socket, buffer, length, 0, &to, sizeof(to));
+}
+
+int posix_socket_recvfrom6(int socket, void *buffer, int length, unsigned char *address, unsigned short *port)
+{
+	struct sockaddr_in6 from;
+	int from_length = sizeof(from);
+	int result;
+
+	memset(&from, 0, sizeof(from));
+	result = posix_socket_recvfrom(socket, buffer, length, 0, &from, &from_length);
+	if (result >= 0)
+	{
+		memcpy(address, &from.sin6_addr, 16);
+		*port = from.sin6_port;
+	}
+	return result;
+}
+
+int posix_local_ipv6_address(unsigned char *address)
+{
+	/* the address the default route leaves from, as for IPv4: a UDP socket
+	"connected" to an internet address (a documentation one, 2001:db8::1;
+	nothing is sent) has it */
+	static const unsigned char destination[16] = { 0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 };
+	struct sockaddr_in6 route;
+	int length = sizeof(route);
+	int found = 0;
+	SOCKET probe;
+
+	start_winsock();
+	probe = WSASocketW(AF_INET6, SOCK_DGRAM, IPPROTO_UDP, NULL, 0, WSA_FLAG_NO_HANDLE_INHERIT);
+	if (probe == INVALID_SOCKET)
+		return 0;
+	memset(&route, 0, sizeof(route));
+	route.sin6_family = AF_INET6;
+	route.sin6_port = htons(9);
+	memcpy(&route.sin6_addr, destination, 16);
+	if (connect(probe, (struct sockaddr *)&route, sizeof(route)) == 0 &&
+		getsockname(probe, (struct sockaddr *)&route, &length) == 0 && route.sin6_family == AF_INET6)
+	{
+		memcpy(address, &route.sin6_addr, 16);
+		found = 1;
+	}
+	closesocket(probe);
+	return found;
+}

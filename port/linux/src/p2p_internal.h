@@ -23,8 +23,8 @@ enum
 	P2P_KEY_HASH_SIZE = 16,
 	/* an invite's secret */
 	P2P_TOKEN_SIZE = 16,
-	/* the addresses a machine offers to be reached at */
-	P2P_MAXIMUM_CANDIDATES = 4,
+	/* the addresses a machine offers to be reached at (IPv4 and IPv6) */
+	P2P_MAXIMUM_CANDIDATES = 6,
 	/* an invite link's text: "halo://join/", the host's key hash and the
 	token in hexadecimal, and a terminator */
 	P2P_LINK_SIZE = 12 + 2 * (P2P_KEY_HASH_SIZE + P2P_TOKEN_SIZE) + 1,
@@ -67,10 +67,22 @@ extern pthread_mutex_t p2p_lock;
 
 struct p2p_candidate
 {
-	/* network byte order */
+	/* network byte order: an IPv4 address (0 for an IPv6 one) */
 	unsigned long address;
 	unsigned short port;
+	/* nonzero: an IPv6 address, address6 (first byte first), not address.
+	Make a candidate with p2p_candidate_ipv4 or p2p_candidate_ipv6, never
+	field by field */
+	unsigned char ipv6;
+	unsigned char address6[16];
 };
+
+/* ---------- p2p.c: candidates */
+
+void p2p_candidate_ipv4(struct p2p_candidate *candidate, unsigned long address, unsigned short port);
+void p2p_candidate_ipv6(struct p2p_candidate *candidate, const unsigned char *address, unsigned short port);
+/* whether two are the same address and port */
+int p2p_candidate_equal(const struct p2p_candidate *a, const struct p2p_candidate *b);
 
 /* ---------- p2p.c: what the signalling side calls back */
 

@@ -380,6 +380,9 @@ int p2p_webrtc_offered(int index, int peer, const unsigned char *secret, const s
 	{
 		int known;
 
+		/* (a native build's ICE is on its IPv4 tunnel alone) */
+		if (candidates[candidate].ipv6)
+			continue;
 		for (known = 0; known < connection->remote_candidate_count; known++)
 		{
 			if (connection->remote_candidates[known].address == candidates[candidate].address &&
@@ -468,8 +471,8 @@ EMSCRIPTEN_KEEPALIVE void web_p2p_described(int index, const char *text)
 			offset += used;
 			if (a > 255 || b > 255 || c > 255 || d > 255 || !port || port > 65535 || count == P2P_MAXIMUM_CANDIDATES)
 				continue;
-			candidates[count].address = a | b << 8 | c << 16 | d << 24;
-			candidates[count].port = network_short((unsigned short)port);
+			p2p_candidate_ipv4(&candidates[count], a | b << 8 | c << 16 | d << 24,
+				network_short((unsigned short)port));
 			count++;
 		}
 		else if (sscanf(text + offset, " %63[a-zA-Z0-9.-]:%u%n", name, &port, &used) == 2)

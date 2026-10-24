@@ -127,6 +127,7 @@ void p2p_hardware_id_sanitize(char *destination, int size, const char *source);
 void p2p_discord_sanitize(char *destination, int size, const char *source, int name);
 void p2p_discord_identity(char *id, int id_size, char *name, int name_size);
 unsigned long p2p_peer_endpoint_address(unsigned long virtual_address);
+int p2p_peer_endpoint_text(unsigned long virtual_address, char *text, int size);
 /* network_connection.c's */
 boolean network_connection_last_read_was_unreliable(void);
 unsigned long system_milliseconds(void);
@@ -5391,16 +5392,23 @@ unsigned long distributed_machine_real_address(
 }
 
 /* (the host) a client machine's address as text: its real one, for an
-internet play peer's stand-in (p2p.c). Whole, for the host's own CHEATERS_FILE
-and BANS_FILE, which match on it: never for the log (log_address.h) */
+internet play peer's stand-in (p2p.c; an IPv6 peer's /64). Whole, for the
+host's own CHEATERS_FILE and BANS_FILE, which match on it: never for the
+log (log_address.h) */
 static void distributed_address_text(
 	unsigned long address,
 	char *text,
 	long size)
 {
 	/* 100.64.0.0/10: an internet play peer's, by its real address */
-	if ((address & 0xFFC00000) == 0x64400000 && distributed_real_address(address))
-		address = distributed_real_address(address);
+	if ((address & 0xFFC00000) == 0x64400000)
+	{
+		unsigned long network = (address >> 24) | ((address >> 8) & 0xFF00) | ((address << 8) & 0xFF0000) |
+			(address << 24);
+
+		if (p2p_peer_endpoint_text(network, text, (int)size))
+			return;
+	}
 	if (address)
 	{
 		snprintf(text, size, "%lu.%lu.%lu.%lu", (address >> 24) & 255, (address >> 16) & 255, (address >> 8) & 255,

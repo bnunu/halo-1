@@ -590,6 +590,7 @@ the setting for one start of the game. It has priority over the file.
 | `network.join_from_clipboard` | `true` | `HALO_NET_JOIN_FROM_CLIPBOARD` | `true`: when the game comes to the front, it joins the game of an invite link on the clipboard. |
 | `network.tunnel_port` | `0` | `HALO_NET_TUNNEL_PORT` | The UDP port for internet play. `0`: the game selects a port. Refer to "Internet play". |
 | `network.allow_upnp` | `true` | `HALO_NET_ALLOW_UPNP` | `true`: internet play can ask the router to forward its port (UPnP). `false`: the game does not ask. Refer to "Internet play". |
+| `network.ipv6` | `true` | `HALO_NET_IPV6` | `true`: internet play also connects over IPv6 when the computer has a global IPv6 address. `false`: IPv4 only. Refer to "Internet play", "Connection". |
 | `network.public_lobby` | `true` | `HALO_NET_PUBLIC_LOBBY` | `true`: the server browser. Public games are listed, and Join Game > Server Browser shows them. `false`: no games are listed or shown. Refer to "Server browser". |
 | `network.host_public` | `true` | `HALO_NET_HOST_PUBLIC` | `true`: a new game of Create Game > Internet starts as PUBLIC. `false`: it starts as PRIVATE. LISTING in Server Setup changes it for each game. Refer to "Server browser". |
 | `network.coop_friendly_fire` | `"on"` | `HALO_NET_COOP_FRIENDLY_FIRE` | Whether the players of an online co-op game hurt each other: `"off"`, `"on"`, `"shields_only"` or `"explosives_only"`. FRIENDLY FIRE in co-op's Server Setup > Co-op Options writes its choice here. Their AI allies they hurt as `network.coop_ally_friendly_fire` says. |
@@ -1559,6 +1560,33 @@ Some networks give a different port for each destination (for example some
 mobile and company networks). Two machines behind such networks cannot
 connect. To connect, forward `network.tunnel_port` on the router of one of
 the machines.
+
+#### IPv6
+
+A machine with a global IPv6 address (2000::/3, as most home fibre, cable and
+mobile networks give now) also offers that address, on a second UDP socket of
+the same port (`network.ipv6`). IPv6 has no NAT, so two machines behind
+carrier-grade NATs (CGNAT), which let no IPv4 connection through and which
+UPnP cannot open, usually connect over IPv6: both send at once, and each
+router's firewall takes the other machine's packets as answers. The game
+traffic then goes straight from one machine to the other; the brokers only
+carry the few messages that set it up. The log says which machine connected,
+and with `debug.log_addresses` the address too (`connected to host ... at
+[2001:db8::1]:51234`).
+
+- Both machines need a global IPv6 address. Teredo (2001::/32) and 6to4
+  (2002::/16) addresses are not offered.
+- A router whose firewall drops all IPv6 from the internet, answers too,
+  stops it: allow the game's UDP port (`network.tunnel_port`, fixed) in the
+  router's IPv6 firewall. On Windows, allow the game in Windows Defender
+  Firewall when it asks.
+- Browsers connect over IPv4 only (their WebRTC).
+- Builds without IPv6 play with this one as before, over IPv4: the address
+  goes where they do not look.
+- To use IPv4 alone, set `network.ipv6` to `false`.
+
+A host's bans and kick votes take an IPv6 player by their /64, the network
+their router gives them: `bans.txt` names it as `ip=2001:db8:1:2::/64`.
 
 The game can ask the router to forward the port (UPnP,
 `src/posix_upnp.c`, with `port/third_party/miniupnpc`):

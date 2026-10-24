@@ -1085,6 +1085,9 @@ int p2p_webrtc_offered(int index, int peer, const unsigned char *secret, const s
 	{
 		int known;
 
+		/* (a browser's ICE is reached on the IPv4 tunnel alone) */
+		if (candidates[candidate].ipv6)
+			continue;
 		for (known = 0; known < connection->candidate_count; known++)
 		{
 			if (connection->candidates[known].address == candidates[candidate].address &&

@@ -659,6 +659,10 @@ static const struct config_setting config_settings[] =
 		"networks whose NAT stops connections: when a player joins this\n"
 		"machine's game, and when joining a game takes too long. False never\n"
 		"asks." },
+	{ "network.ipv6", _config_boolean, "true", "HALO_NET_IPV6", _environment_value, _platform_all,
+		"Let internet play reach machines over IPv6 too, where this machine has\n"
+		"a global IPv6 address: IPv6 has no NAT, so it connects machines whose\n"
+		"carrier NATs stop IPv4 connections. False uses IPv4 alone." },
 	{ "network.public_lobby", _config_boolean, "true", "HALO_NET_PUBLIC_LOBBY", _environment_value, _platform_all,
 		"The server browser: public games are listed through the signalling\n"
 		"brokers, and Join Game > Server Browser shows them. False lists no\n"

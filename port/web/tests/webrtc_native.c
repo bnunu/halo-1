@@ -70,6 +70,7 @@ void p2p_hex(const unsigned char *bytes, int size, char *text)
 int p2p_local_candidates(struct p2p_candidate *candidates, int maximum_count)
 {
 	(void)maximum_count;
+	memset(candidates, 0, sizeof(*candidates));
 	candidates[0].address = local_address;
 	candidates[0].port = tunnel_port;
 	return 1;

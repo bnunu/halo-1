@@ -33,6 +33,15 @@ link games as if they were on one LAN, without a server of this project's.
   its header (the sender and the packet's number, the nonce) authenticated
   too, and a packet already received, or from further back than the last
   64, is dropped.
+- A machine with a global IPv6 address also has an IPv6 socket for the
+  tunnel, on the same port (network.ipv6), and offers that address too: in
+  its signalling messages as one of the names of its WebRTC
+  (p2p_signal.c's put_addresses), which a native build's never had, so
+  older builds read the messages as they did and leave it. IPv6 has no NAT:
+  two machines behind carrier NATs that let no IPv4 connection through
+  usually reach each other over it, as both send at once and their routers'
+  firewalls take the other's packets as answers. Whichever address answers
+  first carries the tunnel; the packets are the same on either.
 - Each peer gets a virtual address in 100.64.0.0/10, which the game sees
   (XNetXnAddrToInAddr maps the peer's XNADDR to it). The game's datagrams
   to a peer go onto the tunnel from xnet.c at once (p2p_send_datagram);
@@ -349,6 +358,9 @@ static struct
 	int tunnel_socket;
 	unsigned short tunnel_port;
 	int handoff_socket;
+	/* the tunnel's IPv6 socket, or -1 (none: no IPv6, or network.ipv6 off) */
+	int tunnel6_socket;
+	unsigned short tunnel6_port;
 
 	struct peer peers[P2P_MAXIMUM_PEERS];
 	struct retired_session retired[MAXIMUM_RETIRED_SESSIONS];
@@ -453,7 +465,8 @@ static struct
 	char public_text[256];
 	unsigned long public_time;
 	int public_logged;
-} p2p = { .tunnel_socket = -1, .handoff_socket = -1, .hosting_socket = -1 };
+} p2p = { .tunnel_socket = -1, .handoff_socket = -1, .tunnel6_socket = -1,
+	.hosting_socket = -1 };
 
 /* the proxy (its index + 1) with each local port (all of theirs are on
 p2p.local_address) */
@@ -560,6 +573,39 @@ static void make_address(struct sockaddr_in *address, unsigned long ip, unsigned
 	address->sin_family = AF_INET;
 	address->sin_port = port;
 	address->sin_addr.s_addr = ip;
+}
+
+void p2p_candidate_ipv4(struct p2p_candidate *candidate, unsigned long address, unsigned short port)
+{
+	memset(candidate, 0, sizeof(*candidate));
+	candidate->address = address;
+	candidate->port = port;
+}
+
+void p2p_candidate_ipv6(struct p2p_candidate *candidate, const unsigned char *address, unsigned short port)
+{
+	memset(candidate, 0, sizeof(*candidate));
+	candidate->ipv6 = 1;
+	memcpy(candidate->address6, address, 16);
+	candidate->port = port;
+}
+
+int p2p_candidate_equal(const struct p2p_candidate *a, const struct p2p_candidate *b)
+{
+	if (a->ipv6 != b->ipv6 || a->port != b->port)
+		return 0;
+	return a->ipv6 ? !memcmp(a->address6, b->address6, 16) : a->address == b->address;
+}
+
+/* a candidate as the log may show it (log_address.h) */
+static const char *log_candidate(const struct p2p_candidate *candidate, char *text, int size)
+{
+	unsigned char port[2];
+
+	if (!candidate->ipv6)
+		return log_address_ipv4(candidate->address, candidate->port, text, size);
+	memcpy(port, &candidate->port, 2);
+	return log_address(candidate->address6, 16, port[0] << 8 | port[1], text, size);
 }
 
 /* a UDP or TCP socket bound to ip:port (0 for any), not blocking; its port
@@ -799,20 +845,70 @@ void p2p_discord_identity(char *id, int id_size, char *name, int name_size)
 	pthread_mutex_unlock(&p2p_lock);
 }
 
+/* the address a peer's packets come from (else the first it offered), or
+NULL */
+static const struct p2p_candidate *peer_real_candidate(const struct peer *peer)
+{
+	if (peer->endpoint.address || peer->endpoint.ipv6)
+		return &peer->endpoint;
+	return peer->candidate_count > 0 ? &peer->candidates[0] : NULL;
+}
+
 unsigned long p2p_peer_endpoint_address(unsigned long virtual_address)
 {
 	struct peer *peer;
+	const struct p2p_candidate *real;
 	unsigned long address = 0;
 
 	if (!p2p.running)
 		return 0;
 	pthread_mutex_lock(&p2p_lock);
 	peer = find_peer_by_address(virtual_address);
-	if (peer)
-		address = peer->endpoint.address ? peer->endpoint.address :
-			(peer->candidate_count > 0 ? peer->candidates[0].address : 0);
+	real = peer ? peer_real_candidate(peer) : NULL;
+	if (real && real->ipv6)
+	{
+		/* (a household has a /64 at least, and picks its addresses in it at
+		will: 240.0.0.0/4 and 28 bits of the prefix's hash) */
+		unsigned char digest[P2P_SHA256_SIZE];
+
+		p2p_sha256(real->address6, 8, digest);
+		address = network_long(0xF0000000 | ((unsigned long)digest[0] & 0x0F) << 24 |
+			(unsigned long)digest[1] << 16 | (unsigned long)digest[2] << 8 | digest[3]);
+	}
+	else if (real)
+		address = real->address;
 	pthread_mutex_unlock(&p2p_lock);
 	return address;
+}
+
+int p2p_peer_endpoint_text(unsigned long virtual_address, char *text, int size)
+{
+	struct peer *peer;
+	const struct p2p_candidate *real;
+	int found = 0;
+
+	if (!p2p.running || size <= 0)
+		return 0;
+	pthread_mutex_lock(&p2p_lock);
+	peer = find_peer_by_address(virtual_address);
+	real = peer ? peer_real_candidate(peer) : NULL;
+	if (real && real->ipv6)
+	{
+		const unsigned char *bytes = real->address6;
+
+		snprintf(text, (size_t)size, "%x:%x:%x:%x::/64", bytes[0] << 8 | bytes[1], bytes[2] << 8 | bytes[3],
+			bytes[4] << 8 | bytes[5], bytes[6] << 8 | bytes[7]);
+		found = 1;
+	}
+	else if (real && real->address)
+	{
+		const unsigned char *bytes = (const unsigned char *)&real->address;
+
+		snprintf(text, (size_t)size, "%u.%u.%u.%u", bytes[0], bytes[1], bytes[2], bytes[3]);
+		found = 1;
+	}
+	pthread_mutex_unlock(&p2p_lock);
+	return found;
 }
 
 static int is_virtual_address(unsigned long address)
@@ -902,6 +998,14 @@ static void peer_send_to(struct peer *peer, const struct p2p_candidate *to, cons
 		p2p_webrtc_send(peer->connection, packet, TUNNEL_HEADER_SIZE + sealed);
 		return;
 	}
+	if (to->ipv6)
+	{
+		if (p2p.tunnel6_socket >= 0)
+			posix_socket_sendto6(p2p.tunnel6_socket, packet, TUNNEL_HEADER_SIZE + sealed, to->address6, to->port);
+		return;
+	}
+	if (p2p.tunnel_socket < 0)
+		return;
 	make_address(&address, to->address, to->port);
 	posix_socket_sendto(p2p.tunnel_socket, packet, TUNNEL_HEADER_SIZE + sealed, 0, &address, sizeof(address));
 }
@@ -1013,14 +1117,32 @@ static void drop_peer(struct peer *peer, const char *reason)
 		p2p_signal_join(p2p.join_host_hash, p2p.join_token);
 }
 
-/* whether an offered address could be a machine's: not 0.0.0.0/8,
-multicast, reserved or broadcast (224.0.0.0 up), nor port 0. Loopback and
-LAN addresses stay: two copies on one machine or network use them */
+/* whether an offered address could be a machine's: an IPv4 one not in
+0.0.0.0/8, multicast, reserved or broadcast (224.0.0.0 up); an IPv6 one
+not unspecified, multicast, link-local (which needs an interface) nor an
+IPv4 one written as IPv6; and not port 0. Loopback and LAN addresses stay:
+two copies on one machine or network use them */
 static int candidate_usable(const struct p2p_candidate *candidate)
 {
-	unsigned long first = network_long(candidate->address) >> 24;
+	if (candidate->port == 0)
+		return 0;
+	if (candidate->ipv6)
+	{
+		static const unsigned char zero[12] = { 0 };
+		const unsigned char *bytes = candidate->address6;
 
-	return first != 0 && first < 224 && candidate->port != 0;
+		if (bytes[0] == 0xFF || (bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80))
+			return 0;
+		/* ::/96 but for ::1, and ::ffff:0:0/96 */
+		if (!memcmp(bytes, zero, 10) && bytes[10] == bytes[11] && (bytes[10] == 0 || bytes[10] == 0xFF))
+			return !memcmp(bytes, zero, 12) && !bytes[12] && !bytes[13] && !bytes[14] && bytes[15] == 1;
+		return 1;
+	}
+	{
+		unsigned long first = network_long(candidate->address) >> 24;
+
+		return first != 0 && first < 224;
+	}
 }
 
 static void add_candidates(struct peer *peer, const struct p2p_candidate *candidates, int count)
@@ -1035,8 +1157,7 @@ static void add_candidates(struct peer *peer, const struct p2p_candidate *candid
 			continue;
 		for (known = 0; known < peer->candidate_count; known++)
 		{
-			if (peer->candidates[known].address == candidates[index].address &&
-				peer->candidates[known].port == candidates[index].port)
+			if (p2p_candidate_equal(&peer->candidates[known], &candidates[index]))
 				break;
 		}
 		if (known < peer->candidate_count)
@@ -1209,10 +1330,10 @@ static void packet_received(struct peer *peer, unsigned long long counter)
 
 /* newest: the packet is the highest numbered yet (a replayed or delayed one
 does not move the peer's endpoint) */
-static void peer_heard(struct peer *peer, unsigned long address, unsigned short port, int newest)
+static void peer_heard(struct peer *peer, const struct p2p_candidate *from, int newest)
 {
 	unsigned long now = p2p_now();
-	int same = peer->endpoint.address == address && peer->endpoint.port == port;
+	int same = p2p_candidate_equal(&peer->endpoint, from);
 
 	peer->heard_time = now;
 	if (!peer->connected)
@@ -1220,13 +1341,12 @@ static void peer_heard(struct peer *peer, unsigned long address, unsigned short 
 		char text[LOG_ADDRESS_SIZE];
 
 		peer->connected = 1;
-		peer->endpoint.address = address;
-		peer->endpoint.port = port;
+		peer->endpoint = *from;
 		peer->endpoint_heard_time = now;
 		if (peer->probe)
 			return;
 		platform_log("Internet play: connected to %s %s at %s", peer->is_host && !peer->is_player ? "host" : "player",
-			peer->name, log_address_ipv4(address, port, text, sizeof(text)));
+			peer->name, log_candidate(from, text, sizeof(text)));
 		if (peer->is_host && !peer->is_player)
 		{
 			if (p2p.joining && !memcmp(p2p.join_host, peer->identifier, P2P_IDENTIFIER_SIZE))
@@ -1244,8 +1364,7 @@ static void peer_heard(struct peer *peer, unsigned long address, unsigned short 
 	else if (newest && elapsed(peer->endpoint_heard_time, ENDPOINT_SWITCH_TIME))
 	{
 		/* its address changed (a NAT's mapping, or a better path) */
-		peer->endpoint.address = address;
-		peer->endpoint.port = port;
+		peer->endpoint = *from;
 		peer->endpoint_heard_time = now;
 	}
 }
@@ -1489,19 +1608,19 @@ static void stun_update(void)
 	}
 }
 
-static void stun_received(const unsigned char *packet, int size, const struct sockaddr_in *from)
+static void stun_received(const unsigned char *packet, int size, const struct p2p_candidate *from)
 {
 	int index;
 	int offset;
 
-	if (size < 20 || packet[0] != 0x01 || packet[1] != 0x01)
+	if (size < 20 || packet[0] != 0x01 || packet[1] != 0x01 || from->ipv6)
 		return;
 	/* the answer of a server asked, from it */
 	for (index = 0; index < p2p.stun_count; index++)
 	{
 		struct stun_server const *server = &p2p.stun[index];
 
-		if (server->address && server->address == from->sin_addr.s_addr && server->port == from->sin_port &&
+		if (server->address && server->address == from->address && server->port == from->port &&
 			!memcmp(packet + 8, server->transaction, 12))
 		{
 			break;
@@ -1565,6 +1684,24 @@ static void stun_received(const unsigned char *packet, int size, const struct so
 	}
 }
 
+/* this machine's IPv6 address the tunnel's IPv6 socket is reached at: a
+global one (2000::/3), not a tunnel's of IPv4 (Teredo's 2001::/32 and
+6to4's 2002::/16, whose relays mostly are gone); nonzero if it has one */
+static int local_ipv6_candidate(struct p2p_candidate *candidate)
+{
+	unsigned char address[16];
+
+	if (p2p.tunnel6_socket < 0 || !posix_local_ipv6_address(address))
+		return 0;
+	if ((address[0] & 0xE0) != 0x20 || (address[0] == 0x20 && address[1] == 0x01 && !address[2] && !address[3]) ||
+		(address[0] == 0x20 && address[1] == 0x02))
+	{
+		return 0;
+	}
+	p2p_candidate_ipv6(candidate, address, p2p.tunnel6_port);
+	return 1;
+}
+
 int p2p_local_candidates(struct p2p_candidate *candidates, int maximum_count)
 {
 	unsigned long lan = posix_local_ipv4_address();
@@ -1575,10 +1712,10 @@ int p2p_local_candidates(struct p2p_candidate *candidates, int maximum_count)
 	if (p2p.has_public && count < maximum_count)
 		candidates[count++] = p2p.public_candidate;
 	if (lan && count < maximum_count)
-	{
-		candidates[count].address = lan;
-		candidates[count++].port = p2p.tunnel_port;
-	}
+		p2p_candidate_ipv4(&candidates[count++], lan, p2p.tunnel_port);
+	/* (before the rest, which there may be more of than fit) */
+	if (count < maximum_count && local_ipv6_candidate(&candidates[count]))
+		count++;
 	/* (the port the router forwards here, UPnP; STUN's addresses are offered
 	too, even where the router names another: then either may be the one
 	that works, and a machine on the LAN that answers as the router cannot
@@ -1593,8 +1730,7 @@ int p2p_local_candidates(struct p2p_candidate *candidates, int maximum_count)
 			continue;
 		for (known = 0; known < count; known++)
 		{
-			if (candidates[known].address == p2p.stun[index].mapped.address &&
-				candidates[known].port == p2p.stun[index].mapped.port)
+			if (p2p_candidate_equal(&candidates[known], &p2p.stun[index].mapped))
 				break;
 		}
 		if (known == count)
@@ -1602,10 +1738,7 @@ int p2p_local_candidates(struct p2p_candidate *candidates, int maximum_count)
 	}
 	/* two copies of the game on one machine without a network */
 	if (!count && maximum_count)
-	{
-		candidates[count].address = network_long(0x7F000001);
-		candidates[count++].port = p2p.tunnel_port;
-	}
+		p2p_candidate_ipv4(&candidates[count++], network_long(0x7F000001), p2p.tunnel_port);
 	return count;
 }
 
@@ -2478,7 +2611,7 @@ static void stream_writeable(struct stream *stream)
 
 /* ---------- the tunnel */
 
-static void tunnel_received(const unsigned char *packet, int size, const struct sockaddr_in *from)
+static void tunnel_received(const unsigned char *packet, int size, const struct p2p_candidate *from)
 {
 	unsigned char inner[MAXIMUM_INNER_SIZE];
 	unsigned char nonce[P2P_NONCE_SIZE];
@@ -2519,18 +2652,14 @@ static void tunnel_received(const unsigned char *packet, int size, const struct 
 		return;
 	newest = counter > peer->receive_highest;
 	packet_received(peer, counter);
-	peer_heard(peer, from->sin_addr.s_addr, from->sin_port, newest);
+	peer_heard(peer, from, newest);
 	switch (inner[0])
 	{
 	case _packet_ping:
 		if (inner_size >= 5)
 		{
-			struct p2p_candidate to;
-
 			inner[0] = _packet_pong;
-			to.address = from->sin_addr.s_addr;
-			to.port = from->sin_port;
-			peer_send_to(peer, &to, inner, 5);
+			peer_send_to(peer, from, inner, 5);
 		}
 		break;
 	case _packet_pong:
@@ -2559,9 +2688,9 @@ static void tunnel_received(const unsigned char *packet, int size, const struct 
 
 void p2p_tunnel_packet(const unsigned char *packet, int size, unsigned long address, unsigned short port)
 {
-	struct sockaddr_in from;
+	struct p2p_candidate from;
 
-	make_address(&from, address, port);
+	p2p_candidate_ipv4(&from, address, port);
 	tunnel_received(packet, size, &from);
 }
 
@@ -2585,12 +2714,36 @@ static void tunnel_readable(void)
 		struct sockaddr_in from;
 		int from_length = sizeof(from);
 		int size = posix_socket_recvfrom(p2p.tunnel_socket, packet, sizeof(packet), 0, &from, &from_length);
+		struct p2p_candidate candidate;
 
 		if (size < 0)
 			break;
 		/* (a browser's ICE checks and DTLS, which carries its tunnel) */
 		if (!p2p_webrtc_received(packet, size, from.sin_addr.s_addr, from.sin_port))
-			tunnel_received(packet, size, &from);
+		{
+			p2p_candidate_ipv4(&candidate, from.sin_addr.s_addr, from.sin_port);
+			tunnel_received(packet, size, &candidate);
+		}
+	}
+}
+
+/* (no browser's: a page's WebRTC is IPv4's, web_p2p.c) */
+static void tunnel6_readable(void)
+{
+	unsigned char packet[2048];
+	int count;
+
+	for (count = 0; count < 256; count++)
+	{
+		unsigned char address[16];
+		unsigned short port;
+		struct p2p_candidate candidate;
+		int size = posix_socket_recvfrom6(p2p.tunnel6_socket, packet, sizeof(packet), address, &port);
+
+		if (size < 0)
+			break;
+		p2p_candidate_ipv6(&candidate, address, port);
+		tunnel_received(packet, size, &candidate);
 	}
 }
 
@@ -3397,8 +3550,7 @@ static DWORD WINAPI upnp_thread(void *unused)
 				log_address_ipv4(address, external_port, text, sizeof(text)));
 		}
 		p2p.upnp_forwarded = 1;
-		p2p.upnp_candidate.address = address;
-		p2p.upnp_candidate.port = external_port;
+		p2p_candidate_ipv4(&p2p.upnp_candidate, address, external_port);
 	}
 	else if (!p2p.upnp_forwarded)
 	{
@@ -3676,9 +3828,10 @@ static DWORD WINAPI p2p_thread(void *unused)
 {
 	enum
 	{
-		MAXIMUM_SOCKETS = 2 + MAXIMUM_PROXIES + MAXIMUM_LISTENERS + MAXIMUM_STREAMS + 16,
+		MAXIMUM_SOCKETS = 3 + MAXIMUM_PROXIES + MAXIMUM_LISTENERS + MAXIMUM_STREAMS + 16,
 		/* what each socket waited for is (owners) */
 		_owner_tunnel = 0,
+		_owner_tunnel6,
 		_owner_handoff,
 		_owner_proxy,
 		_owner_listener,
@@ -3720,6 +3873,11 @@ static DWORD WINAPI p2p_thread(void *unused)
 		/* what to wait for */
 		read_owners[read_count] = _owner_tunnel;
 		read[read_count++] = p2p.tunnel_socket;
+		if (p2p.tunnel6_socket >= 0)
+		{
+			read_owners[read_count] = _owner_tunnel6;
+			read[read_count++] = p2p.tunnel6_socket;
+		}
 		if (p2p.handoff_socket >= 0)
 		{
 			read_owners[read_count] = _owner_handoff;
@@ -3820,6 +3978,10 @@ static DWORD WINAPI p2p_thread(void *unused)
 #ifdef HALO_PROFILE
 				profile_trace_end(p2p_profile_names.tunnel_receive);
 #endif
+				break;
+			case _owner_tunnel6:
+				if (socket == p2p.tunnel6_socket)
+					tunnel6_readable();
 				break;
 			case _owner_handoff:
 				if (socket == p2p.handoff_socket)
@@ -3955,6 +4117,23 @@ void p2p_initialize(unsigned long local_address)
 
 		posix_socket_setsockopt(p2p.tunnel_socket, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
 		posix_socket_setsockopt(p2p.tunnel_socket, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+#ifndef HALO_WEB
+		/* (its port the IPv4 socket's if it is free, so that one firewall
+		rule, or forwarded port, is for both) */
+		if (config_boolean("network.ipv6"))
+		{
+			p2p.tunnel6_socket = posix_socket_udp6(p2p.tunnel_port, &p2p.tunnel6_port);
+			if (p2p.tunnel6_socket < 0)
+				p2p.tunnel6_socket = posix_socket_udp6(0, &p2p.tunnel6_port);
+			if (p2p.tunnel6_socket >= 0)
+			{
+				posix_socket_setsockopt(p2p.tunnel6_socket, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
+				posix_socket_setsockopt(p2p.tunnel6_socket, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+			}
+			else
+				platform_log("Internet play: cannot open its IPv6 socket (no IPv6 here?); it uses IPv4 alone");
+		}
+#endif
 	}
 #ifndef HALO_ANDROID
 	/* the first copy of the game takes the invites later ones are opened
@@ -3983,6 +4162,7 @@ void p2p_initialize(unsigned long local_address)
 	if (!p2p.thread)
 	{
 		close_socket(&p2p.tunnel_socket);
+		close_socket(&p2p.tunnel6_socket);
 		close_socket(&p2p.handoff_socket);
 		pthread_mutex_unlock(&p2p_lock);
 		return;

@@ -199,7 +199,16 @@ enum
 	/* 3: a JOIN proves its key before the host makes a session; 4: both
 	messages say the machine's WebRTC (p2p_webrtc.c), so browsers join */
 	MESSAGE_VERSION = 4,
+	/* the IPv4 addresses a message holds: an older build takes no more */
+	MAXIMUM_MESSAGE_ADDRESSES = 4,
 };
+
+/* an IPv6 address a native build offers, in place of one of the mDNS names
+a browser offers ("ip6-", its 16 bytes in hexadecimal, ".local"): a native
+build's names were never used, so an older build reads it and leaves it,
+and the messages and network version stay as they were */
+#define IPV6_NAME_PREFIX "ip6-"
+#define IPV6_NAME_SUFFIX ".local"
 
 struct broker
 {
@@ -856,26 +865,46 @@ static void broker_connect(struct broker *broker)
 /* ---------- addresses */
 
 /* this machine's addresses and its WebRTC (p2p_webrtc_describe), for a
-message to the machine with that identifier: the count of addresses, each
-address and port, then the WebRTC's kind and, unless none, the certificate's
-hash, the ICE username fragment and password, each after its length, and
-the count of mDNS names, each after its length and before its port; returns
-the bytes written */
+message to the machine with that identifier: the count of IPv4 addresses
+(MAXIMUM_MESSAGE_ADDRESSES at most), each address and port, then the
+WebRTC's kind and, unless none, the certificate's hash, the ICE username
+fragment and password, each after its length, and the count of mDNS names,
+each after its length and before its port. A native build's IPv6 addresses
+go as names (IPV6_NAME_PREFIX), which needs a WebRTC kind: one without its
+certificate offers none. Returns the bytes written */
 static int put_addresses(unsigned char *message, const unsigned char *identifier, int proven)
 {
 	struct p2p_candidate candidates[P2P_MAXIMUM_CANDIDATES];
 	struct p2p_webrtc webrtc;
 	int count = p2p_webrtc_describe(identifier, proven, &webrtc, candidates, P2P_MAXIMUM_CANDIDATES);
+	int ipv4_count = 0;
 	int size;
 	int index;
 
-	message[0] = (unsigned char)count;
+	size = 1;
 	for (index = 0; index < count; index++)
 	{
-		memcpy(message + 1 + index * 6, &candidates[index].address, 4);
-		memcpy(message + 1 + index * 6 + 4, &candidates[index].port, 2);
+		if (candidates[index].ipv6)
+		{
+			if (webrtc.kind == _p2p_webrtc_native && webrtc.name_count < P2P_MAXIMUM_WEBRTC_NAMES)
+			{
+				char hex[2 * 16 + 1];
+
+				p2p_hex(candidates[index].address6, 16, hex);
+				snprintf(webrtc.names[webrtc.name_count], P2P_WEBRTC_NAME_SIZE, "%s%s%s", IPV6_NAME_PREFIX, hex,
+					IPV6_NAME_SUFFIX);
+				webrtc.name_ports[webrtc.name_count++] = candidates[index].port;
+			}
+			continue;
+		}
+		if (ipv4_count == MAXIMUM_MESSAGE_ADDRESSES)
+			continue;
+		memcpy(message + size, &candidates[index].address, 4);
+		memcpy(message + size + 4, &candidates[index].port, 2);
+		size += 6;
+		ipv4_count++;
 	}
-	size = 1 + count * 6;
+	message[0] = (unsigned char)ipv4_count;
 	message[size++] = (unsigned char)webrtc.kind;
 	if (webrtc.kind == _p2p_webrtc_none)
 		return size;
@@ -939,26 +968,57 @@ static int get_ice_text(const unsigned char *message, int size, int *offset, int
 	return 1;
 }
 
-/* the reverse: the bytes read, or -1 if they are not made so */
+/* the IPv6 address a name of IPV6_NAME_PREFIX holds (put_addresses), into
+address (16 bytes); 0 if it holds none */
+static int ipv6_from_name(const char *name, unsigned char *address)
+{
+	int prefix = (int)strlen(IPV6_NAME_PREFIX);
+	int index;
+
+	if ((int)strlen(name) != prefix + 2 * 16 + (int)strlen(IPV6_NAME_SUFFIX) ||
+		strncmp(name, IPV6_NAME_PREFIX, (size_t)prefix) || strcmp(name + prefix + 2 * 16, IPV6_NAME_SUFFIX))
+	{
+		return 0;
+	}
+	for (index = 0; index < 2 * 16; index++)
+	{
+		char digit = name[prefix + index];
+		int value = digit >= '0' && digit <= '9' ? digit - '0' : digit >= 'a' && digit <= 'f' ? digit - 'a' + 10 : -1;
+
+		if (value < 0)
+			return 0;
+		if (index & 1)
+			address[index / 2] = (unsigned char)(address[index / 2] | value);
+		else
+			address[index / 2] = (unsigned char)(value << 4);
+	}
+	return 1;
+}
+
+/* the reverse: the bytes read, or -1 if they are not made so. A native
+build's IPv6 addresses (its names) come after its IPv4 ones in candidates,
+and are not left among its names */
 static int get_addresses(const unsigned char *message, int size, struct p2p_candidate *candidates, int *count,
 	struct p2p_webrtc *webrtc)
 {
 	int offset;
 	int index;
+	int kept;
 
 	memset(webrtc, 0, sizeof(*webrtc));
 	if (size < 2)
 		return -1;
 	*count = message[0];
-	if (*count > P2P_MAXIMUM_CANDIDATES || size < 2 + *count * 6)
+	if (*count > MAXIMUM_MESSAGE_ADDRESSES || size < 2 + *count * 6)
 		return -1;
 	for (index = 0; index < *count; index++)
 	{
 		unsigned int address;
+		unsigned short port;
 
 		memcpy(&address, message + 1 + index * 6, 4);
-		candidates[index].address = address;
-		memcpy(&candidates[index].port, message + 1 + index * 6 + 4, 2);
+		memcpy(&port, message + 1 + index * 6 + 4, 2);
+		p2p_candidate_ipv4(&candidates[index], address, port);
 	}
 	offset = 1 + *count * 6;
 	webrtc->kind = message[offset++];
@@ -996,6 +1056,25 @@ static int get_addresses(const unsigned char *message, int size, struct p2p_cand
 		if (!webrtc_name_valid(webrtc->names[index]) || !webrtc->name_ports[index])
 			return -1;
 	}
+	/* (a browser's names stay names: they are its own) */
+	for (index = 0, kept = 0; index < webrtc->name_count; index++)
+	{
+		unsigned char address[16];
+
+		if (webrtc->kind == _p2p_webrtc_native && ipv6_from_name(webrtc->names[index], address))
+		{
+			if (*count < P2P_MAXIMUM_CANDIDATES)
+				p2p_candidate_ipv6(&candidates[(*count)++], address, webrtc->name_ports[index]);
+			continue;
+		}
+		if (kept != index)
+		{
+			memcpy(webrtc->names[kept], webrtc->names[index], P2P_WEBRTC_NAME_SIZE);
+			webrtc->name_ports[kept] = webrtc->name_ports[index];
+		}
+		kept++;
+	}
+	webrtc->name_count = kept;
 	return offset;
 }
 
