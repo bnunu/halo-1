@@ -745,6 +745,15 @@ static void listing_take(const struct queued *queued, const struct listing *list
 	shown->network_version = (unsigned short)listing->version;
 }
 
+/* the game as the browser shows it */
+static void game_listed(const struct game *game, struct p2p_listing *listing)
+{
+	*listing = game->listing;
+	listing->failed = (unsigned char)identifier_failed(listing->identifier);
+	listing->ping = (short)game->ping;
+	listing->probing = (unsigned char)game->probing;
+}
+
 /* the hosts' pings: those not known lately probed, while there is room (a
 few refused, and the rest wait for a later pass) */
 static void update_probes(void)
@@ -1169,9 +1178,7 @@ int p2p_lobby_games(struct p2p_listing *games, int maximum_count)
 	{
 		if (!lobby.games[index].used)
 			continue;
-		games[count] = lobby.games[index].listing;
-		games[count].failed = (unsigned char)identifier_failed(games[count].identifier);
-		games[count].ping = (short)lobby.games[index].ping;
+		game_listed(&lobby.games[index], &games[count]);
 		count++;
 	}
 	pthread_mutex_unlock(&p2p_lock);

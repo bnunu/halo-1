@@ -5001,6 +5001,28 @@ static void lobby_browser_game_lines(struct p2p_listing const *game, wchar_t *pl
 	}
 }
 
+/* a game's ping cell (the dots without a colour: pc_menu_text_color
+colours a number only) */
+static void browser_ping_text(struct p2p_listing const *game, unsigned long now, wchar_t *text, short length)
+{
+	static wchar_t const dots[3][4] = { L".", L"..", L"..." };
+
+	if (game->failed)
+		browser_word(_browser_word_failed, text, length);
+	else if (game->ping >= 0)
+		usnprintf(text, length - 1, L"%d", game->ping);
+	else if (game->probing)
+		ustrncpy(text, dots[(now / 300) % 3], length - 1);
+	else if (game->master && game->region[0])
+		region_to_wide(game->region, text, length);
+	else if (!game->open)
+		browser_word(_browser_word_closed, text, length);
+	else if (game->in_progress)
+		browser_word(_browser_word_live, text, length);
+	else
+		usnprintf(text, length - 1, L"-");
+}
+
 /* "gamespy screen update" for the server browser: the games shown, the
 rows (scrolled on at their ends), the line below them, the counts over the
 titles, the titles' arrows; a join going on; the error panel */
@@ -5092,18 +5114,7 @@ static void lobby_browser_update(struct widget_instance *list)
 		else
 		{
 			browser_row_marked[place] = FALSE;
-			if (game->failed)
-				browser_word(_browser_word_failed, text, ROW_TEXT_LENGTH);
-			else if (game->ping >= 0)
-				usnprintf(text, ROW_TEXT_LENGTH - 1, L"%d", game->ping);
-			else if (game->master && game->region[0])
-				region_to_wide(game->region, text, ROW_TEXT_LENGTH);
-			else if (!game->open)
-				browser_word(_browser_word_closed, text, ROW_TEXT_LENGTH);
-			else if (game->in_progress)
-				browser_word(_browser_word_live, text, ROW_TEXT_LENGTH);
-			else
-				usnprintf(text, ROW_TEXT_LENGTH - 1, L"-");
+			browser_ping_text(game, now, text, ROW_TEXT_LENGTH);
 		}
 		text_set(named(row, "server_item_ping", 0), text);
 		/* (the lock: a game with a password; the server: a dedicated
