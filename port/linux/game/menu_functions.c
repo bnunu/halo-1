@@ -4348,6 +4348,8 @@ join that failed; and before it says nothing answers */
 #define LOBBY_BROWSER_LOOK_TIME 6000
 #define LOBBY_BROWSER_FAILED_TIME 8000
 #define LOBBY_BROWSER_UNREACHABLE_TIME 15000
+/* the longest the line below the rows says it is refreshing */
+#define LOBBY_BROWSER_REFRESH_TIME 10000
 /* the line below the rows: two rows' worth */
 #define TICKER_TEXT_LENGTH (ROW_TEXT_LENGTH * 2)
 /* between the parts of the line below the rows */
@@ -4407,6 +4409,7 @@ enum
 	_browser_word_refused_link_in_use,
 	_browser_word_refused_vpn_master,
 	_browser_word_refused_address_full,
+	_browser_word_refreshing,
 };
 
 /* the words p2p_join_progress gives a join that failed, and the browser's
@@ -5001,6 +5004,14 @@ static void lobby_browser_game_lines(struct p2p_listing const *game, wchar_t *pl
 	}
 }
 
+/* whether a game's ping cell shows dots: its host timed with no ping yet,
+or timed again after Refresh (a known ping stays while the two-minute probe
+runs) */
+static boolean browser_ping_dots(struct p2p_listing const *game)
+{
+	return game->probing && (game->ping < 0 || game->refreshing);
+}
+
 /* a game's ping cell (the dots without a colour: pc_menu_text_color
 colours a number only) */
 static void browser_ping_text(struct p2p_listing const *game, unsigned long now, wchar_t *text, short length)
@@ -5009,10 +5020,10 @@ static void browser_ping_text(struct p2p_listing const *game, unsigned long now,
 
 	if (game->failed)
 		browser_word(_browser_word_failed, text, length);
+	else if (browser_ping_dots(game))
+		ustrncpy(text, dots[(now / 300) % 3], length - 1);
 	else if (game->ping >= 0)
 		usnprintf(text, length - 1, L"%d", game->ping);
-	else if (game->probing)
-		ustrncpy(text, dots[(now / 300) % 3], length - 1);
 	else if (game->master && game->region[0])
 		region_to_wide(game->region, text, length);
 	else if (!game->open)
@@ -5021,6 +5032,19 @@ static void browser_ping_text(struct p2p_listing const *game, unsigned long now,
 		browser_word(_browser_word_live, text, length);
 	else
 		usnprintf(text, length - 1, L"-");
+}
+
+/* whether a game Refresh asked to be timed again still waits for its ping */
+static boolean browser_refreshing(void)
+{
+	short index;
+
+	for (index = 0; index < lobby_browser.count; index++)
+	{
+		if (lobby_browser.games[index].refreshing)
+			return TRUE;
+	}
+	return FALSE;
 }
 
 /* "gamespy screen update" for the server browser: the games shown, the
@@ -5102,7 +5126,7 @@ static void lobby_browser_update(struct widget_instance *list)
 		/* (its status: JOINING, NEWER or OLDER, in yellow; its host's ping,
 		once probed (p2p_lobby.c), else FAILED, CLOSED, LIVE; a master
 		server's, which is not probed, its region) */
-		browser_row_pings[place] = game->failed || other_version ? -1 : game->ping;
+		browser_row_pings[place] = game->failed || other_version || browser_ping_dots(game) ? -1 : game->ping;
 		browser_row_greyed[place] = other_version;
 		browser_row_marked[place] = TRUE;
 		if (lobby_browser.joining && !memcmp(game->identifier, lobby_browser.identifier, 6))
@@ -5216,6 +5240,8 @@ static void lobby_browser_update(struct widget_instance *list)
 			browser_word(_browser_word_online_off, text, NUMBEROF(text));
 		else if (!config_boolean("network.public_lobby"))
 			browser_word(_browser_word_lobby_off, text, NUMBEROF(text));
+		else if (now - lobby_browser.begin_time < LOBBY_BROWSER_REFRESH_TIME && browser_refreshing())
+			browser_word(_browser_word_refreshing, text, NUMBEROF(text));
 		else if (!lobby_browser.count)
 		{
 			/* (an old build sees none of the games: it says why) */

@@ -1407,6 +1407,8 @@ BROWSER_WORDS = [
     "The host refused: your Discord account is in the game",
     "The host blocks VPNs: link Discord with its master (Settings > Network Setup)",
     "The host refused: too many players from your address",
+    # (the line while Refresh's pings come in)
+    "Refreshing...",
 ]
 
 

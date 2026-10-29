@@ -155,12 +155,14 @@ struct game
 	/* its invite's token (none: a password's game); its host's ping
 	(-1: not known), whether it is being probed, and when it last was (0:
 	due; else odd, and never ahead of the clock, which elapsed reads as
-	long past) */
+	long past); whether Refresh asked for it to be timed again, until that
+	probe ends */
 	int has_token;
 	unsigned char token[P2P_TOKEN_SIZE];
 	int ping;
 	int probing;
 	unsigned long probed_time;
+	int refreshing;
 	/* its place in the browser's list, from 1 (0: not shown) */
 	int shown;
 	/* listed by a master server (master_list.c) lately: not probed (the
@@ -755,6 +757,7 @@ static void game_listed(const struct game *game, struct p2p_listing *listing)
 	listing->failed = (unsigned char)identifier_failed(listing->identifier);
 	listing->ping = (short)game->ping;
 	listing->probing = (unsigned char)game->probing;
+	listing->refreshing = (unsigned char)game->refreshing;
 }
 
 /* the hosts' pings: those not known lately probed, in the order shown,
@@ -907,6 +910,7 @@ void p2p_lobby_probed(const unsigned char *identifier, int ping)
 		if (game->used && !memcmp(game->listing.identifier, identifier, P2P_IDENTIFIER_SIZE))
 		{
 			game->probing = 0;
+			game->refreshing = 0;
 			game->probed_time = (p2p_now() - 1) | 1;
 			/* (one not reached this time keeps the last it had) */
 			if (ping >= 0)
@@ -1153,11 +1157,15 @@ void p2p_lobby_refresh(void)
 	pthread_mutex_lock(&p2p_lock);
 	if (lobby.browsing)
 		lobby.query_wanted = 1;
-	/* (the pings timed again) */
+	/* (the pings timed again, a probe under way included; a master
+	server's game is not timed) */
 	for (index = 0; index < MAXIMUM_GAMES; index++)
 	{
-		if (!lobby.games[index].probing)
-			lobby.games[index].probed_time = 0;
+		struct game *game = &lobby.games[index];
+
+		if (!game->probing)
+			game->probed_time = 0;
+		game->refreshing = game->used && game->has_token && !game->master;
 	}
 	pthread_mutex_unlock(&p2p_lock);
 	master_list_refresh();

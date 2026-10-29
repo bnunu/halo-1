@@ -11,7 +11,7 @@ from harness import CHECK_FAILED, build, enum_with, function, mutated, read, run
 def generated(fault=None):
     header = read('port/linux/src/p2p.h')
     menus = read('port/linux/game/menu_functions.c')
-    code = function(menus, 'browser_ping_text')
+    code = function(menus, 'browser_ping_dots') + function(menus, 'browser_ping_text')
     if fault:
         code = mutated(code, *fault)
     return (('listing.inc', enum_with(header, 'P2P_LISTING_NAME_SIZE') + structure(header, 'p2p_listing')),
@@ -19,7 +19,7 @@ def generated(fault=None):
             ('under_test.inc', code))
 
 
-@pytest.mark.parametrize('case', ['number', 'dots', 'status', 'dash'])
+@pytest.mark.parametrize('case', ['number', 'refresh', 'dots', 'status', 'dash'])
 def test_case(case):
     status, output = run(build('browser_ping_text', generated()), case)
     assert status == 0, output
@@ -27,9 +27,10 @@ def test_case(case):
 
 @pytest.mark.parametrize('fault,case', [
     (('now / 300', 'now / 600'), 'dots'),
-    (('else if (game->probing)', 'else if (game->open && !game->in_progress && game->probing)'), 'dots'),
+    (('return game->probing &&', 'return game->open && !game->in_progress && game->probing &&'), 'dots'),
     (('if (game->failed)', 'if (0)'), 'status'),
-    (('else if (game->ping >= 0)', 'else if (game->ping >= 0 && !game->probing)'), 'number'),
+    (('game->ping < 0 || game->refreshing', 'game->ping < 0 || 1'), 'number'),
+    (('game->ping < 0 || game->refreshing', 'game->ping < 0'), 'refresh'),
 ])
 def test_negative_control(fault, case):
     status, output = run(build('browser_ping_text', generated(fault)), case)

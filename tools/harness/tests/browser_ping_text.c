@@ -3,7 +3,7 @@ BROWSER_PING_TEXT.C (test)
 
 The server browser's ping cell (menu_functions.c's browser_ping_text) for a
 game open ('o'), closed ('c'), live ('l'), failed ('f') or a master
-server's ('m'), from test_browser_ping_text.py's listing.inc, words.inc and
+server's ('m'), after Refresh or not, from test_browser_ping_text.py's listing.inc, words.inc and
 under_test.inc.
 */
 
@@ -29,6 +29,8 @@ static void region_to_wide(char const *region, wchar_t *wide, short size)
 
 #include "under_test.inc"
 
+static int refreshed;
+
 static int shows(char state, int ping, int probing, unsigned long now, wchar_t const *expected)
 {
 	struct p2p_listing game;
@@ -42,6 +44,7 @@ static int shows(char state, int ping, int probing, unsigned long now, wchar_t c
 	strcpy(game.region, "EU");
 	game.ping = (short)ping;
 	game.probing = (unsigned char)probing;
+	game.refreshing = (unsigned char)refreshed;
 	browser_ping_text(&game, now, text, 16);
 	return !wcscmp(text, expected);
 }
@@ -53,6 +56,14 @@ int main(int argc, char **argv)
 	CASE("number")
 		CHECK(shows('o', 42, 0, 0, L"42") && shows('o', 42, 1, 700, L"42"),
 			"a ping shows, kept while timed again every two minutes");
+	else CASE("refresh")
+	{
+		refreshed = 1;
+		CHECK(shows('o', 42, 1, 300, L"..") && shows('c', 42, 1, 600, L"..."),
+			"a ping timed again after Refresh: dots");
+		CHECK(shows('o', 42, 0, 300, L"42"), "a ping after Refresh, its host not timed yet, still shows");
+		CHECK(shows('f', 42, 1, 0, L"FAILED"), "FAILED over a ping timed after Refresh");
+	}
 	else CASE("dots")
 	{
 		CHECK(shows('o', -1, 1, 299, L".") && shows('o', -1, 1, 300, L"..") && shows('o', -1, 1, 600, L"...") &&

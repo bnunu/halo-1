@@ -158,8 +158,9 @@ struct p2p_listing
 	unsigned char failed;
 	/* milliseconds, -1 if not known */
 	short ping;
-	/* its host is being probed for the ping now (a ping known stays) */
-	unsigned char probing;
+	/* its host is being probed for the ping now (a ping known stays), and
+	whether Refresh asked for it (until that probe ends) */
+	unsigned char probing, refreshing;
 	/* it has a password: its invite is sealed with it (p2p_listing_unlock) */
 	unsigned char locked;
 	unsigned char key_hash[P2P_LISTING_KEY_HASH_SIZE];
