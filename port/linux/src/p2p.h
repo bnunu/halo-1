@@ -203,6 +203,10 @@ int p2p_joined_listing_masters(unsigned char (*key_ids)[P2P_LISTING_MASTER_KEY_I
 /* a copy of the public games found, in the order shown (the most players
 first; then those not failed, the open ones, by name); returns their count */
 int p2p_lobby_games(struct p2p_listing *games, int maximum_count);
+/* the games the server browser shows, in its order (its sort, after its
+tab and Filters): their hosts are probed in that order, those not shown
+last */
+void p2p_lobby_shown(const struct p2p_listing *games, int count);
 /* the master servers' (port/linux/src/master_list.c, server_master.c): a
 fresh signed listing of the game this machine hosts for the internet, as
 the brokers get it (0 if it hosts none, or none public); a master's entry's
