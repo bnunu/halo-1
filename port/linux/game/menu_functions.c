@@ -459,6 +459,10 @@ static boolean setting_load(struct widget_instance *widget)
 	setting->loaded_index = setting_value_index(setting, current);
 	if (setting->loaded_index < (short)widget->parameters.list.number_of_items)
 		widget->parameters.list.selected_index = setting->loaded_index;
+	/* (DISCORD ACCOUNT's LINK: an action, loaded as no change, so OK does
+	the master chosen already, setting_text's) */
+	if (!strcmp(setting->setting, "link.action"))
+		setting->loaded_index = setting_value_index(setting, "none");
 	return TRUE;
 }
 
