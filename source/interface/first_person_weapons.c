@@ -1480,9 +1480,12 @@ static void first_person_weapon_build_node_matrices(
 			&render.camera.forward,
 			&render.camera.up);
 		/* the pose between the last two ticks (render_interpolation.c) */
-		/* port: no more nodes than the weapon's matrices hold (a map's count) */
+		/* port: no more nodes than the weapon's matrices hold (a map's count);
+		the weapon and its graph tell its poses from another weapon's */
 		render_interpolation_first_person(
 			local_player_index,
+			first_person_weapon->weapon_index,
+			weapon_definition->weapon.interface_definition.first_person_animations.index,
 			first_person_weapon->node_matrices,
 			(short)MIN(animation_graph->nodes.count, MAXIMUM_NODES_PER_ANIMATION),
 			&render.camera);
