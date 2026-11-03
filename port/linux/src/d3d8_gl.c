@@ -566,6 +566,8 @@ struct draw_uniforms
 	float screen_offset;
 	float texture_lod_bias[4];
 	float height_fade[4];
+	/* display.reversed_depth: a z bias's depth units (nv2a_vsh.c) */
+	float depth_bias;
 };
 
 struct program_entry
@@ -584,6 +586,7 @@ struct program_entry
 	GLint texture_lod_bias;
 	GLint screen_offset;
 	GLint height_fade;
+	GLint depth_bias;
 	/* nv2a_pixel_shader_key's source_blend's color, and what it last had */
 	GLint blend_constant;
 	float blend_constant_value[4];
@@ -3973,6 +3976,7 @@ static struct program_entry *program_get(GLuint vertex_shader, GLuint fragment_s
 	entry->texture_lod_bias = glGetUniformLocation(entry->program, "texture_lod_bias");
 	entry->screen_offset = glGetUniformLocation(entry->program, "screen_offset");
 	entry->height_fade = glGetUniformLocation(entry->program, "height_fade");
+	entry->depth_bias = glGetUniformLocation(entry->program, "depth_bias");
 	entry->blend_constant = glGetUniformLocation(entry->program, "blend_constant");
 	entry->model_lights = glGetUniformLocation(entry->program, "model_lights");
 	for (stage = 0; stage < D3DTSS_MAXSTAGES; stage++)
@@ -4767,11 +4771,20 @@ static void apply_raster_state(BOOL has_depth)
 
 		offset[0] = dword_to_float(rs[D3DRS_POLYGONOFFSETZSLOPESCALE]);
 		offset[1] = dword_to_float(rs[D3DRS_POLYGONOFFSETZOFFSET]);
-		/* (display.reversed_depth: toward the camera is up) */
+		/* The slope is the depth's change across a pixel, and a target drawn
+		at several pixels to the game's one (render_target_get) has that many
+		times less depth across each: the Xbox's slope term, taken across its
+		own pixels, is that many times the scale. On a surface seen at an
+		angle it is most of the bias (the Pelican's lights on its curved hull
+		sank in at 1080 lines with it a 2.25th as large). */
+		offset[0] *= target_scale[0] > target_scale[1] ? target_scale[0] : target_scale[1];
+		/* (display.reversed_depth: toward the camera is up, and the units,
+		which a floating-point depth buffer measures by the depth itself,
+		are the vertex program's, in the Xbox's measure: depth_bias) */
 		if (xgpu_reversed_depth)
 		{
 			offset[0] = -offset[0];
-			offset[1] = -offset[1];
+			offset[1] = 0.0f;
 		}
 		if (memcmp(gl_state.polygon_offset, offset, sizeof(offset)))
 		{
@@ -4806,7 +4819,7 @@ static void gl_check_errors(const char *where)
 
 /* the uniforms of the latest draws, converted from these inputs; the serial
 counts the conversions */
-#define DRAW_UNIFORM_INPUT_COUNT (4 + 4 + 16 + 1 + 16 + 2 + 4 + 1 + 1 + 7 * D3DTSS_MAXSTAGES + 4)
+#define DRAW_UNIFORM_INPUT_COUNT (4 + 4 + 16 + 1 + 16 + 2 + 4 + 1 + 1 + 7 * D3DTSS_MAXSTAGES + 4 + 2)
 
 /* the height fade of the draws that follow (d3d8_gl_set_height_fade): off
 while its scale is zero */
@@ -5125,6 +5138,8 @@ static struct program_entry *prepare_draw(BOOL immediate)
 		}
 		memcpy(&inputs[count], height_fade_value, sizeof(height_fade_value));
 		count += 4;
+		inputs[count++] = D3D__RenderState[D3DRS_SOLIDOFFSETENABLE];
+		inputs[count++] = D3D__RenderState[D3DRS_POLYGONOFFSETZOFFSET];
 		if (!draw_uniforms_serial || !words_equal(inputs, draw_uniform_inputs, sizeof(inputs)))
 		{
 			struct draw_uniforms *converted = &draw_uniforms;
@@ -5164,6 +5179,13 @@ static struct program_entry *prepare_draw(BOOL immediate)
 			}
 			converted->screen_offset = (float)UI_OFFSET;
 			memcpy(converted->height_fade, height_fade_value, sizeof(converted->height_fade));
+			/* (display.reversed_depth: the z bias's units, the Xbox's depth
+			units toward the camera, in the depth the vertex program writes:
+			one is 1 / viewport_scale.z, the depth buffer's range over the
+			viewport's) */
+			converted->depth_bias = xgpu_reversed_depth && D3D__RenderState[D3DRS_SOLIDOFFSETENABLE] &&
+				device.viewport_scale[2] != 0.0f ?
+				-dword_to_float(D3D__RenderState[D3DRS_POLYGONOFFSETZOFFSET]) / device.viewport_scale[2] : 0.0f;
 		}
 	}
 	/* and a program that has had them since needs none of them */
@@ -5186,6 +5208,7 @@ static struct program_entry *prepare_draw(BOOL immediate)
 	uniform_float(entry->screen_offset, &entry->uniforms.screen_offset, draw_uniforms.screen_offset);
 	uniform_vec4(entry->texture_lod_bias, entry->uniforms.texture_lod_bias, draw_uniforms.texture_lod_bias, 1);
 	uniform_vec4(entry->height_fade, entry->uniforms.height_fade, draw_uniforms.height_fade, 1);
+	uniform_float(entry->depth_bias, &entry->uniforms.depth_bias, draw_uniforms.depth_bias);
 	return entry;
 }
 

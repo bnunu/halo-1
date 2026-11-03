@@ -346,6 +346,9 @@ static const char shader_prologue[] =
 	/* a fade above a height on the model (d3d8_gl_set_height_fade): off
 	while w is zero */
 	"uniform vec4 height_fade;\n"
+	/* D3DRS_ZBIAS's depth units with display.reversed_depth, in the
+	depth the vertex program writes (d3d8_gl.c, draw_uniforms) */
+	"uniform float depth_bias;\n"
 	"out vec4 xD0;\n"
 	"out vec4 xD1;\n"
 	"out vec4 xB0;\n"
@@ -672,6 +675,15 @@ char *nv2a_vertex_shader_to_glsl(const DWORD *instructions, unsigned long instru
 	{
 		xgpu_text_append(&text, "\tposition.z = position.w - position.z;\n");
 	}
+	/* A z bias moves a decal's depth toward the camera by a number of the
+	Xbox's 24-bit depth units. A polygon offset's units in a floating-point
+	depth buffer are a part of the depth itself, which reversed is small far
+	away: 8 of them moved a decal a hundredth of what the Xbox did at ten
+	world units, and an additive light on a curved hull (the Pelican's)
+	sank into it in slivers. So the units are added here, in the Xbox's
+	measure; the polygon offset keeps only the slope (d3d8_gl.c). */
+	if (xgpu_reversed_depth)
+		xgpu_text_append(&text, "\tposition.z += depth_bias * position.w;\n");
 	xgpu_text_append(&text,
 		/* A position whose w is zero, or is not a number, is the clip-space
 		origin: the screen conversion's reciprocal is clamped rather than
