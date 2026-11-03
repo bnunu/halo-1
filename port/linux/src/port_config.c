@@ -413,6 +413,14 @@ static const struct config_setting config_settings[] =
 		_platform_desktop,
 		"How far the view turns up and down for the mouse's movement; 0 for the\n"
 		"same as input.mouse_sensitivity." },
+	{ "input.left_stick_dead_zone", _config_integer, "-1", "HALO_LEFT_STICK_DEAD_ZONE", _environment_value, _platform_all,
+		"How far the controller's left stick moves before it moves the player,\n"
+		"in percent of its travel (0 to 50): lower for finer control, higher for\n"
+		"a worn stick that drifts; -1 for the game's own (27%). On Android, the\n"
+		"touch controls' stick too." },
+	{ "input.right_stick_dead_zone", _config_integer, "-1", "HALO_RIGHT_STICK_DEAD_ZONE", _environment_value, _platform_all,
+		"How far the controller's right stick moves before it turns the view, in\n"
+		"percent of its travel (0 to 50); -1 for the game's own (27%)." },
 
 	/* the keyboard and mouse's own controls (port/linux/src/xinput_sdl.c) */
 	{ "controls.move_forward", _config_string, "\"W\"", "HALO_KEY_MOVE_FORWARD", _environment_value, _platform_all,

@@ -154,6 +154,35 @@ static float mouse_sensitivity(void)
 	return sensitivity;
 }
 
+/* the game's own dead zone of each stick, of 32767 (source/input/input_xbox.c) */
+#define STICK_DEAD_RANGE 9000
+/* the most a stick's dead zone setting takes, in percent */
+#define STICK_DEAD_ZONE_MAXIMUM 50
+
+/* the deflection a stick reads as none, of 32767, for the game's sticks
+(stick 0 the left, 1 the right): input.left_stick_dead_zone and
+input.right_stick_dead_zone as a percentage, else the game's own */
+short halo_stick_dead_range(short stick)
+{
+	static const char *const settings[2] = { "input.left_stick_dead_zone", "input.right_stick_dead_zone" };
+	static short ranges[2] = { STICK_DEAD_RANGE, STICK_DEAD_RANGE };
+	static unsigned long read_at = (unsigned long)-1;
+	int index;
+
+	if (read_at != config_changes())
+	{
+		read_at = config_changes();
+		for (index = 0; index < 2; index++)
+		{
+			long percent = config_integer(settings[index]);
+
+			ranges[index] = percent < 0 || percent > STICK_DEAD_ZONE_MAXIMUM
+				? STICK_DEAD_RANGE : (short)(percent * 32767 / 100);
+		}
+	}
+	return ranges[stick ? 1 : 0];
+}
+
 /* radians of yaw and pitch for the mouse motion since the last call; the
 game adds these to the facing change of the player on gamepad 0 */
 int halo_linux_mouse_look(short gamepad_index, float *yaw, float *pitch)
@@ -1642,6 +1671,7 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 		struct platform_input_state input;
 		unsigned long held;
 		BOOL console_active;
+		short aiming_deflection;
 
 		platform_input_read(&input, TRUE);
 		mouse_poll(&input);
@@ -1684,8 +1714,12 @@ DWORD WINAPI XInputGetState(HANDLE device, PXINPUT_STATE state)
 #if defined(HALO_ANDROID) || defined(HALO_WEB)
 		touch_input_controls(&state->Gamepad, input.menus);
 #endif
-		if (abs(state->Gamepad.sThumbRX) > STICK_AIMING_DEFLECTION ||
-			abs(state->Gamepad.sThumbRY) > STICK_AIMING_DEFLECTION)
+		/* (a right stick dead zone set below it aims from that) */
+		aiming_deflection = halo_stick_dead_range(1);
+		if (aiming_deflection > STICK_AIMING_DEFLECTION)
+			aiming_deflection = STICK_AIMING_DEFLECTION;
+		if (abs(state->Gamepad.sThumbRX) > aiming_deflection ||
+			abs(state->Gamepad.sThumbRY) > aiming_deflection)
 		{
 			pthread_mutex_lock(&mouse_lock);
 			stick_aimed_ms = SDL_GetTicks();
