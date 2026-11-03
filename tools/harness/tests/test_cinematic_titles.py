@@ -1,5 +1,5 @@
 """The real cinematic_render (cinematics.c) over a fake scenario: a scenario's title is drawn in the game, not over a
-menu, and its time goes on under one."""
+menu, and its time goes on under one; on a wide screen, the edge it is justified to keeps its place."""
 
 import sys
 from pathlib import Path
@@ -9,7 +9,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from harness import CHECK_FAILED, build, constant, function, mutated, read, run, structure  # noqa: E402
 
-CASES = ["drawn-in-the-game", "not-over-a-menu", "time-goes-on-under-a-menu"]
+CASES = ["drawn-in-the-game", "not-over-a-menu", "time-goes-on-under-a-menu", "right-justified-on-a-wide-screen",
+         "left-justified-on-a-wide-screen", "centered-on-a-wide-screen", "unmoved-on-640-columns"]
 
 # a fault in cinematic_render and the case that must catch it
 NEGATIVE_CONTROLS = {
@@ -17,6 +18,13 @@ NEGATIVE_CONTROLS = {
     "time-stops-under-a-menu": (("active_title->time += game_time_get_paused()",
                                  "active_title->time += ui_widgets_active() || game_time_get_paused()"),
                                 "time-goes-on-under-a-menu"),
+    # the box's middle moved, whatever the justification, as before the fix
+    "right-justified-moved-by-its-middle": (("anchor = title_bounds->x1;",
+                                             "anchor = (short)((title_bounds->x0 + title_bounds->x1) / 2);"),
+                                            "right-justified-on-a-wide-screen"),
+    "left-justified-moved-by-its-middle": (("anchor = title_bounds->x0;",
+                                            "anchor = (short)((title_bounds->x0 + title_bounds->x1) / 2);"),
+                                           "left-justified-on-a-wide-screen"),
 }
 
 
