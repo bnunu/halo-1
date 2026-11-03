@@ -564,7 +564,7 @@ are checked in all. `/api/login` takes `POST` alone (any other method:
 | `GET /api/rotation` | viewer | `{"ok":true,"index":0,"entries":[<entry>…],"next":<entry>}` |
 | `PUT /api/rotation` | admin | `{"entries":["bloodgulch:ctf",…]}` → the rotation, or `400 rejected` with `"error":{…,"rejected":[{"index":1,"entry":"…","reason":"…"}]}` and nothing changed |
 | `POST /api/rotation/next` | moderator | `{}`: `sv_map_next` |
-| `POST /api/rotation/play` | moderator | `{"map":"…","gametype":"…"}`: `sv_map` (a map or gametype that cannot be played: `400 failed`) |
+| `POST /api/rotation/play` | moderator | `{"map":"…","gametype":"…"}`: `sv_map` (`map` may be a whole rotation entry, `map:gametype+rule=value`, 255 characters at most, as the page sends one with rules; a map or gametype that cannot be played: `400 failed`) |
 | `GET /api/gametypes` | viewer | `{"ok":true,"builtin":["slayer",…],"schema":{"fields":[<field>…]},"files":[{"name":…,"base":…,"description":…,"error":null}]}` (`builtin`: the Xbox's gametypes, then OpenCE's; a file that cannot be read has `base` and `description` empty and `error` saying why) |
 | `GET /api/gametypes/{name}` | viewer | `{"ok":true,"name":…,"text":"<the TOML>"}` |
 | `PUT /api/gametypes/{name}` | admin | `{"text":"<TOML>"}` → `{"ok":true}`, or `400 invalid` with `line` and `message` (a name is `a`–`z`, `0`–`9`, `_` and `-`, 32 at most) |

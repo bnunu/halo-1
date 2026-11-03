@@ -29,6 +29,7 @@ rate limited, and its password guesses locked out.
 #include "server_log.h"
 #include "server_master.h"
 #include "server_netlist.h"
+#include "server_rotation.h"
 #include "server_toml.h"
 
 #include <SDL3/SDL.h>
@@ -1905,6 +1906,23 @@ static int body_string(const char *body, int length, const char *key, char *valu
 	return found;
 }
 
+/* POST /api/rotation/play's sv_map line, from its map (a map's name, or a
+rotation entry's whole text, map:gametype+rule=value, as the page sends an
+entry with rules: up to a rotation entry's length) and its gametype; NULL,
+else why it cannot be played */
+static const char *rotation_play_line(const char *body, int length, char *line, int size)
+{
+	char map[SERVER_ENTRY_TEXT_SIZE], gametype[64] = "";
+
+	if (!body_string(body, length, "map", map, sizeof(map)) || !map[0] || strchr(map, ' ') || strchr(map, '"'))
+		return "map is needed: a map or a rotation entry, 255 characters at most, with no spaces";
+	body_string(body, length, "gametype", gametype, sizeof(gametype));
+	if (strchr(gametype, ' ') || strchr(gametype, '"'))
+		return "a gametype holds no space";
+	snprintf(line, (size_t)size, "sv_map %s %s", map, gametype);
+	return NULL;
+}
+
 static void serve_asset(struct connection *connection)
 {
 	const char *path = connection->request.path;
@@ -3475,23 +3493,13 @@ static void ticket_api(struct server_ticket *ticket)
 	}
 	else if (!strcmp(path, "/api/rotation/play") && !strcmp(method, "POST"))
 	{
-		char map[128], gametype[64] = "", line[SERVER_COMMAND_LINE_SIZE];
+		char line[SERVER_COMMAND_LINE_SIZE];
+		const char *refused = rotation_play_line(body, length, line, sizeof(line));
 
-		if (!body_string(body, length, "map", map, sizeof(map)) || !map[0] || strchr(map, ' ') || strchr(map, '"'))
-		{
-			ticket_error(ticket, 400, "schema", "map is needed (no spaces)");
-		}
+		if (refused)
+			ticket_error(ticket, 400, "schema", refused);
 		else
-		{
-			body_string(body, length, "gametype", gametype, sizeof(gametype));
-			if (strchr(gametype, ' ') || strchr(gametype, '"'))
-				ticket_error(ticket, 400, "schema", "a gametype holds no space");
-			else
-			{
-				snprintf(line, sizeof(line), "sv_map %s %s", map, gametype);
-				ticket_command(ticket, line);
-			}
-		}
+			ticket_command(ticket, line);
 	}
 	else if (!strcmp(path, "/api/maps") && !strcmp(method, "GET"))
 	{

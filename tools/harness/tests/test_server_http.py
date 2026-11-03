@@ -20,7 +20,7 @@ CASES = [
     "forwarded", "addresses", "origin", "query", "compare", "frames", "frame-refusals", "fragments",
     "content-length-duplicate", "output", "pipelining", "address-table", "eviction", "deadlines", "close-order",
     "bare-lf", "auth-csrf", "auth-denied", "route-roles", "session-expiry", "session-cap", "lockout", "login-budget",
-    "empty-password", "password-change", "fetch-site", "ws-allowance", "owner-local",
+    "empty-password", "password-change", "fetch-site", "ws-allowance", "owner-local", "rotation-play",
 ]
 FUNCTIONS = (
     "sha1_rotate", "sha1", "text_equal_case", "constant_time_equal", "address_text", "parse_address", "hex_digit_value",
@@ -28,7 +28,8 @@ FUNCTIONS = (
     "query_number", "connection_is_local", "address_record", "address_allows_request", "address_locked",
     "address_login_failed",
     "session_hash", "session_find", "session_new", "passwords_check", "password_role", "request_host",
-    "origin_matches", "ws_frame", "ws_close", "ws_read_frames", "request_session", "body_string", "serve_login",
+    "origin_matches", "ws_frame", "ws_close", "ws_read_frames", "request_session", "body_string", "rotation_play_line",
+    "serve_login",
     "route_needs_game", "route_role", "handle_request", "server_http_capabilities", "handle_upgrade", "connection_take",
     "connection_to_evict",
     "connection_overdue",
@@ -199,6 +200,7 @@ NEGATIVE_CONTROLS = {
                                    "if (owner_elsewhere)"), "password_role", "owner-local"),
     "owner-password-change-unseen": (('"server.web_owner_password" };', '"server.web_password" };'), "passwords_check",
                                      "owner-local"),
+    "play-entries-short": (("char map[SERVER_ENTRY_TEXT_SIZE]", "char map[128]"), "rotation_play_line", "rotation-play"),
 }
 
 
@@ -211,7 +213,8 @@ def generated(fault=None, faulty_function=None):
     config += enum_with(source, "_ticket_api") + "\n"
     config += enum_with(read("port/linux/src/server_console.h"), "_server_role_none") + "\n"
     config += f"enum {{ P2P_SHA256_SIZE = {constant(read('port/linux/src/p2p_internal.h'), 'P2P_SHA256_SIZE')}, "
-    config += f"SERVER_EVENT_GROUP_SIZE = {constant(read('port/linux/src/server_events.h'), 'SERVER_EVENT_GROUP_SIZE')} }};\n"
+    config += f"SERVER_EVENT_GROUP_SIZE = {constant(read('port/linux/src/server_events.h'), 'SERVER_EVENT_GROUP_SIZE')}, "
+    config += f"SERVER_ENTRY_TEXT_SIZE = {constant(read('port/linux/src/server_rotation.h'), 'SERVER_ENTRY_TEXT_SIZE')} }};\n"
     config += "struct push;\n"
     for name in STRUCTURES:
         config += structure(source, name) + "\n"
