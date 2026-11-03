@@ -3311,10 +3311,10 @@
    "cells": [
     {
      "xbox": [
-      0,
-      0,
-      31,
-      24
+      4.125,
+      4.875,
+      26.75,
+      19.0
      ],
      "source_png": "corrections/scope.png",
      "crop": [
@@ -3327,10 +3327,10 @@
     },
     {
      "xbox": [
-      0,
-      24,
-      43,
-      48
+      5.25,
+      28.75,
+      38.5,
+      43.125
      ],
      "source_png": "corrections/scope.png",
      "crop": [
