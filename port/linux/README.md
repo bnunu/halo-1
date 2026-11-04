@@ -1825,6 +1825,7 @@ Other changes:
 | `rasterizer/xbox/rasterizer_xbox_environment_fog.c` | A local pointer gets its value from the file-scope array with the same name. |
 | `game/player_control.c` | The mouse aims the player on controller 1 directly. |
 | `sound/game_sound.c` | The game calculates the obstruction of each sound one time for each tick, not for each frame. |
+| `effects/player_effects.c` | A camera shake or impulse is drawn as the first frame after a tick made it by every frame until the next tick, as the Xbox drew it for the tick: its full scale showed only on that first frame, an eighth of the tick at 240 frames a second, so firing shook the view a fraction as much, and the assault rifle's short kick hardly at all. |
 | `sound/sound_manager.c` | A track of a looping sound that is gone stops, even in the millisecond it started (`refresh_sound`). The Xbox never drew three frames in one millisecond; the port can (the null renderer, no frame limit), and then read the deleted looping sound and crashed. |
 | `cseries/errors.c` | `debug.txt` stays open between lines. A line that is the same as the line before it is counted, not written again (`last line repeated N times`). At 64 MB, `debug.txt` becomes `debug.old.txt` and a new `debug.txt` starts. |
 | `networking/`, `game/`, `interface/`, `bungie_net/network/` and the pools of objects, effects and sounds | The system link limits and the memory for them. |
