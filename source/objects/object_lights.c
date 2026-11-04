@@ -1189,10 +1189,13 @@ void lights_preprocess_scene(
 								&light_parameters.forward,
 								&light_parameters.up);
 
-							/* port: another player's beam, in a match, from
-							the marker on the pose the frame draws: the light's
-							own place is the tick's, so it stepped */
-							if (!centered && game_connection() != _game_connection_local)
+							/* port: a beam not on a first-person weapon
+							(another player's, or your own with no weapon in
+							hand), from the marker on the pose the frame draws
+							(render_interpolation.c): the light's own place is
+							the tick's, so it stepped at 30 a second while the
+							view moved every frame */
+							if (!centered)
 							{
 								struct object_marker markers[1];
 
