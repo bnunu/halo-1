@@ -48,6 +48,7 @@ symbols in this file:
 #include "cache/texture_cache.h"
 #include "cseries/cseries.h"
 #include "cseries/errors.h"
+#include "game/game.h" /* port: game_time_get (lightning_submit) */
 #include "interface/hud_draw.h"
 #include "bitmaps/bitmap_color_conversion.h"
 #include "math/real_math.h"
@@ -66,6 +67,10 @@ enum
 {
 	LIGHTNING_TAG = 'elec',
 	MAXIMUM_LIGHTNING_POINTS = 4097,
+	/* port: the lightnings (lightnings_initialize's 256) and the windows
+	(split screen) a bolt's seed is kept for (lightning_submit) */
+	LIGHTNING_TICK_SEED_LIGHTNINGS = 256,
+	LIGHTNING_TICK_SEED_WINDOWS = 4,
 };
 
 enum
@@ -164,6 +169,14 @@ static void lightning_offset_marker_position(
 
 static struct lightning_globals lightning_globals = {0};
 
+/* port: the local random seed each lightning's bolt in each window was first
+drawn from in a tick, and the tick plus one, 0 for none (lightning_submit) */
+static struct
+{
+	long tick;
+	unsigned long seed;
+} lightning_tick_seeds[LIGHTNING_TICK_SEED_LIGHTNINGS][LIGHTNING_TICK_SEED_WINDOWS];
+
 /* ---------- public code */
 
 void lightnings_initialize(
@@ -186,6 +199,8 @@ void lightnings_initialize_for_new_map(
 {
 	if (lightning_globals.lightning_data)
 		data_make_valid(lightning_globals.lightning_data);
+	/* port: (lightning_submit) */
+	csmemset(lightning_tick_seeds, 0, sizeof(lightning_tick_seeds));
 
 	return;
 }
@@ -205,7 +220,17 @@ long lightning_new(
 	long lightning_index = datum_new(lightning_globals.lightning_data);
 
 	if (lightning_index != NONE)
+	{
 		lightning_get(lightning_index)->definition_index = definition_index;
+		/* port: (lightning_submit) a new bolt, not the one before it there */
+		if (DATUM_INDEX_TO_ABSOLUTE_INDEX(lightning_index) < LIGHTNING_TICK_SEED_LIGHTNINGS)
+		{
+			csmemset(
+				lightning_tick_seeds[DATUM_INDEX_TO_ABSOLUTE_INDEX(lightning_index)],
+				0,
+				sizeof(lightning_tick_seeds[0]));
+		}
+	}
 
 	return lightning_index;
 }
@@ -273,6 +298,36 @@ void lightning_submit(
 		struct lightning_datum *lightning = lightning_get(widget_index);
 		struct lightning_definition *definition = lightning_definition_get(lightning->definition_index);
 		struct object_marker marker;
+		/* port: a bolt's shape a tick. The Xbox drew a frame a tick, so a
+		bolt's random offsets (its markers', its points' jitter, its
+		texture's) were drawn anew 30 times a second. The native builds draw
+		every frame (port/linux/game/render_interpolation.c), and a bolt took
+		a new shape each frame, flickering several times as fast at high
+		frame rates. The first frame of a tick to draw a lightning in a
+		window keeps the local random seed it started from; the frames after
+		it until the next tick draw the bolt from that seed, the same shape
+		between its markers where they are drawn then, and leave the seed as
+		they found it. */
+		unsigned long *local_seed = get_global_local_random_seed_address();
+		unsigned long frame_seed = *local_seed;
+		long seed_lightning = DATUM_INDEX_TO_ABSOLUTE_INDEX(widget_index);
+		short seed_window = render.window_index;
+		boolean tick_drawn = FALSE;
+
+		if (seed_lightning < LIGHTNING_TICK_SEED_LIGHTNINGS &&
+			seed_window >= 0 && seed_window < LIGHTNING_TICK_SEED_WINDOWS)
+		{
+			if (lightning_tick_seeds[seed_lightning][seed_window].tick == game_time_get() + 1)
+			{
+				*local_seed = lightning_tick_seeds[seed_lightning][seed_window].seed;
+				tick_drawn = TRUE;
+			}
+			else
+			{
+				lightning_tick_seeds[seed_lightning][seed_window].tick = game_time_get() + 1;
+				lightning_tick_seeds[seed_lightning][seed_window].seed = frame_seed;
+			}
+		}
 
 		if (definition->markers.count > 0 &&
 			object_get_marker_by_name(
@@ -576,6 +631,10 @@ void lightning_submit(
 				}
 			}
 		}
+
+		/* port: (above) */
+		if (tick_drawn)
+			*local_seed = frame_seed;
 	}
 
 	return;
