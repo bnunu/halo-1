@@ -1112,7 +1112,11 @@ shots crackled. The packets must go back to the game at once (it refills the
 channel, and may reuse their memory), so what the voice would play next is
 mixed now, CUT_FADE_FRAMES of it at its gains, faded out along half a cosine,
 and played over the next mixes beside the new sound (mix_cut). What is left
-of a cut still playing is kept under it. */
+of a cut still playing is kept under it. The fade is the voice's own output
+only while that is its frames at its gains through its low passes (whose
+state mix_voice carries on into it): processing of a voice that holds what
+it played (an HRTF's filters, a delay) must take the fade through itself
+too, or the cut jumps from the one to the other and clicks again. */
 static void voice_cut(struct sdl_stream *stream)
 {
 	static float output[CUT_FADE_FRAMES * MAXIMUM_OUTPUT_CHANNELS], send[CUT_FADE_FRAMES];
