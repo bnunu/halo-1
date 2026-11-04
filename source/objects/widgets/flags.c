@@ -264,6 +264,23 @@ void flags_update(
 	real delta)
 {
 	long flag_index;
+	/* port: the cloth steps a tick at a time, as on the Xbox, which drew a
+	frame a tick. Each step moves every vertex to where its neighbours hold
+	it (flag_update), and the native builds stepped every frame, several a
+	tick (port/linux/game/render_interpolation.c): eight steps a tick at 240
+	frames a second held the cloth eight times as stiff, and it hung and
+	flapped unlike the Xbox's. Step on the first frame after each tick, for
+	all the time since the last step; the frames between draw it where its
+	object is drawn (flag_render_proper). */
+	static long last_step_game_time = NONE;
+	static real pending_delta = 0.0f;
+
+	pending_delta += delta;
+	if (last_step_game_time == game_time_get())
+		return;
+	last_step_game_time = game_time_get();
+	delta = pending_delta;
+	pending_delta = 0.0f;
 
 	for (flag_index = data_next_index(flag_data, NONE);
 		flag_index != NONE;
@@ -769,6 +786,17 @@ void flag_render_proper(
 		short i;
 		short x;
 		short y;
+		/* port: the cloth hangs from its object's markers where the tick
+		left them (flags_update), and the frame draws the object between the
+		ticks (render_interpolation.c): drawn as far from there as the object
+		is, so that it stays on a running carrier's pole */
+		real_point3d drawn = flag->first_attachment;
+		real_vector3d drawn_offset;
+
+		render_interpolation_object_point(flag->object_index, &drawn);
+		drawn_offset.i = drawn.x - flag->first_attachment.x;
+		drawn_offset.j = drawn.y - flag->first_attachment.y;
+		drawn_offset.k = drawn.z - flag->first_attachment.z;
 
 		object_definition_get(object_get(flag->object_index)->definition_index);
 		vertices = rasterizer_dynamic_vertices_lock(vertex_buffer_index);
@@ -796,6 +824,10 @@ void flag_render_proper(
 				normalize3d(&vertex.normal);
 
 				vertex.position = point->position;
+				/* port: (drawn_offset, above) */
+				vertex.position.x += drawn_offset.i;
+				vertex.position.y += drawn_offset.j;
+				vertex.position.z += drawn_offset.k;
 				vertex.texcoord.x = x * one_over_width;
 				vertex.texcoord.y = y * one_over_height;
 				rasterizer_geometry_compress_vertices(
@@ -912,6 +944,10 @@ void flag_render_proper(
 				corner00->position.y) * 0.25f;
 			centroid.z = (corner11->position.z + corner01->position.z + corner10->position.z +
 				corner00->position.z) * 0.25f;
+			/* port: (drawn_offset, above) */
+			centroid.x += drawn_offset.i;
+			centroid.y += drawn_offset.j;
+			centroid.z += drawn_offset.k;
 
 			csmemset(&parameters, 0, sizeof(parameters));
 			parameters.unique_identifier = 1;
