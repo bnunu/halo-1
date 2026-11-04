@@ -374,15 +374,23 @@ void contrails_update(
 	land on the last point, be skipped and be lost. Emit on the first frame
 	after each tick, for all the time since the last emission. */
 	static long last_point_game_time = NONE;
-	static real pending_point_dt = 0.0f;
 	real point_dt;
 
-	pending_point_dt += dt;
+	/* port: the ticks' own time, a 30th of a second each, as the Xbox's
+	frames were (a frame a tick, a 29.97th of a second at 30 frames a
+	second): the frames' time since the last tick was four or five frames'
+	at 144 frames a second, 28 or 35 ms, so the points were made and aged by
+	uneven steps and a short trail's fades (a plasma turret's) flickered from
+	tick to tick. A game time gone back or jumping (a new map, a checkpoint)
+	counts as a tick. */
 	if (last_point_game_time != game_time_get())
 	{
+		long ticks = game_time_get() - last_point_game_time;
+
+		if (last_point_game_time == NONE || ticks < 1 || ticks > TICKS_PER_SECOND)
+			ticks = 1;
 		last_point_game_time = game_time_get();
-		point_dt = pending_point_dt;
-		pending_point_dt = 0.0f;
+		point_dt = (real)ticks / TICKS_PER_SECOND;
 	}
 	else
 	{
