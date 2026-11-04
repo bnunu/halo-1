@@ -1827,6 +1827,7 @@ Other changes:
 | `sound/game_sound.c` | The game calculates the obstruction of each sound one time for each tick, not for each frame. |
 | `sound/sound_manager.c` | A track of a looping sound that is gone stops, even in the millisecond it started (`refresh_sound`). The Xbox never drew three frames in one millisecond; the port can (the null renderer, no frame limit), and then read the deleted looping sound and crashed. |
 | `cseries/errors.c` | `debug.txt` stays open between lines. A line that is the same as the line before it is counted, not written again (`last line repeated N times`). At 64 MB, `debug.txt` becomes `debug.old.txt` and a new `debug.txt` starts. |
+| `effects/contrails.c` | Contrail points age a tick at a time, on the first frame after each tick, as on the Xbox, where each of a point's states lasted at least a frame: a Shade's or a Spirit's points (states of 0.01, 0.05 and 0.005 seconds) lived 133 ms there, and about half that aged each frame at 240 frames a second. |
 | `networking/`, `game/`, `interface/`, `bungie_net/network/` and the pools of objects, effects and sounds | The system link limits and the memory for them. |
 | `game/`, `objects/`, `units/`, `networking/` | The distributed netcode. Refer to `NETCODE.md`. |
 | `cache/cache_files.c` | When a map's tags load and unload, the port finds the bitmaps that the high-res HUD replaces (`game/hud_hires_tags.c`), adds the tags of the menus to the menus' map (`game/menu_tags.c`), and plays the mods' tags (`game/mods.c`). |

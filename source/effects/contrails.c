@@ -465,7 +465,14 @@ void contrails_update(
 			texture_animation_v = texture_animation_v * contrail->density;
 		contrail->texture_offset_v = texture_animation_v * frame_dt + contrail->texture_offset_v;
 
-		contrail_update_points(contrail_index, dt);
+		/* port: the points age a tick at a time too, as on the Xbox, which
+		drew a frame a tick: a point's state that ends drops the rest of the
+		frame's time (contrail_update_points), so each state lasted at least a
+		tick. A Shade's or a Spirit's points (states of 0.01, 0.05 and 0.005
+		seconds) lived four ticks, 133 ms, and aged a frame at a time at 240
+		frames a second they lived about half that, the trail half as long */
+		if (point_dt > 0.0f)
+			contrail_update_points(contrail_index, point_dt);
 
 		for (instance_index = 0;
 			instance_index < MAXIMUM_CONTRAIL_INSTANCES;
