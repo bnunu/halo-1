@@ -786,17 +786,29 @@ void flag_render_proper(
 		short i;
 		short x;
 		short y;
-		/* port: the cloth hangs from its object's markers where the tick
-		left them (flags_update), and the frame draws the object between the
-		ticks (render_interpolation.c): drawn as far from there as the object
-		is, so that it stays on a running carrier's pole */
-		real_point3d drawn = flag->first_attachment;
+		/* port: the cloth hangs from its first attachment marker where the
+		frame that stepped it drew it (flags_update, on the first frame after
+		a tick; game_frame reads the drawn pose, render_interpolation.c), and
+		later frames draw its object further on: drawn as far from there as
+		that marker is now, so that it stays on a running carrier's pole */
 		real_vector3d drawn_offset;
 
-		render_interpolation_object_point(flag->object_index, &drawn);
-		drawn_offset.i = drawn.x - flag->first_attachment.x;
-		drawn_offset.j = drawn.y - flag->first_attachment.y;
-		drawn_offset.k = drawn.z - flag->first_attachment.z;
+		drawn_offset.i = drawn_offset.j = drawn_offset.k = 0.0f;
+		if (definition->attachment_points.count > 0)
+		{
+			struct object_marker marker;
+
+			if (object_get_marker_by_name(
+				flag->object_index,
+				TAG_BLOCK_GET_ELEMENT(&definition->attachment_points, 0, struct flag_attachment_point)->marker_name,
+				&marker,
+				1) > 0)
+			{
+				drawn_offset.i = marker.matrix.position.x - flag->first_attachment.x;
+				drawn_offset.j = marker.matrix.position.y - flag->first_attachment.y;
+				drawn_offset.k = marker.matrix.position.z - flag->first_attachment.z;
+			}
+		}
 
 		object_definition_get(object_get(flag->object_index)->definition_index);
 		vertices = rasterizer_dynamic_vertices_lock(vertex_buffer_index);
