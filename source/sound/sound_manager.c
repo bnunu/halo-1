@@ -248,7 +248,7 @@ symbols in this file:
 and reverberated as a 3D channel's is (sound_dsound_xbox.c; update_channels) */
 void dsound_port_set_channel_stereo_position(short virtual_channel_index, boolean positioned, real pan,
 	real distance, real minimum_distance, real distance_fade, real occlusion, real obstruction,
-	boolean attenuate_direct_path);
+	boolean attenuate_direct_path, real approach);
 
 /* ---------- constants */
 
@@ -3595,6 +3595,8 @@ static void update_channels(
 				real stereo_obstruction = 0.f;
 				real stereo_occlusion = 0.f;
 				boolean stereo_underwater = FALSE;
+				/* port: and its velocity from the listener, for its Doppler effect */
+				real_vector3d stereo_velocity = *global_zero_vector3d;
 
 				switch (sound->source.spatialization_mode)
 				{
@@ -3603,7 +3605,7 @@ static void update_channels(
 					if (TEST_FLAG(channel->type_flags, _sound_channel_stereo_bit))
 					{
 						dsound_port_set_channel_stereo_position(channel_index, FALSE, 0.f, 0.f, 0.f, 1.f,
-							0.f, 0.f, FALSE);
+							0.f, 0.f, FALSE, 0.f);
 					}
 					break;
 
@@ -3623,6 +3625,14 @@ static void update_channels(
 						stereo_obstruction = sound->source.obstruction;
 						stereo_occlusion = sound->source.occlusion;
 						stereo_underwater = listener->underwater;
+						/* port: as a 3D channel's velocity is given (above) */
+						matrix4x3_inverse_transform_vector(
+							&listener->matrix,
+							&sound->source.location.translational_velocity,
+							&stereo_velocity);
+						stereo_velocity.i = TICKS_PER_SECOND * stereo_velocity.i - listener->velocity.i;
+						stereo_velocity.j = TICKS_PER_SECOND * stereo_velocity.j - listener->velocity.j;
+						stereo_velocity.k = TICKS_PER_SECOND * stereo_velocity.k - listener->velocity.k;
 					}
 					/* fall through */
 
@@ -3668,6 +3678,14 @@ static void update_channels(
 								relative_position.x * relative_position.x +
 								relative_position.y * relative_position.y);
 							real pan = horizontal > 1.0e-4f ? -relative_position.y / horizontal : 0.f;
+							/* port: how fast it comes towards the listener, for
+							its Doppler effect, as a 3D channel's (dsound_sdl.c,
+							doppler_ratio) */
+							real approach = distance > 1.0e-4f ?
+								-(stereo_velocity.i * relative_position.x +
+									stereo_velocity.j * relative_position.y +
+									stereo_velocity.k * relative_position.z) / distance :
+								0.f;
 
 							if (distance < minimum_distance && minimum_distance > 0.f)
 							{
@@ -3675,7 +3693,7 @@ static void update_channels(
 							}
 							dsound_port_set_channel_stereo_position(channel_index, TRUE, 0.75f * pan,
 								distance, minimum_distance, distance_fade,
-								stereo_obstruction, stereo_occlusion, stereo_underwater);
+								stereo_obstruction, stereo_occlusion, stereo_underwater, approach);
 						}
 					}
 					break;

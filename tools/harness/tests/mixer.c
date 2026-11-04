@@ -419,6 +419,88 @@ static void scene_approach(void)
 	}
 }
 
+/* ---------- 3D voices: Doppler */
+
+/* a 3D voice of a 1 kHz sine at 48 kHz (as long as four times up needs),
+distance units straight ahead of the listener, heard whole and sending to
+the room at full level */
+static struct sdl_stream *voice_ahead(float distance)
+{
+	unsigned long frames = 100000, n;
+	double *signal = malloc(frames * sizeof(double)), *exact = malloc(frames * sizeof(double));
+	short *samples = malloc(frames * sizeof(short));
+	struct sdl_stream *stream;
+
+	for (n = 0; n < frames; n++)
+		signal[n] = 0.5 * sin(2.0 * PI * 1000.0 * n / 48000.0);
+	quantize(signal, samples, exact, frames);
+	stream = voice_new(samples, frames, 1, 48000, 0);
+	stream->has_3d = TRUE;
+	stream->mode = DS3DMODE_NORMAL;
+	stream->position[2] = distance;
+	stream->minimum_distance = 1.0f;
+	stream->maximum_distance = 1000.0f;
+	stream->room = stream->room_hf = 0;
+	free(signal);
+	free(exact);
+	free(samples);
+	return stream;
+}
+
+/* the frequency of signal[first, last) in hertz at the output rate, from its
+rising zero crossings (each placed between its two frames) */
+static double measured_frequency(const float *signal, unsigned long first, unsigned long last)
+{
+	double first_crossing = -1.0, last_crossing = 0.0;
+	unsigned long n, cycles = 0;
+
+	for (n = first; n + 1 < last; n++)
+	{
+		if (signal[n] <= 0.0f && signal[n + 1] > 0.0f)
+		{
+			double crossing = (double)n + signal[n] / (signal[n] - signal[n + 1]);
+
+			if (first_crossing < 0.0)
+				first_crossing = crossing;
+			else
+				cycles++;
+			last_crossing = crossing;
+		}
+	}
+	return cycles ? cycles * (double)OUTPUT_RATE / (last_crossing - first_crossing) : 0.0;
+}
+
+#define FIGURE_FRAMES 20000
+
+/* the voice mixed alone, CHUNK at a time, past its first mixes: the left
+channel's frequency and the sine's amplitude there, and the room send's
+level */
+static void voice_figures(struct sdl_stream *stream, double *frequency, double *level, double *room_level)
+{
+	static float output[FIGURE_FRAMES], send_out[FIGURE_FRAMES], buffer[CHUNK * 2], send[CHUNK];
+	unsigned long done, frame;
+	double rest_db, sum = 0.0;
+
+	for (done = 0; done < FIGURE_FRAMES; done += CHUNK)
+	{
+		unsigned long count = FIGURE_FRAMES - done < CHUNK ? FIGURE_FRAMES - done : CHUNK;
+
+		memset(buffer, 0, sizeof(buffer));
+		memset(send, 0, sizeof(send));
+		mix_voice(stream, buffer, send, count);
+		for (frame = 0; frame < count; frame++)
+		{
+			output[done + frame] = buffer[frame * 2];
+			send_out[done + frame] = send[frame];
+		}
+	}
+	*frequency = measured_frequency(output, 4000, FIGURE_FRAMES);
+	tone_fit(output, 4000, FIGURE_FRAMES, *frequency / OUTPUT_RATE, level, &rest_db);
+	for (frame = 4000; frame < FIGURE_FRAMES; frame++)
+		sum += (double)send_out[frame] * send_out[frame];
+	*room_level = sqrt(sum / (FIGURE_FRAMES - 4000));
+}
+
 static void bench(unsigned long voices, unsigned long silent, BOOL indoor, double seconds)
 {
 	unsigned long chunks = (unsigned long)(seconds * OUTPUT_RATE / CHUNK), chunk;
@@ -665,6 +747,105 @@ int main(int argc, char **argv)
 		free(exact);
 		free(samples);
 		free(signal);
+		return 0;
+	}
+	/* the Doppler shift: a 1 kHz voice 10 units ahead, a unit being 3.048 m,
+	its pitch moved by c / (c - the source's speed towards the listener) and
+	(c - the listener's speed away from it) / c, nothing for a velocity
+	across the line or for a 2D voice but a positioned stereo one, and nothing held but the frequency, to
+	what an Xbox voice plays at (191983 Hz, four times 48 kHz, up; 188 Hz
+	down) */
+	CASE("doppler")
+	{
+		static const struct
+		{
+			float source, across, listener;
+			BOOL is_3d;
+			double hertz;
+		} cases[] = {
+			{ 0.0f, 0.0f, 0.0f, TRUE, 1000.0 },
+			/* 10 units a second (30.48 m/s) towards the listener and away */
+			{ -10.0f, 0.0f, 0.0f, TRUE, 1000.0 * 343.3 / (343.3 - 30.48) },
+			{ 10.0f, 0.0f, 0.0f, TRUE, 1000.0 * 343.3 / (343.3 + 30.48) },
+			/* the listener 10 units a second towards the source */
+			{ 0.0f, 0.0f, 10.0f, TRUE, 1000.0 * (343.3 + 30.48) / 343.3 },
+			{ 0.0f, 10.0f, 0.0f, TRUE, 1000.0 },
+			{ -10.0f, 0.0f, 0.0f, FALSE, 1000.0 },
+			/* past half the speed of sound (182.88 m/s), more than an
+			octave up coming; going at 609.6 m/s, more than an octave down */
+			{ -60.0f, 0.0f, 0.0f, TRUE, 1000.0 * 343.3 / (343.3 - 182.88) },
+			{ 200.0f, 0.0f, 0.0f, TRUE, 1000.0 * 343.3 / (343.3 + 609.6) },
+			/* nearly and past the speed of sound: as fast as a voice plays */
+			{ -100.0f, 0.0f, 0.0f, TRUE, 1000.0 * 191983.0 / 48000.0 },
+			{ -200.0f, 0.0f, 0.0f, TRUE, 1000.0 * 191983.0 / 48000.0 },
+		};
+
+		listener.distance_factor = 3.048f;
+		for (index = 0; index < sizeof(cases) / sizeof(cases[0]); index++)
+		{
+			struct sdl_stream *stream = voice_ahead(10.0f);
+			double hertz, level, room_level;
+
+			stream->has_3d = cases[index].is_3d;
+			stream->velocity[2] = cases[index].source;
+			stream->velocity[0] = cases[index].across;
+			listener.velocity[2] = cases[index].listener;
+			voice_figures(stream, &hertz, &level, &room_level);
+			CHECK(fabs(hertz / cases[index].hertz - 1.0) < 1.0e-4, "case %lu: %.2f Hz, %.2f Hz wanted", index, hertz,
+				cases[index].hertz);
+			voice_delete(stream);
+		}
+		listener.velocity[2] = 0.0f;
+		/* a positioned stereo voice (2D), shifted as one would be by how
+		fast the game says it comes towards the listener: 10 units a second */
+		{
+			struct sdl_stream *stream = voice_ahead(10.0f);
+			double hertz, level, room_level, wanted = 1000.0 * 343.3 / (343.3 - 30.48);
+
+			stream->has_3d = FALSE;
+			stream->stereo_positioned = TRUE;
+			stream->stereo_approach = 10.0f;
+			voice_figures(stream, &hertz, &level, &room_level);
+			CHECK(fabs(hertz / wanted - 1.0) < 1.0e-4, "a positioned stereo voice: %.2f Hz, %.2f Hz wanted", hertz,
+				wanted);
+			voice_delete(stream);
+		}
+		/* a change of velocity glides across the next mix: the pitch of
+		each stretch of it between the two */
+		{
+			struct sdl_stream *stream = voice_ahead(10.0f);
+			static float buffer[CHUNK * 2], send[CHUNK], left[CHUNK];
+			double before, after, wanted = 1000.0 * 343.3 / (343.3 - 30.48), quarter[4];
+			unsigned long chunk, frame, part;
+
+			for (chunk = 0; chunk < 8; chunk++)
+			{
+				memset(buffer, 0, sizeof(buffer));
+				mix_voice(stream, buffer, send, CHUNK);
+			}
+			for (frame = 0; frame < CHUNK; frame++)
+				left[frame] = buffer[frame * 2];
+			before = measured_frequency(left, 0, CHUNK);
+			stream->velocity[2] = -10.0f;
+			memset(buffer, 0, sizeof(buffer));
+			mix_voice(stream, buffer, send, CHUNK);
+			for (frame = 0; frame < CHUNK; frame++)
+				left[frame] = buffer[frame * 2];
+			for (part = 0; part < 4; part++)
+				quarter[part] = measured_frequency(left, part * CHUNK / 4, (part + 1) * CHUNK / 4 + 1);
+			memset(buffer, 0, sizeof(buffer));
+			mix_voice(stream, buffer, send, CHUNK);
+			for (frame = 0; frame < CHUNK; frame++)
+				left[frame] = buffer[frame * 2];
+			after = measured_frequency(left, 0, CHUNK);
+			CHECK(fabs(before - 1000.0) < 1.0 && fabs(after - wanted) < 1.0, "%.1f Hz before, %.1f Hz after (%.1f)",
+				before, after, wanted);
+			CHECK(quarter[0] > before + 5.0 && quarter[0] < quarter[3] - 20.0 && quarter[3] < after - 5.0,
+				"no glide: %.1f, then %.1f %.1f %.1f %.1f, then %.1f Hz", before, quarter[0], quarter[1], quarter[2],
+				quarter[3], after);
+			voice_delete(stream);
+		}
+		listener.distance_factor = 1.0f;
 		return 0;
 	}
 	CASE("metrics")
