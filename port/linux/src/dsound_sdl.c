@@ -20,7 +20,8 @@ resampling) and applies:
 	  environment's HF reference: a sound behind a wall is muffled.
 3D voices also send to an I3DL2 reverb of the environment the listener is in
 (reverb). Doppler and cones are not modelled. A look-ahead limiter keeps the
-sum under full scale (limit).
+sum under full scale (limit). A voice the game cuts off while it plays fades
+out over 5 ms rather than stopping dead, which clicked (voice_cut).
 
 The output is stereo or 5.1 (audio.channels). For 5.1 the speaker config
 reports AC-3, as an Xbox set to Dolby Digital does: the game then sends its
@@ -67,6 +68,8 @@ skips opening a device; audio.channels chooses stereo or 5.1
 #define MAXIMUM_OUTPUT_CHANNELS 6
 #define MAXIMUM_STREAM_PACKETS 64
 #define MIX_CHUNK_FRAMES 1024
+/* the frames a voice cut off fades out over (voice_cut): 5 ms */
+#define CUT_FADE_FRAMES 240
 
 #define XBOX_ADPCM_BLOCK_BYTES 36
 #define XBOX_ADPCM_BLOCK_SAMPLES 64
@@ -164,6 +167,12 @@ struct sdl_stream
 	/* the direct path's low pass, for each channel, and the room send's */
 	float direct_lowpass[2];
 	float room_lowpass;
+	/* what the voice was playing when the game cut it off, faded out
+	(voice_cut): frames of output_channels floats and their room send, and
+	how many of them have played */
+	float cut[CUT_FADE_FRAMES * MAXIMUM_OUTPUT_CHANNELS];
+	float cut_send[CUT_FADE_FRAMES];
+	unsigned long cut_played;
 };
 
 static pthread_mutex_t mixer_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -1095,6 +1104,55 @@ static void mix_voice(struct sdl_stream *stream, float *output, float *send, uns
 		memcpy(stream->current_surround, target_surround, sizeof(target_surround));
 }
 
+/* The game cuts a voice off (Flush) to play the next sound on its channel:
+each shot of a weapon fired faster than its sound lasts takes the last's
+channel (sound classes allow one weapon_fire sound an object). Stopped dead,
+a waveform drops from wherever it was to nothing, a click, and a rifle's
+shots crackled. The packets must go back to the game at once (it refills the
+channel, and may reuse their memory), so what the voice would play next is
+mixed now, CUT_FADE_FRAMES of it at its gains, faded out along half a cosine,
+and played over the next mixes beside the new sound (mix_cut). What is left
+of a cut still playing is kept under it. */
+static void voice_cut(struct sdl_stream *stream)
+{
+	static float output[CUT_FADE_FRAMES * MAXIMUM_OUTPUT_CHANNELS], send[CUT_FADE_FRAMES];
+	unsigned long frame, channel, left = CUT_FADE_FRAMES - stream->cut_played;
+
+	if (stream->paused || !stream->packet_count || !stream->gains_valid)
+		return;
+	memset(output, 0, sizeof(output));
+	memset(send, 0, sizeof(send));
+	mix_voice(stream, output, send, CUT_FADE_FRAMES);
+	for (frame = 0; frame < CUT_FADE_FRAMES; frame++)
+	{
+		float fade = 0.5f + 0.5f * cosf(3.14159265f * (float)(frame + 1) / CUT_FADE_FRAMES);
+
+		/* (what is left of the earlier cut is read only where it is: past
+		it is whatever it was, a NaN perhaps, which no factor of 0 hides) */
+		for (channel = 0; channel < output_channels; channel++)
+		{
+			stream->cut[frame * output_channels + channel] = output[frame * output_channels + channel] * fade +
+				(frame < left ? stream->cut[(stream->cut_played + frame) * output_channels + channel] : 0.0f);
+		}
+		stream->cut_send[frame] = send[frame] * fade +
+			(frame < left ? stream->cut_send[stream->cut_played + frame] : 0.0f);
+	}
+	stream->cut_played = 0;
+}
+
+/* a cut voice's fade out (voice_cut), into the mix */
+static void mix_cut(struct sdl_stream *stream, float *output, float *send, unsigned long frames)
+{
+	unsigned long frame, channel;
+
+	for (frame = 0; frame < frames && stream->cut_played < CUT_FADE_FRAMES; frame++, stream->cut_played++)
+	{
+		for (channel = 0; channel < output_channels; channel++)
+			output[frame * output_channels + channel] += stream->cut[stream->cut_played * output_channels + channel];
+		send[frame] += stream->cut_send[stream->cut_played];
+	}
+}
+
 /* ---------- reverb
 
 The Xbox ran an I3DL2 reverb on its audio DSP (the effects image the game
@@ -1499,7 +1557,10 @@ static void mix(float *output, unsigned long frames)
 	memset(reverb.send, 0, frames * sizeof(float));
 	pthread_mutex_lock(&mixer_lock);
 	for (stream = streams; stream; stream = stream->next)
+	{
 		mix_voice(stream, output, reverb.send, frames);
+		mix_cut(stream, output, reverb.send, frames);
+	}
 	/* a new environment, once the fade to the last is over */
 	if (reverb.serial != environment_serial && !reverb.fade)
 	{
@@ -1901,6 +1962,7 @@ static HRESULT STDMETHODCALLTYPE stream_flush(IDirectSoundStream *object)
 	struct sdl_stream *stream = stream_from_interface(object);
 
 	pthread_mutex_lock(&mixer_lock);
+	voice_cut(stream);
 	while (stream->packet_count)
 	{
 		struct voice_packet *head = &stream->packets[stream->packet_head];
@@ -2123,6 +2185,8 @@ HRESULT WINAPI IDirectSound_CreateSoundStream(LPDIRECTSOUND sound, LPCDSSTREAMDE
 	stream->channels = format && format->nChannels == 2 ? 2 : 1;
 	stream->sample_rate = format ? format->nSamplesPerSec : 0;
 	stream->frequency = stream->sample_rate;
+	/* (no cut playing: voice_cut) */
+	stream->cut_played = CUT_FADE_FRAMES;
 	stream->volume = 1.0f;
 	/* DirectSound's default mix bins: a mono voice to both fronts, a
 	stereo voice's channels to the front left and right */

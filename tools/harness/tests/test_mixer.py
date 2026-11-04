@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from harness import CHECK_FAILED, build, mutated, read, run  # noqa: E402
 
 SOURCE = "port/linux/src/dsound_sdl.c"
-CASES = ["reference", "impulse", "sines", "aliases", "silent-voice", "mono", "linear"]
+CASES = ["reference", "impulse", "sines", "aliases", "silent-voice", "mono", "linear", "cut", "cuts"]
 
 # a fault in the mixer, and the case that must catch it
 NEGATIVE_CONTROLS = {
@@ -26,6 +26,12 @@ NEGATIVE_CONTROLS = {
     "phase-not-blended": (("for (phase = 0; phase <= RESAMPLER_TABLE_STEPS; phase++)",
                            "for (phase = 0; phase <= RESAMPLER_TABLE_STEPS; phase += 2)"), "impulse"),
     "no-stretch": (("#define RESAMPLER_MAXIMUM_STRETCH 2", "#define RESAMPLER_MAXIMUM_STRETCH 1"), "aliases"),
+    "cut-dead": (("mix_voice(stream, output, send, CUT_FADE_FRAMES);", "return;"), "cut"),
+    "cut-not-faded": (("float fade = 0.5f + 0.5f * cosf(3.14159265f * (float)(frame + 1) / CUT_FADE_FRAMES);",
+                       "float fade = 1.0f;"), "cut"),
+    "cut-past-the-earlier": (("(frame < left ? stream->cut_send[stream->cut_played + frame] : 0.0f)",
+                              "(frame < left ? 1.0f : 0.0f) * stream->cut_send[(stream->cut_played + frame) % CUT_FADE_FRAMES]"),
+                             "cuts"),
     "linear-nearest": (("left_frames[0] + (left_frames[1] - left_frames[0]) * fraction", "left_frames[0]"), "linear"),
 }
 
