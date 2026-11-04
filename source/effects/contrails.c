@@ -376,10 +376,14 @@ void contrails_update(
 	static long last_point_game_time = NONE;
 	static real pending_point_dt = 0.0f;
 	real point_dt;
+	/* port: the ticks the points age over (contrail_update_points, below) */
+	long point_ticks = 0;
 
 	pending_point_dt += dt;
 	if (last_point_game_time != game_time_get())
 	{
+		point_ticks = last_point_game_time == NONE ? 1 : game_time_get() - last_point_game_time;
+		point_ticks = PIN(point_ticks, 1, TICKS_PER_SECOND);
 		last_point_game_time = game_time_get();
 		point_dt = pending_point_dt;
 		pending_point_dt = 0.0f;
@@ -470,9 +474,16 @@ void contrails_update(
 		frame's time (contrail_update_points), so each state lasted at least a
 		tick. A Shade's or a Spirit's points (states of 0.01, 0.05 and 0.005
 		seconds) lived four ticks, 133 ms, and aged a frame at a time at 240
-		frames a second they lived about half that, the trail half as long */
+		frames a second they lived about half that, the trail half as long and
+		dim; below 30 frames a second, a frame of two ticks aged them in one
+		step, and they lived longer. A step for each tick since the last */
 		if (point_dt > 0.0f)
-			contrail_update_points(contrail_index, point_dt);
+		{
+			long tick;
+
+			for (tick = 0; tick < point_ticks; tick++)
+				contrail_update_points(contrail_index, point_dt / (real)point_ticks);
+		}
 
 		for (instance_index = 0;
 			instance_index < MAXIMUM_CONTRAIL_INSTANCES;
