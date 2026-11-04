@@ -998,13 +998,14 @@ vertices. */
 /* what a test's place in the buffer holds until the GPU copies its count
 there: more than any test covers (8K with 4x MSAA has 133 million samples) */
 #define VISIBILITY_UNCOPIED 0xFFFFFFFFUL
-/* a frame's tests: their queries (kept until every count is read), the slot
-and area of each, and (once the frame is presented) the fence its copies
-wait on */
+/* a frame's tests: their queries (kept until every count is read), the
+slot, number (visibility_ended) and area of each, and (once the frame is
+presented) the fence its copies wait on */
 struct visibility_batch
 {
 	GLuint queries[VISIBILITY_TEST_SLOTS];
 	unsigned short slots[VISIBILITY_TEST_SLOTS];
+	ULONGLONG tests[VISIBILITY_TEST_SLOTS];
 	float areas[VISIBILITY_TEST_SLOTS];
 	unsigned long count, read, frame;
 	ULONGLONG serial;
@@ -1099,6 +1100,8 @@ struct gl_device
 	GLuint queries[VISIBILITY_TEST_SLOTS];
 	GLuint scratch_query;
 	BOOL visibility_unread[VISIBILITY_TEST_SLOTS];
+	/* the number of the test each slot's query is (visibility_ended) */
+	ULONGLONG query_tests[VISIBILITY_TEST_SLOTS];
 #endif
 	BOOL query_pending[VISIBILITY_TEST_SLOTS];
 	/* the pixels each of the game's pixels covered in the test's target
@@ -1110,6 +1113,12 @@ struct gl_device
 	is incomplete, so until a test's count has arrived the slot's earlier
 	count stands. A frame of The Library's lights makes hundreds of tests. */
 	GLuint visibility_known[VISIBILITY_TEST_SLOTS];
+	/* the tests ended at each slot so far, dropped ones too, and the number
+	(from 1) of the one whose count the slot gives, 0 for none: the latest
+	read, which can be frames older than the slot's latest test
+	(xgpu_visibility_tests_ended) */
+	ULONGLONG visibility_ended[VISIBILITY_TEST_SLOTS];
+	ULONGLONG visibility_counted[VISIBILITY_TEST_SLOTS];
 #ifdef HALO_GLES
 	/* with atomic counters: one counter per test, used as a ring */
 	GLuint visibility_counters;
@@ -1126,6 +1135,7 @@ struct gl_device
 	the latest count known, as the desktop query readback gives. */
 	GLuint counter_snapshots[STREAM_BUFFER_RING];
 	unsigned short ring_tests[STREAM_BUFFER_RING][VISIBILITY_TEST_SLOTS][2];
+	ULONGLONG ring_test_numbers[STREAM_BUFFER_RING][VISIBILITY_TEST_SLOTS];
 	unsigned long ring_test_count[STREAM_BUFFER_RING];
 	GLuint counter_values[VISIBILITY_TEST_SLOTS];
 	GLuint visibility_latest[VISIBILITY_TEST_SLOTS];
@@ -3249,6 +3259,7 @@ void WINAPI D3DDevice_BeginVisibilityTest(void)
 
 HRESULT WINAPI D3DDevice_EndVisibilityTest(DWORD index)
 {
+	ULONGLONG test;
 #ifdef HALO_GLES
 	GLuint scratch;
 #endif
@@ -3257,6 +3268,8 @@ HRESULT WINAPI D3DDevice_EndVisibilityTest(DWORD index)
 		return S_OK;
 	device.visibility_test_active = FALSE;
 	index %= VISIBILITY_TEST_SLOTS;
+	/* (numbered whether its count will come or not) */
+	test = ++device.visibility_ended[index];
 #ifdef HALO_GLES
 	if (xgpu_capabilities.atomic_counters)
 	{
@@ -3268,6 +3281,7 @@ HRESULT WINAPI D3DDevice_EndVisibilityTest(DWORD index)
 		{
 			device.ring_tests[device.buffer_ring][*count][0] = (unsigned short)index;
 			device.ring_tests[device.buffer_ring][*count][1] = (unsigned short)device.counter_active;
+			device.ring_test_numbers[device.buffer_ring][*count] = test;
 			(*count)++;
 		}
 		device.query_pending[index] = TRUE;
@@ -3279,6 +3293,7 @@ HRESULT WINAPI D3DDevice_EndVisibilityTest(DWORD index)
 		if (device.visibility_unavailable)
 		{
 			device.visibility_known[index] = VISIBILITY_ALL_SAMPLES;
+			device.visibility_counted[index] = test;
 			device.query_pending[index] = TRUE;
 		}
 		return S_OK;
@@ -3296,6 +3311,7 @@ HRESULT WINAPI D3DDevice_EndVisibilityTest(DWORD index)
 		struct visibility_batch *batch = &device.visibility_batches[device.visibility_batch];
 
 		batch->slots[batch->count] = (unsigned short)index;
+		batch->tests[batch->count] = test;
 		batch->areas[batch->count++] = device.query_area[index];
 		device.query_pending[index] = TRUE;
 		return S_OK;
@@ -3305,6 +3321,7 @@ HRESULT WINAPI D3DDevice_EndVisibilityTest(DWORD index)
 	scratch = device.scratch_query;
 	device.scratch_query = device.queries[index];
 	device.queries[index] = scratch;
+	device.query_tests[index] = test;
 	device.query_pending[index] = TRUE;
 	device.visibility_unread[index] = TRUE;
 	return S_OK;
@@ -3348,6 +3365,7 @@ HRESULT WINAPI D3DDevice_GetVisibilityTestResult(DWORD index, UINT *result, ULON
 			if (samples)
 				samples = VISIBILITY_ALL_SAMPLES;
 			device.visibility_known[index] = samples;
+			device.visibility_counted[index] = device.query_tests[index];
 			device.visibility_unread[index] = FALSE;
 		}
 	}
@@ -3355,6 +3373,17 @@ HRESULT WINAPI D3DDevice_GetVisibilityTestResult(DWORD index, UINT *result, ULON
 	if (result)
 		*result = device.visibility_known[index];
 	return S_OK;
+}
+
+/* (xgpu.h) */
+unsigned long long xgpu_visibility_tests_ended(unsigned long index)
+{
+	return device.visibility_ended[index % VISIBILITY_TEST_SLOTS];
+}
+
+unsigned long long xgpu_visibility_test_counted(unsigned long index)
+{
+	return device.visibility_counted[index % VISIBILITY_TEST_SLOTS];
 }
 
 /* ---------- render and texture stage state */
@@ -7587,6 +7616,7 @@ static void visibility_read_batch(void)
 			}
 			device.visibility_known[batch->slots[test]] = area > 1.0f ?
 				(GLuint)(samples / area + 0.5f) : samples;
+			device.visibility_counted[batch->slots[test]] = batch->tests[test];
 			device.visibility_stats.samples++;
 			device.visibility_stats.nonzero += samples != 0;
 			if (samples > device.visibility_stats.maximum)
@@ -7876,6 +7906,8 @@ void WINAPI D3DDevice_Present(CONST RECT *source_rectangle, CONST RECT *destinat
 			{
 				device.visibility_latest[device.ring_tests[ring][test][0]] =
 					device.counter_values[device.ring_tests[ring][test][1]];
+				device.visibility_counted[device.ring_tests[ring][test][0]] =
+					device.ring_test_numbers[ring][test];
 			}
 			device.ring_test_count[ring] = 0;
 		}

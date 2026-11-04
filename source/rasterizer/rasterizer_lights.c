@@ -372,9 +372,12 @@ one at its place frames before, and a hidden one's put it out at once, to
 come back over some ticks (the Pelicans' thrusters, the lights of a corridor
 walked along). So each flare keeps a slot, found by its own visibility
 (lens_flare_occlusion_test_results_get), while it goes on being tested, and
-its count is read from there; a slot just taken holds the last flare's counts
-until the new one's are read, and is not read before. A flare that finds no
-slot is tested at its place in the list, past the slots, as before. */
+its count is read from there. A slot just taken gives the count of the last
+flare's test for as long as the GPU is behind, and through the tests it drops
+with no batch free (d3d8_gl.c), so it is read only once a count of one of the
+new flare's own tests has come (xgpu_visibility_test_counted). A flare that
+finds no slot is tested where no count is read, and its visibility stays as
+it is. */
 enum
 {
 	LENS_FLARE_OCCLUSION_SLOT_COUNT = 2048,
@@ -382,10 +385,9 @@ enum
 	LENS_FLARE_OCCLUSION_SLOT_PROBES = 32,
 	/* the frames a flare no longer tested keeps its slot */
 	LENS_FLARE_OCCLUSION_SLOT_KEPT_FRAMES = 30,
-	/* the frames from a slot's taking to its first count of the flare's own:
-	the native builds read a count two frames after its test, more while the
-	GPU is behind (d3d8_gl.c) */
-	LENS_FLARE_OCCLUSION_SLOT_SETTLE_FRAMES = 4,
+	/* where a flare with no slot is tested, its counts never read: past the
+	slots, short of the transparent geometry's test (0xfff) */
+	LENS_FLARE_OCCLUSION_UNREAD_INDEX = LENS_FLARE_OCCLUSION_SLOT_COUNT,
 };
 
 struct lens_flare_occlusion_slot
@@ -394,15 +396,22 @@ struct lens_flare_occlusion_slot
 	is its own; NULL for none */
 	byte const *visibility;
 	short light_identifier;
-	unsigned long taken_frame;
 	unsigned long tested_frame;
+	/* the number of the flare's first test in the slot
+	(xgpu_visibility_tests_ended): a count of a test before it is another
+	flare's */
+	unsigned long long first_test;
 };
 
 static struct lens_flare_occlusion_slot lens_flare_occlusion_slots[LENS_FLARE_OCCLUSION_SLOT_COUNT];
-/* the occlusion test of each flare in the frame's list: a slot, or its place
-past them (lens_flare_occlusion_test_index) */
+/* the occlusion test of each flare in the frame's list: a slot, or
+LENS_FLARE_OCCLUSION_UNREAD_INDEX (lens_flare_occlusion_test_index) */
 static short local_lens_flare_occlusion_tests[MAXIMUM_LENS_FLARES_PER_FRAME];
 static unsigned long lens_flare_occlusion_frame;
+
+/* port: (d3d8_gl.c, xgpu.h) */
+unsigned long long xgpu_visibility_tests_ended(unsigned long index);
+unsigned long long xgpu_visibility_test_counted(unsigned long index);
 
 /* ---------- private code */
 
@@ -480,7 +489,7 @@ static byte *lens_flare_occlusion_test_results_get(
 
 /* port: the occlusion test of the flare at lens_flare_index in the frame's
 list: its slot (above), the one it had if it has one, else one no flare has
-been tested in for a while; else its place past the slots */
+been tested in for a while; else LENS_FLARE_OCCLUSION_UNREAD_INDEX */
 static short lens_flare_occlusion_test_index(
 	short lens_flare_index)
 {
@@ -510,32 +519,38 @@ static short lens_flare_occlusion_test_index(
 	}
 
 	if (free_slot==NONE)
-		return (short)(LENS_FLARE_OCCLUSION_SLOT_COUNT+lens_flare_index);
+		return LENS_FLARE_OCCLUSION_UNREAD_INDEX;
 
 	lens_flare_occlusion_slots[free_slot].visibility= visibility;
 	lens_flare_occlusion_slots[free_slot].light_identifier= light_identifier;
-	lens_flare_occlusion_slots[free_slot].taken_frame= lens_flare_occlusion_frame;
 	lens_flare_occlusion_slots[free_slot].tested_frame= lens_flare_occlusion_frame;
+	/* (every test the slot has after this is the flare's) */
+	lens_flare_occlusion_slots[free_slot].first_test= xgpu_visibility_tests_ended(free_slot) + 1;
 
 	return free_slot;
 }
 
 /* port: the visible pixels of the latest of the flare's own occlusion tests
-read, NONE while none is (its slot just taken) */
+read, NONE while none is (its slot just taken, or none found) */
 static long lens_flare_occlusion_visible_pixels(
 	short lens_flare_index)
 {
 	short test_index= local_lens_flare_occlusion_tests[lens_flare_index];
+	long visible_pixels;
 
-	if (test_index==NONE)
+	if (test_index==NONE || test_index>=LENS_FLARE_OCCLUSION_SLOT_COUNT)
 		return NONE;
-	if (test_index<LENS_FLARE_OCCLUSION_SLOT_COUNT &&
-		lens_flare_occlusion_frame-lens_flare_occlusion_slots[test_index].taken_frame<LENS_FLARE_OCCLUSION_SLOT_SETTLE_FRAMES)
+	visible_pixels= rasterizer_widget_get_occlusion_test_result(test_index);
+	/* (the number after the count: with OpenGL ES's queries, the slot's is
+	read when its count is asked for. With the occlusion tests off, every
+	flare's result is 1, and no test is made.) */
+	if (rasterizer_debug_options.lens_flare_occlusion_enabled &&
+		xgpu_visibility_test_counted(test_index)<lens_flare_occlusion_slots[test_index].first_test)
 	{
 		return NONE;
 	}
 
-	return rasterizer_widget_get_occlusion_test_result(test_index);
+	return visible_pixels;
 }
 
 static real lens_flare_evaluate_corona_rotation_function(
