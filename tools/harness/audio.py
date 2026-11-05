@@ -62,7 +62,7 @@ typedef void (*LPFNXMEDIAOBJECTCALLBACK)(void *, void *, unsigned long);
                  "XMEDIAPACKET_STATUS_FAILURE", "XMEDIAPACKET_STATUS_PENDING"]:
         # These SDK status expressions include casts, unlike integer capacities.
         text += next(line for line in statuses.splitlines() if line.startswith("#define " + name + " ")) + "\n"
-    for name in ["MAXIMUM_STREAM_PACKETS", "RESAMPLER_HISTORY", "MAXIMUM_OUTPUT_CHANNELS"]:
+    for name in ["MAXIMUM_STREAM_PACKETS", "RESAMPLER_HISTORY", "MAXIMUM_OUTPUT_CHANNELS", "CUT_FADE_FRAMES"]:
         text += f"#define {name} {constant(backend, name)}\n"
     for name in ["MAXIMUM_SOUND_CHANNELS", "NUMBER_OF_SOUND_CHANNEL_TYPES"]:
         text += f"#define {name} {constant(game, name)}\n"
