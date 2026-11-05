@@ -300,6 +300,15 @@ static void get_shake_matrix(
 
 static struct player_effect_globals_definition *player_effect_globals;
 
+/* port: each local player's camera effect as the first frame of a tick made
+it (the tick plus one, 0 for none), which the frames after it until the next
+tick draw again (player_effect_get_camera_effect_matrix) */
+static struct
+{
+	long tick;
+	real_matrix4x3 matrix;
+} camera_effect_of_tick[MAXIMUM_LOCAL_PLAYERS];
+
 static short render_screen_flash_type_map[NUMBER_OF_SCREEN_FLASH_TYPES] =
 {
 	_render_screen_flash_type_none,
@@ -346,6 +355,8 @@ void player_effect_initialize_for_new_map(
 	csmemset(player_effect_globals, 0, sizeof(struct player_effect_globals_definition));
 	player_effect_globals->screen_fade.ticks = NONE;
 	player_effect_globals->reference_time = game_time_get();
+	/* port: (player_effect_get_camera_effect_matrix) */
+	csmemset(camera_effect_of_tick, 0, sizeof(camera_effect_of_tick));
 
 	return;
 }
@@ -906,6 +917,32 @@ void player_effect_get_camera_effect_matrix(
 		*local_seed = tick_seed;
 		game_time_get();
 
+		/* port: the Xbox drew a frame a tick, so a shake or impulse just
+		started showed at its full scale for a tick, and each later tick's
+		scale for a tick. A frame between ticks drew the scale after the
+		tick's (its time left counted down by the tick's first frame), and
+		the full scale only on that first frame: at 240 frames a second an
+		eighth of the tick, so firing shook the view a fraction as much, the
+		assault rifle's short kick hardly at all. The frames after a tick's
+		first draw its effect again, as the Xbox drew it for the tick; the
+		continuous shake looping sounds add each frame is still used up, as
+		that frame would (game_sound.c). */
+		if (local_player_index >= 0 && local_player_index < MAXIMUM_LOCAL_PLAYERS &&
+			camera_effect_of_tick[local_player_index].tick == game_time_get() + 1)
+		{
+			struct player_effect_datum *effect = player_effect_get(local_player_index);
+
+			*matrix = camera_effect_of_tick[local_player_index].matrix;
+			if (!TEST_FLAG(player_effect_globals->global_flags, _scripted_player_effect_active_bit) &&
+				effect->camera_shake_time_left > 0)
+			{
+				effect->continuous_effect_timer = 0;
+				csmemset(&effect->continuous_effect, 0, sizeof(effect->continuous_effect));
+			}
+			*local_seed = saved_local_seed;
+			return;
+		}
+
 		if (TEST_FLAG(player_effect_globals->global_flags, _scripted_player_effect_active_bit))
 		{
 			struct scripted_player_effect_definition *scripted_effect =
@@ -1119,6 +1156,12 @@ void player_effect_get_camera_effect_matrix(
 
 				matrix4x3_multiply(matrix, &effect_matrix, matrix);
 			}
+		}
+		/* port: (above) */
+		if (local_player_index >= 0 && local_player_index < MAXIMUM_LOCAL_PLAYERS)
+		{
+			camera_effect_of_tick[local_player_index].tick = game_time_get() + 1;
+			camera_effect_of_tick[local_player_index].matrix = *matrix;
 		}
 		*local_seed = saved_local_seed;
 	}
