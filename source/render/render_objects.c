@@ -796,6 +796,13 @@ static boolean render_object_shadow_begin(
 	real shadow_intensity = level_of_detail;
 
 	object_get_bounding_sphere(data->object_index, &center, &radius);
+	/* port: where this frame draws the object, between the ticks
+	(render_interpolation.c), not where the tick left it: the shadow map is
+	centered there and the model drawn into it as drawn, so a fast vehicle
+	(a Ghost) stood up to a tick's travel off its map's center, and the map's
+	edge and corner fade cut its shadow's trailing side by as much as each
+	frame's blend, flickering */
+	render_interpolation_object_point(data->object_index, &center);
 
 	perpendicular3d(&data->lighting->shadow_vector, &shadow_right);
 	normalize3d(&shadow_right);
