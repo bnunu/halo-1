@@ -1861,6 +1861,11 @@ boolean network_game_client_remove_player(
 				local_player_get_player_index(player->controller_index) == player_index)
 			{
 				local_player_set_player_index(player->controller_index, NONE);
+				/* (and its control, which names its unit: the datum no longer has a
+				local player index, so the host deleting the unit does not reset it
+				(network_player_detach_unit), and player_control_update would get a
+				unit that is gone) */
+				player_control_new_unit(player->controller_index, NONE);
 			}
 
 			for (network_player_index = 0;
