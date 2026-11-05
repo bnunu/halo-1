@@ -3,6 +3,7 @@
 maps found on disk from small cache file headers the test writes."""
 
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,7 @@ CASES = [
     "long-map-level",
     "rotation-cut-entry",
     "resolve-version",
+    "resolve-case",
 ]
 
 # a fault in server_rotation.c and the case that must catch it
@@ -52,7 +54,11 @@ NEGATIVE_CONTROLS = {
     "missing-unflagged": (("entry->map_name, entry->map_name, entry->map_name);\n\t\tentry->map_missing = 1;",
                            "entry->map_name, entry->map_name, entry->map_name);"), "resolve"),
     "campaign-listed": (("type != 1 ||", ""), "maps-each"),
+    "custom-maps-case-sensitive": (("posix_find_entry_case_insensitive(folder, file_name, on_disk, sizeof(on_disk))",
+                                    "0"), "resolve-case"),
 }
+# (controls a case-insensitive file system cannot see: it finds Mixed_Case.map by any spelling)
+CASE_CONTROLS = {"custom-maps-case-sensitive"}
 
 
 def generated(fault=None):
@@ -71,8 +77,16 @@ def test_case(case):
     assert status == 0, output
 
 
+def case_insensitive_files():
+    with tempfile.TemporaryDirectory() as folder:
+        Path(folder, "Case").touch()
+        return Path(folder, "case").exists()
+
+
 @pytest.mark.parametrize("control", NEGATIVE_CONTROLS)
 def test_negative_control(control):
+    if control in CASE_CONTROLS and case_insensitive_files():
+        pytest.skip("this file system finds a file in any case")
     fault, case = NEGATIVE_CONTROLS[control]
     status, output = run(build("server_rotation", generated(fault)), case)
     assert status == CHECK_FAILED, f"server_rotation.c with a fault ({control}) passed '{case}': the test cannot see it"
