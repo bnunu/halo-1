@@ -392,6 +392,16 @@ void observer_dispose_from_old_map(
 	return;
 }
 
+/* port: where the camera looks from before its offset and distance: the
+head in first person, the vehicle a chase camera circles. The camera's
+velocity was this point's (observer_postcheck). For the sounds' Doppler
+effect (sound_manager.c). */
+real_point3d const *observer_get_focus_position(
+	short local_player_index)
+{
+	return &observer_get(local_player_index)->focus_position;
+}
+
 struct observer_result const *observer_get_camera(
 	short local_player_index)
 {
