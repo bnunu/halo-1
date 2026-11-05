@@ -4,8 +4,10 @@ CINEMATIC_TITLES.C (test)
 The real cinematic_render (cinematics.c) over a fake scenario with one title, as
 some Custom Edition maps show their name for the whole game: drawn in the game,
 not over a menu (the screen's overlays are drawn after the players' menus), and
-its time going on under one. test_cinematic_titles.py takes the structures, the
-slots' count (config.inc) and the code (under_test.inc).
+its time going on under one. On a screen wider than 640 columns, the edge the
+title is justified to (its middle, if centered) keeps its place relative to the
+screen's sides, as on the Xbox's 4:3 screen. test_cinematic_titles.py takes the
+structures, the slots' count (config.inc) and the code (under_test.inc).
 */
 
 #include <math.h>
@@ -68,6 +70,7 @@ static struct string_list help_text = { { 1 } };
 static long draws;
 static real drawn_alpha;
 static pixel32 shadow, drawn_shadow;
+static rectangle2d drawn_bounds;
 static void pixel32_to_real_argb_color(pixel32 pixel, real_argb_color *color)
 {
 	color->alpha = (real)((pixel >> 24) & 0xFF) / 255.0f;
@@ -81,8 +84,14 @@ static void draw_string_set_draw_mode(long font_index, short style, short justif
 	drawn_alpha = color->alpha;
 }
 static void rasterizer_text_set_shadow_color(pixel32 color) { shadow = color; }
-static short halo_screen_width(void) { return 640; }
-#define rasterizer_draw_unicode_string(bounds, style, color, flags, string) (draws++, drawn_shadow = shadow)
+/* the screen's columns: the Xbox's 640, or a wide screen's */
+static long screen_width = 640;
+static long halo_screen_width(void) { return screen_width; }
+#define rasterizer_draw_unicode_string(bounds, style, color, flags, string) \
+	(draws++, drawn_shadow = shadow, drawn_bounds = *(bounds))
+
+/* draw_string.c's justifications, as a title's tag has them */
+enum { justified_left, justified_right, justified_center };
 
 #include "under_test.inc"
 
@@ -159,6 +168,67 @@ int main(int argc, char **argv)
 		CHECK(slot->title_index == NONE, "the title's slot is still taken after its 10 ticks under a menu");
 		menu_up = FALSE;
 		CHECK(frame() == 0, "an ended title was drawn after the menu was gone");
+		return 0;
+	}
+	/* a 960-column screen (half again the Xbox's 640): a right-justified
+	title's box from near the left edge, as most chapter titles have, ends
+	where the Xbox's did, as a part of the screen's width (600 of 640 is
+	900 of 960), not 300 columns short of it as when its middle was moved */
+	CASE("right-justified-on-a-wide-screen")
+	{
+		queue_title(1000000.0f, 1.0f);
+		titles[0].bounds.x0 = 10;
+		titles[0].bounds.x1 = 600;
+		titles[0].justification = justified_right;
+		screen_width = 960;
+		CHECK(frame() == 1, "the title was not drawn");
+		CHECK(drawn_bounds.x1 == 900, "the right-justified title's box ends at column %d of 960, not 900",
+			drawn_bounds.x1);
+		CHECK(drawn_bounds.x1 - drawn_bounds.x0 == 590, "the title's box is %d columns wide, not its 590",
+			drawn_bounds.x1 - drawn_bounds.x0);
+		CHECK(drawn_bounds.y0 == 440 && drawn_bounds.y1 == 480, "the title's box moved up or down: %d to %d",
+			drawn_bounds.y0, drawn_bounds.y1);
+		return 0;
+	}
+	/* a left-justified title starts where the Xbox's did, as a part of the
+	screen's width: 40 of 640 is 60 of 960 */
+	CASE("left-justified-on-a-wide-screen")
+	{
+		queue_title(1000000.0f, 1.0f);
+		titles[0].bounds.x0 = 40;
+		titles[0].bounds.x1 = 600;
+		titles[0].justification = justified_left;
+		screen_width = 960;
+		CHECK(frame() == 1, "the title was not drawn");
+		CHECK(drawn_bounds.x0 == 60, "the left-justified title's box starts at column %d of 960, not 60",
+			drawn_bounds.x0);
+		return 0;
+	}
+	/* a centered title's middle is where the Xbox's was, as a part of the
+	screen's width: 320 of 640 is 480 of 960 */
+	CASE("centered-on-a-wide-screen")
+	{
+		queue_title(1000000.0f, 1.0f);
+		titles[0].bounds.x0 = 40;
+		titles[0].bounds.x1 = 600;
+		titles[0].justification = justified_center;
+		screen_width = 960;
+		CHECK(frame() == 1, "the title was not drawn");
+		CHECK((drawn_bounds.x0 + drawn_bounds.x1) / 2 == 480,
+			"the centered title's box is centered on column %d of 960, not 480",
+			(drawn_bounds.x0 + drawn_bounds.x1) / 2);
+		return 0;
+	}
+	/* on the Xbox's 640 columns the title's box is the tag's */
+	CASE("unmoved-on-640-columns")
+	{
+		queue_title(1000000.0f, 1.0f);
+		titles[0].bounds.x0 = 10;
+		titles[0].bounds.x1 = 600;
+		titles[0].justification = justified_right;
+		CHECK(frame() == 1, "the title was not drawn");
+		CHECK(drawn_bounds.x0 == 10 && drawn_bounds.x1 == 600, "the title's box is %d to %d on 640 columns, not 10 to 600",
+			drawn_bounds.x0, drawn_bounds.x1);
 		return 0;
 	}
 	fprintf(stderr, "unknown case: %s\n", case_name);
