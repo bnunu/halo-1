@@ -1131,11 +1131,16 @@ the router, or forward the port: refer to "Connection").
 The PING column shows the round trip to each host in milliseconds. The
 browser times it as a join would reach the host: it makes the tunnel with
 the listing's invite, keeps the shortest of three pings, and closes the
-tunnel again. It times a few hosts at once, each again every two minutes
-and on REFRESH. Joining a host whose tunnel is open uses that tunnel. A
-game with a password, whose invite the listing hides, shows no ping, nor
-does a host not reached; a game that is full or starting shows CLOSED.
-REFRESH also asks the hosts for their listings again.
+tunnel again. It times a few hosts at once, top first in the list as it
+is shown (its sort, tab and Filters: a new sort orders the hosts timed
+next, and the games hidden come last), each again every two minutes and
+on REFRESH; a game being timed with no ping yet, or timed again on
+REFRESH, shows moving dots, and the line below the games says
+"Refreshing..." until REFRESH's pings are in (10 seconds at most).
+Joining a host whose tunnel is open uses that tunnel. A game with a
+password, whose invite the listing hides, shows no ping, nor does a host
+not reached; a game that is full or starting shows CLOSED. REFRESH also
+asks the hosts for their listings again.
 
 The gametype column names an OpenCE gametype's kind (SWAT, INFECTION, GUN
 GAME, or HC and the game engine for Hardcore: HC CTF, HC SLAYER), which the
