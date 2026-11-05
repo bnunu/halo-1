@@ -1,7 +1,8 @@
 diff --git a/android-project/app/src/main/java/org/libsdl/app/SDLControllerManager.java b/android-project/app/src/main/java/org/libsdl/app/SDLControllerManager.java
+index 8681d05..1beeac4 100644
 --- a/android-project/app/src/main/java/org/libsdl/app/SDLControllerManager.java
 +++ b/android-project/app/src/main/java/org/libsdl/app/SDLControllerManager.java
-@@ -787,6 +787,37 @@ class SDLGenericMotionListener_API14 implements View.OnGenericMotionListener {
+@@ -787,6 +787,34 @@ class SDLGenericMotionListener_API14 implements View.OnGenericMotionListener {
                          consumed = true;
                          break;
  
@@ -24,14 +25,11 @@ diff --git a/android-project/app/src/main/java/org/libsdl/app/SDLControllerManag
 +                        break;
 +
 +                    case MotionEvent.ACTION_MOVE:
-+                        // Pointer capture delivers relative mouse motion as ACTION_MOVE. It
-+                        // carries the buttons held, which SDL compares with the last state it
-+                        // was told: reporting none here ends a held button (a shot, a throw)
-+                        // as the pointer moves.
++                        // Pointer capture delivers relative mouse motion as ACTION_MOVE.
 +                        if (checkRelativeEvent(event)) {
 +                            x = getEventX(event, i);
 +                            y = getEventY(event, i);
-+                            SDLActivity.onNativeMouse(event.getButtonState(), action, x, y, true);
++                            SDLActivity.onNativeMouse(0, action, x, y, true);
 +                            consumed = true;
 +                        }
 +                        break;

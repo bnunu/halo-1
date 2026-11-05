@@ -2507,10 +2507,10 @@ void platform_pump_events(void)
 		case SDL_EVENT_WINDOW_FOCUS_GAINED:
 			input_state.focused = TRUE;
 			look_at_clipboard = TRUE;
-			/* (Android drops the pointer capture when the app leaves the
-			foreground; take it back, as the desktop builds do) */
+#ifndef HALO_ANDROID
 			if (!input_state.mouse_released && !input_state.ui_pointer && !scoreboard_pointer_active)
 				platform_mouse_capture(TRUE);
+#endif
 			break;
 #ifdef HALO_ANDROID
 		case SDL_EVENT_FINGER_DOWN:
@@ -2773,20 +2773,13 @@ While a menu is up, taps and drags go to the menus (touch_input.c,
 halo_ui_pointer_update in d3d8_gl.c). */
 void platform_ui_pointer_set_active(BOOL active)
 {
-	BOOL changed;
-
 	pthread_mutex_lock(&input_lock);
-	changed = (active != FALSE) != (input_state.ui_pointer != FALSE);
-	if (changed)
+	if ((active != FALSE) != (input_state.ui_pointer != FALSE))
 	{
 		input_state.ui_pointer = active;
 		touch_input_menu_set_active(active != FALSE);
 	}
 	pthread_mutex_unlock(&input_lock);
-	/* a physical mouse: captured for the aim while playing, freed for the
-	menus (its pointer shows there, as it does on the desktop) */
-	if (changed)
-		platform_mouse_capture(!active && !input_state.mouse_released);
 }
 
 BOOL platform_ui_pointer_read(struct platform_ui_pointer *pointer)

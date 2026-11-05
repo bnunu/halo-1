@@ -44,8 +44,8 @@ import java.util.Locale;
  * It shows only in a game, never at the main menu, over a menu (which
  * takes taps itself, port/linux/src/touch_input.c) or during a cinematic,
  * only on a touchscreen, and with input.touch_controls = "auto" only while
- * no controller, mouse or keyboard is connected. While it is not shown it
- * lets every finger through to the game.
+ * no controller is connected. While it is not shown it lets every finger
+ * through to the game.
  */
 public final class TouchControls extends View implements SensorEventListener, InputManager.InputDeviceListener {
     /** what a finger holds besides a control: the view swipe */
@@ -95,8 +95,6 @@ public final class TouchControls extends View implements SensorEventListener, In
     private static final int SCENE_MENUS = 2;
     private static final int SCENE_ON = 4;
     private static final int SCENE_OFF = 8;
-    /** the game sees a controller of its own (SDL_GetGamepads) */
-    private static final int SCENE_CONTROLLER = 16;
 
     private static final String PREFERENCES = "touch-layout-v1";
     private static final String KEY_CONFIGURATION = "configuration";
@@ -214,8 +212,6 @@ public final class TouchControls extends View implements SensorEventListener, In
 
     private int scene;
     private boolean controllerConnected;
-    private boolean mouseConnected;
-    private boolean keyboardConnected;
     private boolean touchscreen;
     private boolean deviceInputActive;
     /** the controls are on screen: shown() for SHOW_DELAY_MS */
@@ -375,16 +371,12 @@ public final class TouchControls extends View implements SensorEventListener, In
     /**
      * whether the controls belong on screen: in a game (no menu or
      * cinematic), never without a touchscreen, and with
-     * input.touch_controls = "auto" only while no controller, mouse or
-     * keyboard is connected (the game says which controllers SDL has, as
-     * this view's device list misses some, a pad paired after the game
-     * started)
+     * input.touch_controls = "auto" only while no controller is connected
      */
     private boolean shown() {
         if ((scene & SCENE_KNOWN) == 0 || (scene & (SCENE_MENUS | SCENE_OFF)) != 0 || !touchscreen)
             return false;
-        return (scene & SCENE_ON) != 0
-            || (!controllerConnected && !mouseConnected && !keyboardConnected && (scene & SCENE_CONTROLLER) == 0);
+        return (scene & SCENE_ON) != 0 || !controllerConnected;
     }
 
     /** shows the controls once shown() has held for SHOW_DELAY_MS; hides them at once */
@@ -415,27 +407,8 @@ public final class TouchControls extends View implements SensorEventListener, In
             || device.getMotionRange(MotionEvent.AXIS_HAT_X, InputDevice.SOURCE_JOYSTICK) != null;
     }
 
-    /** a physical mouse (or a trackpad): a non-virtual SOURCE_MOUSE device */
-    private static boolean isMouse(InputDevice device) {
-        if (device == null || device.isVirtual())
-            return false;
-        return (device.getSources() & InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE;
-    }
-
-    /** a physical keyboard: a non-virtual SOURCE_KEYBOARD device */
-    private static boolean isKeyboard(InputDevice device) {
-        if (device == null || device.isVirtual())
-            return false;
-        // (a typing keyboard: most phones list their power and volume keys
-        // as a keyboard source too, which hid the touch controls on "auto")
-        return (device.getSources() & InputDevice.SOURCE_KEYBOARD) == InputDevice.SOURCE_KEYBOARD
-                && device.getKeyboardType() == InputDevice.KEYBOARD_TYPE_ALPHABETIC;
-    }
-
     private void refreshInputDevices() {
         boolean controller = false;
-        boolean mouse = false;
-        boolean keyboard = false;
         boolean touch = touchscreenFeature;
         for (int id : InputDevice.getDeviceIds()) {
             InputDevice device = InputDevice.getDevice(id);
@@ -443,17 +416,11 @@ public final class TouchControls extends View implements SensorEventListener, In
                 continue;
             if (isController(device))
                 controller = true;
-            if (isMouse(device))
-                mouse = true;
-            if (isKeyboard(device))
-                keyboard = true;
             boolean touchSource = (device.getSources() & InputDevice.SOURCE_TOUCHSCREEN) == InputDevice.SOURCE_TOUCHSCREEN;
             if (!device.isVirtual() && touchSource)
                 touch = true;
         }
         controllerConnected = controller;
-        mouseConnected = mouse;
-        keyboardConnected = keyboard;
         touchscreen = touch;
         // (the game's own touchscreen buttons follow the same rule: touch_input.c)
         nativeDevices(touch, controller);

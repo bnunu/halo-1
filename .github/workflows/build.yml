@@ -372,13 +372,15 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
-      # (tools/ci_build.py and tools/release_sign.sh, and the public key)
+      # (tools/ci_build.py and tools/release_sign.sh, the public key, and
+      # halo_port_limits.h, whose network version the release's notes give)
       - uses: actions/checkout@v4
         with:
           sparse-checkout: |
             tools/ci_build.py
             tools/release_sign.sh
             deploy/release-key.pub
+            port/linux/include/halo_port_limits.h
           sparse-checkout-cone-mode: false
 
       - uses: actions/download-artifact@v4

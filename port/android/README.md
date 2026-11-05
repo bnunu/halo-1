@@ -12,10 +12,9 @@ devices, for example the Pixel 9 Pro XL.
 
 The Android build uses the platform layer of the Linux build
 (`port/linux/src`). Refer to [port/linux/README.md](../linux/README.md).
-Physical mice use the same control bindings. While playing, the mouse is
-captured: Android's pointer hides and its relative movement aims continuously.
-In the menus the capture is released, so the pointer shows again. During play,
-F12 still toggles the capture by hand.
+Physical mice use the same control bindings. During play, F12 toggles mouse
+capture; captured mode hides Android's pointer and uses relative movement for
+continuous aiming, while releasing capture restores normal pointer behavior.
 
 ## Requirements
 
@@ -204,12 +203,10 @@ the mouse settings do not apply.
 
 The touch controls show only in a game. In the menus and during
 cinematics they hide, and the touchscreen operates the menus as described
-above. They also hide when a controller, a physical mouse or a physical
-keyboard is connected, for example the built-in controller of a handheld:
-the game says which controllers it sees, as SDL finds a pad the app's own
-device list can miss (one paired while the game runs). A device without a
-touchscreen (a TV) never shows them. The setting `input.touch_controls`
-changes this (refer to "Settings").
+above. They also hide when a controller is connected, for example the
+built-in controller of a handheld. A device without a touchscreen (a TV)
+never shows them. The setting `input.touch_controls` changes this (refer
+to "Settings").
 
 The buttons at the top of the screen:
 
@@ -269,7 +266,7 @@ These settings are only for Android:
 | Setting | Function |
 | --- | --- |
 | `input.touch_aim_assist` | `true` (the default): the touch controls' swipe aiming gets the aim assist of a controller (the aim slows over a target and follows a moving one). `false`: none, as with a mouse; the bullets' own autoaim stays. |
-| `input.touch_controls` | The touch controls in a game. `"auto"` (the default): shown on a touchscreen while no controller, mouse or keyboard is connected. `"on"`: also shown with one. `"off"`: never shown. A device without a touchscreen never shows them. The menus take taps in any case. |
+| `input.touch_controls` | The touch controls in a game. `"auto"` (the default): shown on a touchscreen while no controller is connected. `"on"`: also shown with a controller. `"off"`: never shown. A device without a touchscreen never shows them. The carnage report's CONTINUE and LEAVE buttons follow the same rule (otherwise it shows its A and B prompt). The menus take taps in any case. |
 | `display.screen_width` | The number of columns of the 480-line picture. `0` (the default): the shape of the display (1068 on a 20:9 phone). `640`: the 4:3 shape of the Xbox. |
 | `display.stats_log` | `false` (the default): `true` writes a line a second to the log with the frame rate, the mode, the map, the renderer and the size of the 3D view, for a bug report or to compare two builds. |
 | `display.resolution_scaling` | Also Linux's, with another default on Android. `"original"` (the default): the game draws the 480 lines of the Xbox, which the display scales up. `"native"`: the game draws at the display's resolution (1080 lines on a 1080p phone). `"75%"`, `"50%"` or `"25%"`: that part of the display's resolution each way, scaled up: less for the GPU to draw, for more frames a second and less heat. Video Setup's Resolution Scaling sets it, from the next frame. |

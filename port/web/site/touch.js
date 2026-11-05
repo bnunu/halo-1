@@ -31,7 +31,6 @@ window.HaloTouch = (() => {
   const SCENE_MENUS = 2;
   const SCENE_ON = 4;
   const SCENE_OFF = 8;
-  const SCENE_CONTROLLER = 16;
 
   const GRID_WIDTH = 960;
   const GRID_HEIGHT = 540;
@@ -90,8 +89,7 @@ window.HaloTouch = (() => {
     if (scene & SCENE_ON) return true;
     const touchscreen = navigator.maxTouchPoints > 0 && matchMedia('(any-pointer: coarse)').matches;
     const pads = navigator.getGamepads ? [...navigator.getGamepads()].some((pad) => pad && pad.connected) : false;
-    // (the game says too: a pad can arrive after this page looked)
-    return touchscreen && !pads && !(scene & SCENE_CONTROLLER);
+    return touchscreen && !pads;
   }
 
   // pixels per grid unit across, down, and for sizes
