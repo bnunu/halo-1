@@ -63,7 +63,11 @@ are games long gone, which filled the queue and crowded out live games.
 Each game's host is probed for its ping (p2p_probe_start: the tunnel to it
 timed, p2p.c), a few at once, in the order the browser shows the games
 (p2p_lobby_shown), those it does not show last, again each PROBE_REFRESH
-and on Refresh. A game with a password is not: its token is sealed.
+and on Refresh. A game with a password is not: its token is sealed. The
+probes wait for the listings queued to be shown first, so that they start
+in the order shown, but at most PROBE_HOLD after the browser opens or
+Refresh: anyone can send listings, and a queue kept full would hold them
+back for good.
 */
 
 #include "platform.h"
@@ -109,6 +113,7 @@ enum
 	QUERY_JITTER = 2000,
 	GAME_EXPIRY = 90000,
 	PROBE_REFRESH = 120000,
+	PROBE_HOLD = 1000,
 	TOMBSTONE_TIME = 600000,
 	VERIFY_BUDGET = 2,
 	/* seconds */
@@ -224,6 +229,9 @@ static struct
 
 	/* browsing */
 	int browsing;
+	/* when the browser opened or was refreshed (the probes wait at most
+	PROBE_HOLD from it for the queue) */
+	unsigned long browse_time;
 	int query_wanted;
 	struct queued queue[MAXIMUM_QUEUED];
 	int queue_count;
@@ -894,8 +902,8 @@ static void update_browsing(void)
 			lobby.newer[index].used = 0;
 	}
 	/* (the listings still waiting are shown before the probes start, which
-	then start in the order shown) */
-	if (lobby.browsing && !lobby.queue_count)
+	then start in the order shown, unless they keep coming) */
+	if (lobby.browsing && (!lobby.queue_count || elapsed(lobby.browse_time, PROBE_HOLD)))
 		update_probes();
 }
 
@@ -1136,6 +1144,7 @@ void p2p_lobby_browse(int on)
 	if (on != lobby.browsing)
 	{
 		lobby.browsing = on;
+		lobby.browse_time = p2p_now();
 		if (!on)
 		{
 			memset(lobby.games, 0, sizeof(lobby.games));
@@ -1156,7 +1165,10 @@ void p2p_lobby_refresh(void)
 
 	pthread_mutex_lock(&p2p_lock);
 	if (lobby.browsing)
+	{
 		lobby.query_wanted = 1;
+		lobby.browse_time = p2p_now();
+	}
 	/* (the pings timed again, a probe under way included; a master
 	server's game is not timed) */
 	for (index = 0; index < MAXIMUM_GAMES; index++)

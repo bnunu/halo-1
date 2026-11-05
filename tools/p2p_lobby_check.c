@@ -464,8 +464,9 @@ static void show(int order, int reverse, int count)
 
 /* four games, heard as Alpha, Bravo, Charlie, Delta (Charlie's join failed),
 are shown as Bravo, Delta, Charlie, Alpha: their hosts are probed in the
-order shown, past Bravo's refused, none while listings wait to be checked;
-then in another order, and one not shown last */
+order shown, past Bravo's refused, none while listings wait to be checked
+(for a second at most after Refresh); then in another order, and one not
+shown last */
 static void probe_order_checks(void)
 {
 	static const unsigned char token[P2P_TOKEN_SIZE] = { 9, 9, 9 };
@@ -507,9 +508,11 @@ static void probe_order_checks(void)
 	lobby_update(token, 0, 16);
 	refused_host = NULL;
 	check(probe_count == 3, "the games after one refused are probed");
-	/* gone, then heard again in a burst that takes four passes to check */
+	/* gone, then heard again after Refresh in a burst that takes four passes
+	to check */
 	clock_now += 91000;
 	lobby_update(token, 0, 16);
+	p2p_lobby_refresh();
 	probe_count = 0;
 	check_cost = 5;
 	pthread_mutex_lock(&p2p_lock);
@@ -562,6 +565,24 @@ static void probe_order_checks(void)
 	}
 	lobby_update(token, 0, 16);
 	check(probe_count == 3, "a master server's game is not timed on Refresh");
+	/* gone, then heard again after Refresh with each check taking 600 ms:
+	the games checked are probed once a second has passed, though listings
+	still wait */
+	clock_now += 91000;
+	lobby_update(token, 0, 16);
+	p2p_lobby_refresh();
+	probe_count = 0;
+	pthread_mutex_lock(&p2p_lock);
+	for (index = 0; index < 4; index++)
+		p2p_lobby_slot_heard(slots[index], payloads[index], sizes[index], 0);
+	pthread_mutex_unlock(&p2p_lock);
+	check_cost = 600;
+	lobby_update(token, 0, 16);
+	check(probe_count == 0, "no probe starts in the first second while listings wait to be checked");
+	for (index = 0; index < 2 && !probe_count; index++)
+		lobby_update(token, 0, 16);
+	check_cost = 0;
+	check(probe_count > 0 && probe_count < 4, "listings still waiting hold the probes back for a second at most");
 }
 
 int main(void)
