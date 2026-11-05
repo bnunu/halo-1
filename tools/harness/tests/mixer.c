@@ -624,6 +624,113 @@ int main(int argc, char **argv)
 	}
 	/* audio.resampler = "linear": each frame the two source frames around
 	it, weighted by how near it is to each */
+	/* a voice cut off at the top of its wave (voice_cut, as stream_flush
+	does) carries on and fades out over CUT_FADE_FRAMES: no step to silence
+	larger than the sine's own, from it at full level to nothing, and nothing
+	past it */
+	CASE("cut")
+	{
+		unsigned long frames = 4812, n;
+		double *signal = malloc(frames * 2 * sizeof(double)), *exact = malloc(frames * 2 * sizeof(double));
+		short *samples = malloc(frames * 2 * sizeof(short));
+		float *before = malloc(frames * sizeof(float));
+		static float buffer[CHUNK * 2], send[CHUNK];
+		struct sdl_stream *stream;
+		double largest_step = 0.0, sine_step = 2.0 * PI * 1000.0 / 48000.0 * 0.5;
+		float last;
+
+		for (n = 0; n < frames * 2; n++)
+			signal[n] = 0.5 * sin(2.0 * PI * 1000.0 * n / 48000.0);
+		quantize(signal, samples, exact, frames * 2);
+		stream = voice_new(samples, frames * 2, 1, 48000, 0);
+		stream->cut_played = CUT_FADE_FRAMES;
+		/* 100 cycles and a quarter: at the top */
+		render(stream, before, frames, FALSE);
+		last = before[frames - 1];
+		voice_cut(stream);
+		stream->packet_count = 0;
+		resampler_reset(stream);
+		memset(buffer, 0, sizeof(buffer));
+		memset(send, 0, sizeof(send));
+		mix_cut(stream, buffer, send, CHUNK);
+		for (n = 0; n < CHUNK; n++)
+		{
+			double step = fabs(buffer[n * 2] - (n ? buffer[(n - 1) * 2] : last));
+
+			if (step > largest_step)
+				largest_step = step;
+		}
+		CHECK(fabs(last) > 0.45, "not cut at the top of the wave: %.3f", last);
+		CHECK(largest_step < 1.2 * sine_step, "a step of %.4f cutting off (the sine's %.4f)", largest_step, sine_step);
+		CHECK(fabs(buffer[(CUT_FADE_FRAMES / 2) * 2]) > 0.0f, "nothing of the voice after it was cut");
+		for (n = CUT_FADE_FRAMES; n < CHUNK; n++)
+			CHECK(buffer[n * 2] == 0.0f, "the cut still playing at frame %lu", n);
+		voice_delete(stream);
+		free(before);
+		free(samples);
+		free(exact);
+		free(signal);
+		return 0;
+	}
+	/* voices of every kind cut off at random (voice_cut, as stream_flush
+	does) and started over: nothing but finite samples, the room send's
+	included, in the mix of each and of its cut */
+	CASE("cuts")
+	{
+		unsigned long frames = 30000, n, trial, chunk;
+		double *signal = noise(frames * 2);
+		short *samples = malloc(frames * 2 * sizeof(short));
+		double *exact = malloc(frames * 2 * sizeof(double));
+		static float buffer[CHUNK * 2], send[CHUNK];
+		static const unsigned long rates[] = { 22050, 44100 };
+
+		quantize(signal, samples, exact, frames * 2);
+		srand(7);
+		for (trial = 0; trial < 1000; trial++)
+		{
+			struct sdl_stream *stream = voice_new(samples, frames, 1 + rand() % 2, rates[rand() % 2], 0);
+
+			/* (garbage where no cut is playing, which must never be read) */
+			for (n = 0; n < CUT_FADE_FRAMES * MAXIMUM_OUTPUT_CHANNELS; n++)
+				stream->cut[n] = NAN;
+			for (n = 0; n < CUT_FADE_FRAMES; n++)
+				stream->cut_send[n] = NAN;
+			stream->cut_played = CUT_FADE_FRAMES;
+			stream->has_3d = rand() % 4 != 0;
+			stream->mode = rand() % 5 == 0 ? DS3DMODE_HEADRELATIVE : DS3DMODE_NORMAL;
+			for (n = 0; n < 3; n++)
+				stream->position[n] = (float)((rand() % 2000) - 1000) / (rand() % 2 ? 10.0f : 1000.0f);
+			stream->minimum_distance = 1.0f;
+			stream->maximum_distance = 1000.0f;
+			stream->room = rand() % 2 ? 0 : DSBVOLUME_MIN;
+			stream->frequency = rand() % 3 ? 0 : (DWORD)(stream->sample_rate * (0.5 + (rand() % 100) / 50.0));
+			for (chunk = 0; chunk < 8; chunk++)
+			{
+				memset(buffer, 0, sizeof(buffer));
+				memset(send, 0, sizeof(send));
+				/* cut once, and again while that cut plays */
+				if (chunk == 3 || (chunk == 5 && rand() % 2))
+				{
+					voice_cut(stream);
+					stream->cursor = 0;
+					resampler_reset(stream);
+				}
+				mix_voice(stream, buffer, send, chunk == 3 ? 100 : CHUNK);
+				mix_cut(stream, buffer, send, chunk == 3 ? 100 : CHUNK);
+				for (n = 0; n < CHUNK * 2; n++)
+				{
+					CHECK(fabsf(buffer[n]) < 8.0f && (n >= CHUNK || fabsf(send[n]) < 8.0f),
+						"trial %lu, mix %lu, frame %lu: %g, sending %g", trial, chunk, n, buffer[n],
+						n < CHUNK ? send[n] : 0.0f);
+				}
+			}
+			voice_delete(stream);
+		}
+		free(signal);
+		free(samples);
+		free(exact);
+		return 0;
+	}
 	CASE("linear")
 	{
 		double *signal = noise(30000);
