@@ -12,6 +12,7 @@ enum controller_remap_action
     PAD_SCOREBOARD, PAD_SCREENSHOT, PAD_FORWARD, PAD_BACKWARD, PAD_LEFT, PAD_RIGHT,
     PAD_CHAT, PAD_TEAM_CHAT, PAD_VEHICLE_CHAT, PAD_TALK,
     PAD_CAMERA_FASTER, PAD_CAMERA_SLOWER, PAD_CAMERA_SWITCH, PAD_CAMERA_UP, PAD_CAMERA_DOWN,
+    PAD_CAMERA_CYCLE,
     CONTROLLER_REMAP_ACTIONS
 };
 
@@ -41,6 +42,7 @@ int controller_remap_camera(short local_player, int available, int controlling,
 unsigned int controller_remap_held(short port);
 unsigned int controller_remap_pressed(short port, unsigned int mask);
 int controller_remap_connected(short port);
+int controller_remap_camera_cycle(short port, int fast);
 int controller_remap_talk(void);
 void controller_remap_movement(short port, float *forward, float *strafe);
 struct game_input_preferences;

@@ -875,8 +875,9 @@ static boolean director_update_controls(
 			last_ticks[local_player_index] = ticks;
 		}
 
-		/* port: a debug binding must not also cycle the camera. */
-		if (remapped) switch_camera = FALSE;
+		/* port: cycle the camera from its physical binding in every context;
+		 * the director's existing camera selection still enforces permissions. */
+		if (remapped) switch_camera = controller_remap_camera_cycle((short)player_index, director_camera_switch_fast);
 		if (director->camera_proc !=
 				(director_camera_update_proc)first_person_camera_update &&
 			director->camera_proc !=

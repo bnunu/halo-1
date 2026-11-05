@@ -5,9 +5,9 @@ static wchar_t const *const pad_action_labels[CONTROLLER_REMAP_ACTIONS] = {
     L"FLASHLIGHT", L"THROW GRENADE", L"FIRE", L"CROUCH", L"ZOOM",
     L"SCOREBOARD", L"SCREENSHOT", L"MOVE FORWARD", L"MOVE BACKWARD", L"STRAFE LEFT", L"STRAFE RIGHT",
     L"ALL CHAT", L"TEAM CHAT", L"VEHICLE CHAT", L"PUSH TO TALK",
-    L"CAMERA SPEED UP", L"CAMERA SPEED DOWN", L"CAMERA / PLAYER SWITCH", L"CAMERA RAISE", L"CAMERA LOWER"
+    L"CAMERA SPEED UP", L"CAMERA SPEED DOWN", L"CAMERA / PLAYER SWITCH", L"CAMERA RAISE", L"CAMERA LOWER", L"CYCLE CAMERA"
 };
-static short const pad_action_groups[CONTROLLER_REMAP_ACTIONS] = {0,1,1,1,1,2,1,1,0,2,2,2,0,0,0,0,3,3,3,3,4,4,4,4,4};
+static short const pad_action_groups[CONTROLLER_REMAP_ACTIONS] = {0,1,1,1,1,2,1,1,0,2,2,2,0,0,0,0,3,3,3,3,4,4,4,4,4,4};
 static struct
 {
     unsigned char buttons[4][CONTROLLER_REMAP_ACTIONS];
@@ -198,7 +198,7 @@ static void pad_editor_update(struct widget_instance *list)
                 if (group == 3)
                     snprintf(caption, sizeof(caption), "Choose buttons for chat and push-to-talk.\r\nChat belongs to the player who opens it.\r\nVoice uses the shared microphone and the\r\nfirst player's team and vehicle channels.");
                 else if (group == 4)
-                    snprintf(caption, sizeof(caption), "These buttons control an available debug camera.\r\nThey do not enable the camera.\r\nThey can reuse your gameplay buttons.\r\nCamera / Player Switch changes who you control.");
+                    snprintf(caption, sizeof(caption), "Hold Cycle Camera for one second to change views.\r\nCamera / Player Switch changes who you control.\r\nOther actions control an available debug camera.\r\nThese buttons can reuse your gameplay buttons.");
             }
         }
         for (i = 0; caption[i] && i < 255; i++) text[i] = (wchar_t)(unsigned char)caption[i];

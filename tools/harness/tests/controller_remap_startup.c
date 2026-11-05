@@ -29,6 +29,7 @@ static short local_player_get_next(short local) { return local == NONE ? 0 : NON
 static long local_player_get_player_index(short local) { return local; }
 static struct player_datum *player_get(long player) { return &players[player]; }
 static boolean ui_widgets_active_for_local_player(short local) { return FALSE; }
+static boolean main_menu_is_active(void) { return FALSE; }
 static boolean console_is_active(void) { return FALSE; }
 static short network_chat_controller(void) { return NONE; }
 

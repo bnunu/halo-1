@@ -23,6 +23,7 @@ static struct
 {
     int custom, context, connected;
     unsigned int instance, blocked, held, pressed;
+    Uint64 cycle_since, cycle_count;
     unsigned char layout[CONTROLLER_REMAP_ACTIONS], targets[CONTROLLER_REMAP_ACTIONS];
 } remap_ports[4];
 
@@ -165,6 +166,7 @@ int controller_remap_input(short port, XINPUT_GAMEPAD *pad, int connected)
     allowed = context == 3 ? ((1u << CONTROLLER_REMAP_ACTIONS) - (1u << PAD_CAMERA_FASTER)) :
         (1u << PAD_CAMERA_FASTER) - 1;
     if (context == 2) allowed |= 1u << PAD_CAMERA_SWITCH;
+    allowed |= 1u << PAD_CAMERA_CYCLE;
     if (!custom) allowed = 0; /* Stock input retains its original shortcuts. */
     for (i = 0; i < CONTROLLER_REMAP_ACTIONS; i++)
     {
@@ -174,6 +176,11 @@ int controller_remap_input(short port, XINPUT_GAMEPAD *pad, int connected)
          * owns its button. The rest of the debug layout is inactive. */
         if (context == 2 && i < PAD_CAMERA_FASTER && button == layout[PAD_CAMERA_SWITCH]) continue;
         if ((held & ~remap_ports[port].blocked) & (1u << button)) actions |= 1u << i;
+    }
+    if ((actions & (1u << PAD_CAMERA_CYCLE)) && !(remap_ports[port].held & (1u << PAD_CAMERA_CYCLE)))
+    {
+        remap_ports[port].cycle_since = SDL_GetTicks();
+        remap_ports[port].cycle_count = 0;
     }
     remap_ports[port].pressed |= actions & ~remap_ports[port].held;
     remap_ports[port].held = actions;
@@ -219,6 +226,20 @@ unsigned int controller_remap_pressed(short port, unsigned int mask)
         remap_ports[port].pressed & mask : 0;
     remap_ports[port].pressed &= ~mask;
     return result;
+}
+
+/* Keep the stock hold-to-cycle shortcut independent of gameplay translation.
+ * Context changes use the same release guard as other remapped actions. */
+int controller_remap_camera_cycle(short port, int fast)
+{
+    Uint64 count;
+    unsigned int pressed = controller_remap_pressed(port, 1u << PAD_CAMERA_CYCLE);
+    if (!(controller_remap_held(port) & (1u << PAD_CAMERA_CYCLE))) return 0;
+    if (fast) return pressed != 0;
+    count = (SDL_GetTicks() - remap_ports[port].cycle_since) / 1000;
+    if (count <= remap_ports[port].cycle_count) return 0;
+    remap_ports[port].cycle_count = count;
+    return 1;
 }
 
 int controller_remap_talk(void)

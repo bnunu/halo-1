@@ -96,7 +96,7 @@ jobs:
           # clients need the retail maps, and are skipped
           python -m pytest -q tools/test_dedicated_server.py
           python tools/test_light_storage.py
-          python -m pytest -q tools/test_controller_buttons.py tools/test_controller_remap.py tools/test_hud_button_style.py tools/test_hud_corrections.py
+          python -m pytest -q tools/test_controller_buttons.py tools/test_controller_remap.py tools/test_controller_remap_context.py tools/test_hud_button_style.py tools/test_hud_corrections.py
 
       - name: Compile cache
         run: ccache --show-stats
