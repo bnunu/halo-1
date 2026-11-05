@@ -1851,6 +1851,18 @@ boolean network_game_client_remove_player(
 				machine_remove_player(player_index);
 			}
 
+			/* port: a local player who leaves no longer has its slot: its entry in
+			the local players is cleared here, as the datum stays until a joiner
+			takes the slot (network_game_spawn_player), which then deletes it and
+			makes another with a new identifier, and the entry would name a player
+			that no longer exists (player_get halts on it) */
+			if (player->machine_index == client->machine_index &&
+				player->controller_index >= 0 && player->controller_index < MAXIMUM_LOCAL_PLAYERS &&
+				local_player_get_player_index(player->controller_index) == player_index)
+			{
+				local_player_set_player_index(player->controller_index, NONE);
+			}
+
 			for (network_player_index = 0;
 				network_player_index < MAXIMUM_NUMBER_OF_PLAYERS;
 				network_player_index++)
