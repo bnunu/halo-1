@@ -38,6 +38,9 @@ struct location { long cluster_reference; short leaf_index; short cluster_index;
 static long game_time;
 static long game_time_get(void) { return game_time; }
 
+/* the players at their normal speed */
+static boolean game_players_are_double_speed(void) { return FALSE; }
+
 /* the local random numbers (all the turret's ranges are a single value) */
 static real real_local_random_range(real lower, real upper) { return lower; }
 static short local_random_range(short lower, short upper) { return lower; }

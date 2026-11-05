@@ -71,6 +71,7 @@ symbols in this file:
 #include "bitmaps/bitmap_group.h"
 #include "cseries/errors.h"
 #include "effects/contrail_definitions.h"
+#include "game/game.h" /* port: game_players_are_double_speed */
 #include "memory/data.h"
 #include "objects/object_definitions.h"
 #include "physics/point_physics.h"
@@ -382,7 +383,8 @@ void contrails_update(
 	at 144 frames a second, 28 or 35 ms, so the points were made and aged by
 	uneven steps and a short trail's fades (a plasma turret's) flickered from
 	tick to tick. A game time gone back or jumping (a new map, a checkpoint)
-	counts as a tick. */
+	counts as a tick. A tick is half as long while the players are double
+	speed, as game_frame halves the frame's time. */
 	if (last_point_game_time != game_time_get())
 	{
 		long ticks = game_time_get() - last_point_game_time;
@@ -391,6 +393,8 @@ void contrails_update(
 			ticks = 1;
 		last_point_game_time = game_time_get();
 		point_dt = (real)ticks / TICKS_PER_SECOND;
+		if (game_players_are_double_speed())
+			point_dt *= 0.5f;
 	}
 	else
 	{
@@ -478,7 +482,10 @@ void contrails_update(
 		frame's time (contrail_update_points), so each state lasted at least a
 		tick. A Shade's or a Spirit's points (states of 0.01, 0.05 and 0.005
 		seconds) lived four ticks, 133 ms, and aged a frame at a time at 240
-		frames a second they lived about half that, the trail half as long */
+		frames a second they lived about half that, the trail half as long.
+		The points' physics and their states' fades step with them, so at a
+		high frame rate a point moves and fades once a tick, as on the Xbox,
+		not on every frame */
 		if (point_dt > 0.0f)
 			contrail_update_points(contrail_index, point_dt);
 
