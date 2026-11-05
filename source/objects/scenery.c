@@ -170,9 +170,10 @@ short scenery_get_animation_time(
 {
 	struct animation *animation;
 	struct animation_graph *animation_graph;
-	struct scenery_datum *scenery = scenery_get(object_index);
+	/* port: a script's scenery may be none (hs_value_still_exists) */
+	struct scenery_datum *scenery = scenery_try_and_get(object_index);
 
-	if (TEST_FLAG(scenery->flags, 0))
+	if (scenery && TEST_FLAG(scenery->flags, 0))
 	{
 		animation_graph = animation_graph_definition_get(
 			scenery->object.object.animation.animation_graph_index);

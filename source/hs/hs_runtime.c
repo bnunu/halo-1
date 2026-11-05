@@ -486,6 +486,9 @@ static long hs_object_to_object_list(
 static boolean hs_object_type_can_cast(
 	short actual_type,
 	short desired_type);
+static long hs_value_still_exists(
+	short type,
+	long value);
 static char const *hs_thread_format(
 	long thread_index);
 static void hs_stack_pop(
@@ -1842,6 +1845,25 @@ cast_object_type:
 	}
 }
 
+/* port: an object or a list that a script holds can be gone when the script
+uses it. A global keeps a vehicle's index after the vehicle is deleted, and a
+list made for an argument is collected while a later argument's static script
+sleeps. Maps do this, and Halo PC plays them, but here datum_get gives NULL for
+it and the read through that crashes the game. Such a value is none, which is
+already how a script says no object: an object's name gives none when that
+object doesn't exist. */
+static long hs_value_still_exists(
+	short type,
+	long value)
+{
+	if (HS_TYPE_IS_OBJECT(type))
+		return object_try_and_get(value) ? value : NONE;
+	if (type==_hs_type_object_list)
+		return datum_try_and_get(object_list_header_data, value) ? value : NONE;
+
+	return value;
+}
+
 long hs_cast(
 	long thread_index,
 	short actual_type,
@@ -1850,6 +1872,13 @@ long hs_cast(
 {
 	match_hs_assert("c:\\halo\\SOURCE\\hs\\hs_runtime.c", 0x5d8, thread_index,
 		hs_can_cast(actual_type, desired_type), "bad typecast.");
+
+	/* port: every global read and every function's or script's result comes
+	through here. Checked before the casts below, so no list is made of an
+	object that is gone */
+	value = hs_value_still_exists(
+		actual_type==_hs_passthrough ? desired_type : actual_type,
+		value);
 
 	if (actual_type!=desired_type &&
 		actual_type!=_hs_passthrough &&
@@ -3363,6 +3392,7 @@ static long *hs_arguments_evaluate(
 	long *values = hs_stack_allocate(thread_index, formal_parameter_count*sizeof(long));
 	short *argument_index = hs_stack_allocate(thread_index, sizeof(short));
 	long *expression_index = hs_stack_allocate(thread_index, sizeof(long));
+	short value_index;
 
 	/* port: none on a stack overflow (hs_stack_overflow): as for arguments
 	still being evaluated, the caller returns on NULL */
@@ -3398,6 +3428,15 @@ static long *hs_arguments_evaluate(
 
 	match_hs_assert("c:\\halo\\SOURCE\\hs\\hs_runtime.c", 0x3d1, thread_index,
 		*expression_index==NONE, "corrupted syntax tree.");
+
+	/* port: an argument was checked when it was evaluated, and a later one's
+	static script may have slept since (hs_value_still_exists) */
+	for (value_index = 0; value_index<formal_parameter_count; value_index++)
+	{
+		values[value_index] = hs_value_still_exists(
+			formal_parameters[value_index],
+			values[value_index]);
+	}
 
 	return values;
 }
