@@ -348,6 +348,14 @@ void xgpu_static_buffers_remove(const void *buffers, long count, unsigned long s
 /* Android: size bytes of vertices or indices from start, as above */
 void xgpu_static_range_add(const void *start, unsigned long size, int indices);
 void xgpu_static_range_remove(const void *start, int indices);
+/* the visibility tests ended at an index so far, and the number (from 1) of
+the one whose count GetVisibilityTestResult last gave there, 0 for none. A
+test's count is read two or more frames after it, and never for one dropped
+(no batch free), and until then the index gives an earlier test's: a lens
+flare's slot is read only once a count of the flare's own tests has come
+(rasterizer_lights.c; d3d8_gl.c) */
+unsigned long long xgpu_visibility_tests_ended(unsigned long index);
+unsigned long long xgpu_visibility_test_counted(unsigned long index);
 /* fills the corners x0, y0 to x1, y1 of the window (row 0 at the bottom)
 with color, as it is (an HDR display's scRGB framebuffer: linear, 1.0 at 80
 nits), or only the ring ring[0], ring[1] (its centre in the window), from
