@@ -77,6 +77,24 @@ def test_sniper_reticle_keeps_stock_visible_size_and_position():
         assert np.all(np.abs(actual - np.array(bounds)*scale) <= 1), name
 
 
+def test_xbox_zoom_labels_keep_stock_visible_size_and_position():
+    # Measured stock alpha bounds (>=128) of the Xbox 2x and 10x, which sit
+    # inside their sprites with empty texels around them: filling the
+    # sprites drew them a third larger. The supplied 2x is wider for its
+    # height than the stock's, so a proportional resize leaves its edges up
+    # to three high-res pixels (3/8 texel) from the stock's; 10x, one.
+    alpha = Image.open(ASSETS / 'sniper__hud_reticles_scope__0.png').getchannel('A')
+    for label, sprite, bounds, tolerance in [
+        ('2x', [0, 0, 31, 24], [5, 5, 26, 19], 3),
+        ('10x', [0, 24, 43, 48], [6, 29, 38, 43], 1),
+    ]:
+        x0,y0,x1,y1 = [n*8 for n in sprite]
+        visible = np.asarray(alpha.crop((x0,y0,x1,y1))) >= 128
+        ys,xs = np.where(visible)
+        actual = np.array([x0+xs.min(), y0+ys.min(), x0+xs.max()+1, y0+ys.max()+1])
+        assert np.all(np.abs(actual - np.array(bounds)*8) <= tolerance), (label, actual.tolist())
+
+
 def test_ce_keeps_8x_and_only_selects_verified_scope(tmp_path):
     body = function((ROOT / 'port/linux/game/hud_hires_tags.c').read_text(), 'hud_hires_crosshair_bitmap')
     run_c(tmp_path, r'''
