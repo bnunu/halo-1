@@ -1053,9 +1053,11 @@ void units_dispose(
 void unit_kill(
 	long unit_index)
 {
-	struct unit_datum *unit = unit_get(unit_index);
+	/* port: a script's unit may be none (hs_value_still_exists) */
+	struct unit_datum *unit = unit_try_and_get(unit_index);
 
-	SET_FLAG(unit->object.damage_flags, _object_die_act_of_god_bit, TRUE);
+	if (unit)
+		SET_FLAG(unit->object.damage_flags, _object_die_act_of_god_bit, TRUE);
 
 	return;
 }
@@ -1063,9 +1065,11 @@ void unit_kill(
 void unit_kill_silent(
 	long unit_index)
 {
-	struct unit_datum *unit = unit_get(unit_index);
+	/* port: a script's unit may be none (hs_value_still_exists) */
+	struct unit_datum *unit = unit_try_and_get(unit_index);
 
-	SET_FLAG(unit->object.damage_flags, _object_die_act_of_god_silent_bit, TRUE);
+	if (unit)
+		SET_FLAG(unit->object.damage_flags, _object_die_act_of_god_silent_bit, TRUE);
 
 	return;
 }

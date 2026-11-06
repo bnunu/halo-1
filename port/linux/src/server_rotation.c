@@ -586,6 +586,8 @@ first of its spellings found, into path */
 static int map_file(const char *folder, const char *name, char *path, int size)
 {
 	char xbox_path[512];
+	char file_name[300];
+	char on_disk[300];
 	long version, type;
 
 	if (folder[0] == 'd' && folder[1] == ':')
@@ -596,6 +598,15 @@ static int map_file(const char *folder, const char *name, char *path, int size)
 	else
 	{
 		snprintf(path, (size_t)size, "%s/%s.map", folder, name);
+		/* (a file named in other letters' case, cmt_Snow_Grove.map: the maps'
+		list names each in lower case, and the game finds it in any case, as
+		platform_translate_path does) */
+		snprintf(file_name, sizeof(file_name), "%s.map", name);
+		if (!server_map_header(path, &version, &type) &&
+			posix_find_entry_case_insensitive(folder, file_name, on_disk, sizeof(on_disk)))
+		{
+			snprintf(path, (size_t)size, "%s/%s", folder, on_disk);
+		}
 	}
 	return server_map_header(path, &version, &type);
 }

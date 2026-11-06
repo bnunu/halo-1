@@ -23,7 +23,16 @@ def scope_cells(kind):
     if kind == 'ce':
         return [cell([0, 0, 25, 18], 'scope', [50, 26, 188, 112]),
                 cell([51.5, 0.5, 61.5, 10.5], 'scope', [241, 12, 301, 73])]
-    rectangles = [[0, 0, 31, 24], [0, 24, 43, 48], [35.5, 3.5, 45.5, 13.5]]
+    # The Xbox zoom labels' stock glyphs (alpha >= 128) do not fill their
+    # sprites [0,0,31,24] and [0,24,43,48]: 2x covers [5,5,26,19] (21x14
+    # texels) and 10x [6,29,38,43] (32x14), with the rest of each sprite
+    # empty. Filling the sprite drew them a third larger than the Xbox's.
+    # These placements put the supplied glyphs on the stock bounds: 10x
+    # within one output pixel; 2x within three, its supplied glyphs being
+    # wider for their height (1.65) than the stock's (1.50), which a
+    # proportional resize cannot change.
+    rectangles = [[4.125, 4.875, 26.75, 19.0], [5.25, 28.75, 38.5, 43.125],
+                  [35.5, 3.5, 45.5, 13.5]]
     return [cell(rect, 'scope', crop) for rect, crop in zip(rectangles,
         [[50, 26, 188, 112], [50, 168, 247, 253], [241, 12, 301, 73]])]
 

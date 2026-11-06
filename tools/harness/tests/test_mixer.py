@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from harness import CHECK_FAILED, build, mutated, read, run  # noqa: E402
 
 SOURCE = "port/linux/src/dsound_sdl.c"
-CASES = ["reference", "impulse", "sines", "aliases", "silent-voice", "mono", "linear"]
+CASES = ["reference", "impulse", "sines", "aliases", "silent-voice", "mono", "linear", "cut", "cuts", "doppler"]
 
 # a fault in the mixer, and the case that must catch it
 NEGATIVE_CONTROLS = {
@@ -25,8 +25,25 @@ NEGATIVE_CONTROLS = {
                          "(stream->center + 2 - RESAMPLER_ZERO_CROSSINGS) % RESAMPLER_HISTORY"), "reference"),
     "phase-not-blended": (("for (phase = 0; phase <= RESAMPLER_TABLE_STEPS; phase++)",
                            "for (phase = 0; phase <= RESAMPLER_TABLE_STEPS; phase += 2)"), "impulse"),
-    "no-stretch": (("#define RESAMPLER_MAXIMUM_STRETCH 2", "#define RESAMPLER_MAXIMUM_STRETCH 1"), "aliases"),
+    "no-stretch": (("#define RESAMPLER_MAXIMUM_STRETCH 4", "#define RESAMPLER_MAXIMUM_STRETCH 1"), "aliases"),
+    "cut-dead": (("mix_voice(stream, output, send, CUT_FADE_FRAMES);", "return;"), "cut"),
+    "cut-not-faded": (("float fade = 0.5f + 0.5f * cosf(3.14159265f * (float)(frame + 1) / CUT_FADE_FRAMES);",
+                       "float fade = 1.0f;"), "cut"),
+    "cut-past-the-earlier": (("(frame < left ? stream->cut_send[stream->cut_played + frame] : 0.0f)",
+                              "(frame < left ? 1.0f : 0.0f) * stream->cut_send[(stream->cut_played + frame) % CUT_FADE_FRAMES]"),
+                             "cuts"),
     "linear-nearest": (("left_frames[0] + (left_frames[1] - left_frames[0]) * fraction", "left_frames[0]"), "linear"),
+    "doppler-listener-backwards": (("ratio = (SPEED_OF_SOUND - away) / (SPEED_OF_SOUND - towards);",
+                                    "ratio = (SPEED_OF_SOUND + away) / (SPEED_OF_SOUND - towards);"), "doppler"),
+    "doppler-in-units": (("scale = listener.distance_factor * listener.doppler_factor / distance;",
+                          "scale = listener.doppler_factor / distance;"), "doppler"),
+    "doppler-held-to-an-octave": (("return ratio > 0.0f ? ratio : 0.0f;",
+                                   "return ratio > 2.0f ? 2.0f : ratio < 0.5f ? 0.5f : ratio;"), "doppler"),
+    "doppler-unlimited": (("#define VOICE_FREQUENCY_MAXIMUM 191983.0", "#define VOICE_FREQUENCY_MAXIMUM 1.0e9"),
+                          "doppler"),
+    "doppler-stereo-still": (("towards = stream->stereo_approach * listener.distance_factor",
+                              "towards = 0.0f * listener.distance_factor"), "doppler"),
+    "doppler-not-glided": (("\t\tstep += ramp_step;\n", "\t\tstep += 0.0 * ramp_step;\n"), "doppler"),
 }
 
 

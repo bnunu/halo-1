@@ -1,12 +1,14 @@
 """StageKit's tests' tools (README.md): build the generator, write a scenario's map, validate it, and play it.
 """
 
+import errno
 import os
 import re
 import shlex
 import shutil
 import struct
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -23,6 +25,12 @@ LOADING_SECONDS = 10
 # a map file's first words: 'head' and the version, the Xbox's 5 (xbox_files.c's map_file_version)
 MAP_HEADER_SIGNATURE = 0x68656164
 XBOX_MAP_VERSION = 5
+# launch's copies of the game and its starts, one at a time (conftest.py's sessions play side by side): a copy open
+# for writing when another thread forks stays open in that child until it runs its program, and the game's start
+# fails while it is (ETXTBSY, "Text file busy")
+LAUNCHING = threading.Lock()
+# the tries at starting the game, a tenth of a second apart, for the other threads' forks (generate's tools)
+LAUNCH_TRIES = 5
 
 
 def build(folder):
@@ -142,15 +150,6 @@ def launch(machine, input, address, broadcast, test, init="", **environment):
     for name in ("debug.txt", "game.log"):
         (machine / name).unlink(missing_ok=True)
     (machine / "runtime").mkdir(mode=0o700, exist_ok=True)
-    # (the game, and the libraries it finds beside it, in machine's own folder: a desktop build keeps its
-    # config.toml beside the executable, so each machine has its own settings)
-    for source in [GAME, *GAME.parent.glob("lib*.so*")]:
-        target = machine / ("halo" if source == GAME else source.name)
-        target.unlink(missing_ok=True)
-        try:
-            os.link(source, target)
-        except OSError:
-            shutil.copy(source, target)
     # (none of the caller's own settings; system link on the loopback only, no internet play)
     environment = dict({name: value for name, value in os.environ.items() if not name.startswith("HALO_")},
                        HALO_NET_ONLINE="false", SDL_AUDIODRIVER="dummy", SDL_VIDEODRIVER="offscreen", HALO_NO_AUDIO="1",
@@ -158,9 +157,25 @@ def launch(machine, input, address, broadcast, test, init="", **environment):
                        HALO_SAVE_ROOT=str(machine / "save"), XDG_RUNTIME_DIR=str(machine / "runtime"),
                        HOME=str(machine), HALO_NETWORK_TEST=test, HALO_NET_ADDRESS=address,
                        HALO_NET_BROADCAST=broadcast, **environment)
-    with open(machine / "game.log", "w") as log:
-        return subprocess.Popen([str(machine / "halo")], cwd=machine, env=environment, stdout=log,
-                                stderr=subprocess.STDOUT)
+    with LAUNCHING, open(machine / "game.log", "w") as log:
+        # (the game, and the libraries it finds beside it, in machine's own folder: a desktop build keeps its
+        # config.toml beside the executable, so each machine has its own settings; copied when they are on
+        # another file system, as on CI)
+        for source in [GAME, *GAME.parent.glob("lib*.so*")]:
+            target = machine / ("halo" if source == GAME else source.name)
+            target.unlink(missing_ok=True)
+            try:
+                os.link(source, target)
+            except OSError:
+                shutil.copy(source, target)
+        for attempt in range(LAUNCH_TRIES):
+            try:
+                return subprocess.Popen([str(machine / "halo")], cwd=machine, env=environment, stdout=log,
+                                        stderr=subprocess.STDOUT)
+            except OSError as error:
+                if error.errno != errno.ETXTBSY or attempt == LAUNCH_TRIES - 1:
+                    raise
+                time.sleep(0.1)
 
 
 # the first tick every player has a unit, from which a scenario's seconds (and cues) count (network_test.c)

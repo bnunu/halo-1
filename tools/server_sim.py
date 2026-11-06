@@ -2472,8 +2472,9 @@ def h_rotation_next(api, request, session, body):
 @route("POST", r"/api/rotation/play", "moderator")
 def h_rotation_play(api, request, session, body):
     map_text = body.get("map")
-    if not isinstance(map_text, str) or not map_text or " " in map_text or '"' in map_text:
-        raise CommandError("schema", "map is needed (no spaces)", field="map")
+    if not isinstance(map_text, str) or not map_text or len(map_text) > 255 or " " in map_text or '"' in map_text:
+        raise CommandError("schema", "map is needed: a map or a rotation entry, 255 characters at most, with no spaces",
+                           field="map")
     gametype = body.get("gametype") if isinstance(body.get("gametype"), str) else ""
     if " " in gametype or '"' in gametype:
         raise CommandError("schema", "a gametype holds no space", field="gametype")

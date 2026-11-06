@@ -25,8 +25,8 @@ struct real_matrix4x3 *render_interpolation_object_node_matrices(long object_ind
 void render_interpolation_object_point(long object_index, union real_point3d *point);
 struct observer_result const *render_interpolation_camera(short local_player_index,
 	struct observer_result const *observer);
-void render_interpolation_first_person(short local_player_index, struct real_matrix4x3 *node_matrices,
-	short node_count, struct render_camera const *camera);
+void render_interpolation_first_person(short local_player_index, long weapon_index, long animation_graph_index,
+	struct real_matrix4x3 *node_matrices, short node_count, struct render_camera const *camera);
 float render_interpolation_game_time_sec(long ticks);
 
 /* whether the map being loaded, by the name it was loaded by, is a
@@ -123,6 +123,10 @@ void server_console_output(const char *text);
 int halo_server_debug_echo(void);
 /* ... the level its rotation plays next, NULL if none (game_engine.c) */
 char const *server_director_first_level(void);
+/* the deflection of a stick (0 the left, 1 the right) read as none, of
+32767: input.left_stick_dead_zone and input.right_stick_dead_zone, else the
+game's own (port/linux/src/xinput_sdl.c) */
+short halo_stick_dead_range(short stick);
 /* the mouse in the menus (source/interface/ui_widget.c) */
 #include "halo_ui_pointer.h"
 /* the debug camera's mouse and keys (source/camera/director.c): whether the

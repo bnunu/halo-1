@@ -133,6 +133,9 @@ boolean director_inhibited_facing(
 	short local_player_index);
 boolean director_inhibited_input(
 	short local_player_index);
+/* port: for the sounds' Doppler effect (sound_manager.c) */
+long director_get_followed_unit(
+	short local_player_index);
 director_perspective director_get_perspective(
 	short local_player_index);
 short director_desired_perspective(

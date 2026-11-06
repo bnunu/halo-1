@@ -12,7 +12,14 @@ typedef unsigned long long GLuint64;
 typedef intptr_t GLintptr;
 typedef unsigned long long ULONGLONG;
 typedef int BOOL;
+typedef unsigned long DWORD;
+typedef unsigned int UINT;
+typedef long HRESULT;
 typedef struct fence *GLsync;
+#define WINAPI
+#define S_OK 0
+#define GL_SAMPLES_PASSED 0x8914
+#define VISIBILITY_QUERY GL_SAMPLES_PASSED
 #define GL_NO_ERROR 0
 #define GL_INVALID_OPERATION 0x0502
 #define GL_QUERY_RESULT 0x8866
@@ -34,7 +41,14 @@ typedef struct fence *GLsync;
 static struct
 {
 	unsigned long frame;
+	BOOL gl_ready;
+	BOOL query_pending[VISIBILITY_TEST_SLOTS];
+	float query_area[VISIBILITY_TEST_SLOTS];
+	GLuint active_query;
+	BOOL visibility_test_active;
 	GLuint visibility_known[VISIBILITY_TEST_SLOTS];
+	ULONGLONG visibility_ended[VISIBILITY_TEST_SLOTS];
+	ULONGLONG visibility_counted[VISIBILITY_TEST_SLOTS];
 	struct visibility_batch visibility_batches[VISIBILITY_BATCH_COUNT];
 	unsigned long visibility_batch;
 	ULONGLONG visibility_serial;
@@ -130,6 +144,11 @@ static void glGetQueryObjectuiv(GLuint query, GLenum name, GLuint *value)
 	answered();
 	*value = name == GL_QUERY_RESULT_AVAILABLE ? 1 : query_samples[query];
 }
+static void glBeginQuery(GLenum target, GLuint query) { }
+static void glEndQuery(GLenum target) { }
+/* (the screen's pixels: a sample a game pixel) */
+static float target_scale[2] = { 1.0f, 1.0f };
+static int target_samples = 1;
 
 static void platform_log(const char *format, ...)
 {
@@ -188,6 +207,8 @@ static struct visibility_batch *frame(unsigned long index)
 	query_samples[batch->queries[1]] = (GLuint)(200 + index);
 	batch->slots[0] = 10;
 	batch->slots[1] = 11;
+	/* (each slot's index + 1th test) */
+	batch->tests[0] = batch->tests[1] = index + 1;
 	batch->areas[0] = batch->areas[1] = 1.0f;
 	batch->count = 2;
 	present(index);
@@ -203,11 +224,35 @@ static void start(BOOL logging)
 	device.visibility_known[11] = 88;
 }
 
+/* the slots' counts, each given as its test's (frame's): start's of none */
 static void known(GLuint first, GLuint second, const char *what)
 {
+	ULONGLONG first_test = first == 77 ? 0 : first - 99, second_test = second == 88 ? 0 : second - 199;
+
 	CHECK(device.visibility_known[10] == first && device.visibility_known[11] == second,
 		"%s: the slots hold %u and %u, not %u and %u", what, device.visibility_known[10], device.visibility_known[11],
 		first, second);
+	CHECK(device.visibility_counted[10] == first_test && device.visibility_counted[11] == second_test,
+		"%s: the slots' counts are given as their tests %llu and %llu, not %llu and %llu", what,
+		device.visibility_counted[10], device.visibility_counted[11], first_test, second_test);
+}
+
+/* a test the game makes at a slot (rasterizer_widget_submit_occlusion_test),
+samples of it shown, and the slot's result */
+static void tested(DWORD slot, GLuint samples)
+{
+	D3DDevice_BeginVisibilityTest();
+	if (device.active_query)
+		query_samples[device.active_query] = samples;
+	D3DDevice_EndVisibilityTest(slot);
+}
+
+static UINT result(DWORD slot)
+{
+	UINT count = 0;
+
+	D3DDevice_GetVisibilityTestResult(slot, &count, NULL);
+	return count;
 }
 
 /* frames whose commands the GPU carries out before the next present, which
@@ -327,6 +372,59 @@ int main(int argc, char **argv)
 		frame(7);
 		present(8);
 		known(107, 207, "a batch after the failed copies");
+	}
+	CASE("numbered")
+	{
+		/* the game's tests are numbered at their slot as they end, dropped
+		ones too, and a count is given as its own test's once it is read:
+		until then the slot's earlier count stands, as an earlier test's
+		(xgpu_visibility_test_counted; a lens flare's slot is read only once
+		a count of the flare's own tests has come, rasterizer_lights.c) */
+		unsigned long batch, query;
+
+		start(FALSE);
+		device.gl_ready = TRUE;
+		for (batch = 0; batch < VISIBILITY_BATCH_COUNT; batch++)
+			for (query = 0; query < 8; query++)
+				device.visibility_batches[batch].queries[query] = (GLuint)(1 + batch * 8 + query);
+		/* three frames' tests, the GPU carrying out none, then a fourth
+		frame's, dropped with every batch waiting to be read */
+		tested(10, 5);
+		present(0);
+		tested(10, 6);
+		present(1);
+		tested(10, 7);
+		present(2);
+		tested(10, 8);
+		CHECK(device.visibility_stats.dropped == 1, "the fourth frame's test not dropped");
+		present(3);
+		CHECK(xgpu_visibility_tests_ended(10) == 4, "%llu tests ended at the slot, not 4",
+			xgpu_visibility_tests_ended(10));
+		CHECK(result(10) == 77 && xgpu_visibility_test_counted(10) == 0,
+			"with no count read, the slot gives %u of test %llu, not its earlier 77 of none", result(10),
+			xgpu_visibility_test_counted(10));
+		/* the GPU catches up: the three counts are read, the third the slot's */
+		gpu_run(ULONG_MAX);
+		present(4);
+		CHECK(result(10) == 7 && xgpu_visibility_test_counted(10) == 3,
+			"the slot gives %u of test %llu, not the third test's 7", result(10), xgpu_visibility_test_counted(10));
+		/* the fifth test (the fourth's count never comes), until and once its
+		count is read */
+		tested(10, 9);
+		present(5);
+		CHECK(result(10) == 7 && xgpu_visibility_test_counted(10) == 3,
+			"before the fifth test's count was read, the slot gives %u of test %llu, not the third's 7", result(10),
+			xgpu_visibility_test_counted(10));
+		gpu_run(ULONG_MAX);
+		present(6);
+		CHECK(result(10) == 9 && xgpu_visibility_test_counted(10) == 5,
+			"the slot gives %u of test %llu, not the fifth test's 9", result(10), xgpu_visibility_test_counted(10));
+		/* with no queries to be had, a test is given all its pixels at once */
+		device.visibility_unavailable = TRUE;
+		tested(12, 0);
+		CHECK(result(12) == VISIBILITY_ALL_SAMPLES && xgpu_visibility_test_counted(12) == 1,
+			"with no queries, the slot gives %u of test %llu, not all of test 1", result(12),
+			xgpu_visibility_test_counted(12));
 	}
 	return 0;
 }

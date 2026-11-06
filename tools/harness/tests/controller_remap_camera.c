@@ -60,7 +60,12 @@ static int controller_remap_camera(short local, int available, int controlling,
     unsigned int *out_held, unsigned int *out_pressed)
 {
     *out_held = held; *out_pressed = pressed;
-    return custom && available;
+    return custom;
+}
+static int controller_remap_camera_cycle(short port, int fast)
+{
+    CHECK(port == 2 && fast, "camera cycle controller port and mode");
+    return (pressed & FLAG(PAD_CAMERA_CYCLE)) != 0;
 }
 static int controller_remap_playing(short port) { CHECK(port == 2, "remap controller port"); return playing; }
 static void halo_linux_debug_camera_input(int *out_middle, int *up, int *down, float *out_wheel)

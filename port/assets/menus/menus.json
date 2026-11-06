@@ -48,6 +48,7 @@
   "ce/main_menu.settings_select.player_setup.player_profile_edit.controller_appearance.xml",
   "ce/main_menu.settings_select.player_setup.player_profile_edit.controller_remapping.xml",
   "ce/main_menu.settings_select.player_setup.player_profile_edit.controls_setup.xml",
+  "ce/main_menu.settings_select.player_setup.player_profile_edit.gamepad_setup.dead_zones.xml",
   "ce/main_menu.settings_select.player_setup.player_profile_edit.gamepad_setup.xml",
   "ce/main_menu.settings_select.player_setup.player_profile_edit.mouse_settings.xml",
   "ce/main_menu.settings_select.player_setup.player_profile_edit.name_edit.xml",

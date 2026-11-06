@@ -2,7 +2,8 @@
 
 With High-Res HUD enabled, the stock rocket reticle, sniper reticle and supplied
 zoom labels use the contributor's [original pictures](../../port/assets/hud/corrections/README.md).
-The sniper reticle retains the low-resolution artwork's visible size and center.
+The sniper reticle and the Xbox's 2x and 10x zoom labels retain the
+low-resolution artwork's visible size and center.
 Input, simulation, zoom magnification and sprite geometry are unchanged.
 
 ## Reading route
@@ -12,6 +13,10 @@ Input, simulation, zoom magnification and sprite geometry are unchanged.
    converts black-background luminance to premultiplied white coverage and scales
    proportionally. It never redraws shapes or substitutes a font. Visible reticle
    bounds match the stock 9x9 texel footprint within one generated high-res pixel.
+   The Xbox zoom labels are placed on their stock glyphs, not their sprites,
+   which have empty texels around the glyphs: 10x matches the stock 32x14
+   texels within one high-res pixel, 2x the stock 21x14 within three (the
+   supplied 2x is a little wider for its height).
 2. Xbox uses its existing texture override and atlas. The setting and original
    pixel signature gate replacement in [hud_hires.c](../../port/linux/src/hud_hires.c).
    CE's rocket uses the existing compatible-sheet registration.
@@ -31,6 +36,7 @@ or weapon behavior change. Placeholders belong to the existing map lifetime and
 are released by `hud_hires_tags_unloaded`.
 
 [Correction tests](../../tools/test_hud_corrections.py) verify original source
-hashes, exact supplied-pixel packing, the stock visible reticle footprint and
+hashes, exact supplied-pixel packing, the stock visible footprints of the reticle
+and the Xbox zoom labels, and
 CE's frame selection, including disabled, custom-art and failed-match fallbacks.
 Actual maps and renderers additionally require runtime checks.

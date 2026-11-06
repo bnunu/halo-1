@@ -9,20 +9,21 @@
 	</widget>
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/header_profile_controller_setting" controller="1" left="35" top="11" width="605" height="59" bitmap="main_menu/settings_select/player_setup/player_profile_edit/controller_edit/header_profile_controller_setting">
 	</widget>
-	<widget name="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/help" type="text" controller="1" left="68" top="350" width="482" height="60" string_list="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/help_strings" font="ui\large_ui" color="#FFFFFFFF">
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/help" type="text" controller="1" left="68" top="358" width="482" height="54" string_list="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/help_strings" font="ui\large_ui" color="#FFFFFFFF">
 	</widget>
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/options_menu" type="column_list" width="640" height="480" flags="pass_unhandled_to_focused_child up_down_tabs_children" description="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/help">
 		<data input="port settings help"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_look_sensitivity" x="54" y="73"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_invert_look" x="54" y="100"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_flight_inversion" x="54" y="127"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_autocenter" x="54" y="154"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_button_preset" x="54" y="181"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_joystick_preset" x="54" y="208"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_vibration" x="54" y="235"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_ingame_help" x="54" y="262"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_controller_remapping" x="54" y="289"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_controller_appearance" x="54" y="316"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_invert_look" x="54" y="98"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_flight_inversion" x="54" y="123"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_autocenter" x="54" y="148"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_button_preset" x="54" y="173"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_joystick_preset" x="54" y="198"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_vibration" x="54" y="223"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_ingame_help" x="54" y="248"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_controller_remapping" x="54" y="273"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_controller_appearance" x="54" y="298"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_dead_zones" x="54" y="323"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/button_bar" y="414"/>
 	</widget>
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/button_bar" type="column_list" width="640" height="28" flags="pass_unhandled_to_focused_child left_right_tabs_items">
@@ -118,6 +119,14 @@
 	</widget>
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/controller_appearance_label" type="text" controller="1" width="512" height="22" string_list="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/labels" string_index="9" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
 	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/op_dead_zones" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF">
+		<on event="a" open="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/dead_zones/dead_zone_settings_screen"/>
+		<on event="start" open="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/dead_zones/dead_zone_settings_screen"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/dead_zones_label"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/dead_zones_label" type="text" controller="1" width="512" height="22" string_list="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/labels" string_index="10" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/button_defaults" type="text" width="128" height="24" bitmap="bitmaps/text_button_background" string_list="strings/common_button_captions" string_index="3" font="ui\small_ui" color="#FFFFFFFF" align="center" text_y="2">
 		<on event="a" run="port settings defaults"/>
 		<on event="start" run="port settings defaults"/>
@@ -139,6 +148,7 @@
 		<string text="IN-GAME HELP:"/>
 		<string text="BUTTON REMAPPING"/>
 		<string text="BUTTON APPEARANCE"/>
+		<string text="STICK DEAD ZONES"/>
 	</strings>
 	<strings name="main_menu/settings_select/player_setup/player_profile_edit/gamepad_setup/help_strings">
 		<string text=""/>
@@ -152,5 +162,6 @@
 		<string text="Show the game's hints about its controls."/>
 		<string text="Custom button layouts for P1-P4.\nUse / Reload stays combined."/>
 		<string text="Controller artwork and bumper style.\nRequires High-Res HUD in Graphics."/>
+		<string text="How far each stick moves before it does\nanything."/>
 	</strings>
 </menus>

@@ -1894,6 +1894,50 @@ int main(int argc, char **argv)
 			answered.status);
 		return 0;
 	}
+	/* POST /api/rotation/play's sv_map line: a map and gametype, or a
+	rotation entry's whole text, which the page sends for an entry with
+	rules, as long as a rotation entry may be */
+	CASE("rotation-play")
+	{
+		static const char entry_text[] = "custom_maps/tsce_multiplayerv1:team_slayer+ff=off+team_vehicles=custom+"
+			"warthogs=4+rocket_warthogs=4+ghosts=4+scorpions=4+banshees=4+gun_turrets=4+vehicle_respawn_time=60";
+		char body[1024], line[512], expected[512], longest[SERVER_ENTRY_TEXT_SIZE + 1];
+		const char *refused;
+
+		snprintf(body, sizeof(body), "{\"map\":\"bloodgulch\",\"gametype\":\"ctf\"}");
+		refused = rotation_play_line(body, (int)strlen(body), line, sizeof(line));
+		CHECK(!refused && !strcmp(line, "sv_map bloodgulch ctf"), "a map and gametype: %s", refused ? refused : line);
+		CHECK(sizeof(entry_text) - 1 > 127, "the entry is %d characters", (int)sizeof(entry_text) - 1);
+		snprintf(body, sizeof(body), "{\"map\":\"%s\"}", entry_text);
+		snprintf(expected, sizeof(expected), "sv_map %s ", entry_text);
+		refused = rotation_play_line(body, (int)strlen(body), line, sizeof(line));
+		CHECK(!refused && !strcmp(line, expected), "an entry of %d characters: %s", (int)sizeof(entry_text) - 1,
+			refused ? refused : line);
+		/* (a rotation entry's most, 255 characters, and not one more) */
+		memset(longest, 'a', SERVER_ENTRY_TEXT_SIZE - 1);
+		longest[SERVER_ENTRY_TEXT_SIZE - 1] = 0;
+		snprintf(body, sizeof(body), "{\"map\":\"%s\"}", longest);
+		refused = rotation_play_line(body, (int)strlen(body), line, sizeof(line));
+		CHECK(!refused && strlen(line) == 7 + SERVER_ENTRY_TEXT_SIZE - 1 + 1, "255 characters: %s",
+			refused ? refused : line);
+		longest[SERVER_ENTRY_TEXT_SIZE - 1] = 'a';
+		longest[SERVER_ENTRY_TEXT_SIZE] = 0;
+		snprintf(body, sizeof(body), "{\"map\":\"%s\"}", longest);
+		refused = rotation_play_line(body, (int)strlen(body), line, sizeof(line));
+		CHECK(refused && strstr(refused, "255 characters at most"), "256 characters: %s", refused ? refused : line);
+		/* (the refusals: no map, a space in it or in the gametype) */
+		snprintf(body, sizeof(body), "{\"gametype\":\"ctf\"}");
+		CHECK(rotation_play_line(body, (int)strlen(body), line, sizeof(line)), "no map was taken");
+		snprintf(body, sizeof(body), "{\"map\":\"\"}");
+		CHECK(rotation_play_line(body, (int)strlen(body), line, sizeof(line)), "an empty map was taken");
+		snprintf(body, sizeof(body), "{\"map\":\"bloodgulch ctf\"}");
+		CHECK(rotation_play_line(body, (int)strlen(body), line, sizeof(line)), "a map with a space was taken");
+		snprintf(body, sizeof(body), "{\"map\":\"bloodgulch\",\"gametype\":\"ctf sv_stop\"}");
+		refused = rotation_play_line(body, (int)strlen(body), line, sizeof(line));
+		CHECK(refused && !strcmp(refused, "a gametype holds no space"), "a gametype with a space: %s",
+			refused ? refused : line);
+		return 0;
+	}
 	/* a /ws upgrade counts against its address's allowance, as other
 	requests do: 429 past it */
 	CASE("ws-allowance")
