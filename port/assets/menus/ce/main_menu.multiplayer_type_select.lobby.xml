@@ -306,7 +306,7 @@
 		<child widget="ui\shell\main_menu\button_key"/>
 		<child widget="main_menu/multiplayer_type_select/lobby/join4_hint" x="30" y="419"/>
 	</widget>
-	<widget name="main_menu/multiplayer_type_select/lobby/join4_qtr_join" width="255" height="165" bitmap="ui\shell\bitmaps\split_screen_bkd" flags="pass_unhandled_to_focused_child">
+	<widget name="main_menu/multiplayer_type_select/lobby/join4_qtr_join" width="255" height="165" bitmap="ui\shell\bitmaps\split_screen_bkd" flags="pass_unhandled_to_focused_child nifty_fx">
 		<on event="black" run="port join4 playing" replace="main_menu/multiplayer_type_select/lobby/join4_qtr_playing"/>
 		<on event="white" run="port join4 opener" replace="main_menu/multiplayer_type_select/lobby/join4_qtr_select"/>
 		<on event="a" run="port join4 join" replace="main_menu/multiplayer_type_select/lobby/join4_qtr_select"/>
@@ -316,7 +316,7 @@
 		<child widget="ui\shell\main_menu\multiplayer_type_select\connected\4way_profile_select\press_start_to_join" x="54" y="20"/>
 		<child widget="ui\shell\main_menu\multiplayer_type_select\connected\4way_profile_select\press_start_to_join_controller"/>
 	</widget>
-	<widget name="main_menu/multiplayer_type_select/lobby/join4_qtr_select" width="254" height="164" bitmap="ui\shell\main_menu\multiplayer_type_select\split_screen\4way_profile_select\4way_profile_border" flags="pass_unhandled_to_focused_child">
+	<widget name="main_menu/multiplayer_type_select/lobby/join4_qtr_select" width="254" height="164" bitmap="ui\shell\main_menu\multiplayer_type_select\split_screen\4way_profile_select\4way_profile_border" flags="pass_unhandled_to_focused_child nifty_fx">
 		<on event="created" run="port join4 choosing"/>
 		<on event="a" run="port join4 select" replace="main_menu/multiplayer_type_select/lobby/join4_qtr_ready"/>
 		<on event="start" run="port join4 select" replace="main_menu/multiplayer_type_select/lobby/join4_qtr_ready"/>
@@ -326,7 +326,7 @@
 		<child widget="ui\shell\main_menu\multiplayer_type_select\split_screen\4way_profile_select\qtr_screen_profile_desc"/>
 		<child widget="ui\shell\main_menu\multiplayer_type_select\split_screen\4way_profile_select\qtr_screen_profile_spinner"/>
 	</widget>
-	<widget name="main_menu/multiplayer_type_select/lobby/join4_qtr_ready" width="254" height="164" bitmap="ui\shell\main_menu\multiplayer_type_select\split_screen\4way_profile_select\4way_profile_border">
+	<widget name="main_menu/multiplayer_type_select/lobby/join4_qtr_ready" width="254" height="164" bitmap="ui\shell\main_menu\multiplayer_type_select\split_screen\4way_profile_select\4way_profile_border" flags="nifty_fx">
 		<on event="created" run="port join4 ready"/>
 		<on event="a" run="port join4 done" back="true"/>
 		<on event="start" run="port join4 done" back="true"/>
@@ -336,7 +336,7 @@
 		<child widget="ui\shell\main_menu\multiplayer_type_select\split_screen\4way_profile_select\qtr_screen_profile_selected_text"/>
 		<child widget="ui\shell\main_menu\multiplayer_type_select\split_screen\4way_profile_select\qtr_screen_profile_selected_name"/>
 	</widget>
-	<widget name="main_menu/multiplayer_type_select/lobby/join4_qtr_playing" width="254" height="164" bitmap="ui\shell\main_menu\multiplayer_type_select\split_screen\4way_profile_select\4way_profile_border">
+	<widget name="main_menu/multiplayer_type_select/lobby/join4_qtr_playing" width="254" height="164" bitmap="ui\shell\main_menu\multiplayer_type_select\split_screen\4way_profile_select\4way_profile_border" flags="nifty_fx">
 		<on event="a" run="port join4 done" back="true"/>
 		<on event="start" run="port join4 done" back="true"/>
 		<on event="b"/>

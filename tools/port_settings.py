@@ -2046,10 +2046,11 @@ def _join4(base: str) -> list:
                      f'<child widget="{base}/join4_hint" x="30" y="419"/>'])
     # (a quarter for a controller not playing: "Press A to Join"; the screen
     # sends a player's quarter "black" (their profile) and the quarter of the
-    # controller whose START opened it "white" (its spinner): join4_open)
+    # controller whose START opened it "white" (its spinner): join4_open. Each
+    # quarter has the Xbox's plasma behind it, nifty_fx, as its own do)
     lines += _widget(f"{base}/join4_qtr_join",
                      [("width", 255), ("height", 165), ("bitmap", "ui\\shell\\bitmaps\\split_screen_bkd"),
-                      ("flags", "pass_unhandled_to_focused_child")],
+                      ("flags", "pass_unhandled_to_focused_child nifty_fx")],
                      [f'<on event="black" run="port join4 playing" replace="{base}/join4_qtr_playing"/>',
                       f'<on event="white" run="port join4 opener" replace="{base}/join4_qtr_select"/>',
                       f'<on event="a" run="port join4 join" replace="{base}/join4_qtr_select"/>',
@@ -2060,7 +2061,7 @@ def _join4(base: str) -> list:
                       f'<child widget="{connected}press_start_to_join_controller"/>'])
     lines += _widget(f"{base}/join4_qtr_select",
                      [("width", 254), ("height", 164), ("bitmap", f"{xbox}4way_profile_border"),
-                      ("flags", "pass_unhandled_to_focused_child")],
+                      ("flags", "pass_unhandled_to_focused_child nifty_fx")],
                      ['<on event="created" run="port join4 choosing"/>',
                       f'<on event="a" run="port join4 select" replace="{base}/join4_qtr_ready"/>',
                       f'<on event="start" run="port join4 select" replace="{base}/join4_qtr_ready"/>',
@@ -2073,7 +2074,8 @@ def _join4(base: str) -> list:
                 f'<child widget="{xbox}qtr_screen_profile_selected_text"/>',
                 f'<child widget="{xbox}qtr_screen_profile_selected_name"/>']
     lines += _widget(f"{base}/join4_qtr_ready",
-                     [("width", 254), ("height", 164), ("bitmap", f"{xbox}4way_profile_border")],
+                     [("width", 254), ("height", 164), ("bitmap", f"{xbox}4way_profile_border"),
+                      ("flags", "nifty_fx")],
                      ['<on event="created" run="port join4 ready"/>',
                       '<on event="a" run="port join4 done" back="true"/>',
                       '<on event="start" run="port join4 done" back="true"/>',
@@ -2082,7 +2084,8 @@ def _join4(base: str) -> list:
                       *selected])
     # (a player in the game already)
     lines += _widget(f"{base}/join4_qtr_playing",
-                     [("width", 254), ("height", 164), ("bitmap", f"{xbox}4way_profile_border")],
+                     [("width", 254), ("height", 164), ("bitmap", f"{xbox}4way_profile_border"),
+                      ("flags", "nifty_fx")],
                      ['<on event="a" run="port join4 done" back="true"/>',
                       '<on event="start" run="port join4 done" back="true"/>',
                       '<on event="b"/>', '<on event="back"/>',
