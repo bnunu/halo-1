@@ -3413,6 +3413,27 @@ static void refresh_sounds(
 
 			if (listener_index == NONE)
 			{
+				/* port: no listener hears it, and the one it had may have gone (a
+				local player who left the game: its listener is no longer valid, and
+				the channels' update asserts on a sound's): another's stands in */
+				if (!listener_get(sound->listener_index)->valid)
+				{
+					short other_listener_index;
+
+					for (
+						other_listener_index = 0;
+						other_listener_index < MAXIMUM_NUMBER_OF_LOCAL_PLAYERS &&
+							!listener_get(other_listener_index)->valid;
+						other_listener_index++)
+					{
+					}
+
+					if (other_listener_index < MAXIMUM_NUMBER_OF_LOCAL_PLAYERS)
+					{
+						sound->listener_index = other_listener_index;
+					}
+				}
+
 				if (!TEST_FLAG(sound->flags, _sound_inaudible_bit))
 				{
 					sound_start_fade(
