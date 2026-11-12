@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The port's settings screen, in the PC version's style (tools/port_settings.py) -->
+<menus>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_workshop_screen" width="640" height="480" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/gradient">
+		<on event="b" run="port steam back"/>
+		<on event="back" run="port steam back"/>
+		<child widget="main_menu/new_select/sel_list_desc_bkd"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_list"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/header_steam"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/header_steam" type="text" controller="1" left="35" top="11" width="363" height="59" text="STEAM WORKSHOP" font="ui\large_ui" color="#FFFFFFFF" text_x="13" text_y="16">
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_list" type="column_list" width="640" height="480" flags="pass_unhandled_to_focused_child up_down_tabs_children" description="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_details">
+		<data input="port steam update"/>
+		<on event="created" run="port steam init"/>
+		<on event="deleted" run="port steam close"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_1" x="20" y="73"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_2" x="20" y="103"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_3" x="20" y="133"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_4" x="20" y="163"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_5" x="20" y="193"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_6" x="20" y="223"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_7" x="20" y="253"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_8" x="20" y="283"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_9" x="20" y="313"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_10" x="20" y="343"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_11" x="20" y="373"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/button_bar" y="414"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_1" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd_top" color="#FF2896FF">
+		<on event="a" run="port steam choose"/>
+		<on event="start" run="port steam choose"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_name" x="12"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_state" x="250"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_2" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
+		<on event="a" run="port steam choose"/>
+		<on event="start" run="port steam choose"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_name" x="12"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_state" x="250"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_3" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
+		<on event="a" run="port steam choose"/>
+		<on event="start" run="port steam choose"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_name" x="12"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_state" x="250"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_4" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
+		<on event="a" run="port steam choose"/>
+		<on event="start" run="port steam choose"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_name" x="12"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_state" x="250"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_5" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
+		<on event="a" run="port steam choose"/>
+		<on event="start" run="port steam choose"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_name" x="12"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_state" x="250"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_6" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
+		<on event="a" run="port steam choose"/>
+		<on event="start" run="port steam choose"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_name" x="12"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_state" x="250"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_7" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
+		<on event="a" run="port steam choose"/>
+		<on event="start" run="port steam choose"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_name" x="12"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_state" x="250"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_8" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
+		<on event="a" run="port steam choose"/>
+		<on event="start" run="port steam choose"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_name" x="12"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_state" x="250"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_9" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
+		<on event="a" run="port steam choose"/>
+		<on event="start" run="port steam choose"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_name" x="12"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_state" x="250"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_10" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
+		<on event="a" run="port steam choose"/>
+		<on event="start" run="port steam choose"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_name" x="12"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_state" x="250"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/op_steam_11" width="390" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/sel_list_item_bkd" color="#FF2896FF">
+		<on event="a" run="port steam choose"/>
+		<on event="start" run="port steam choose"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_name" x="12"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_state" x="250"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_name" type="text" controller="1" width="238" height="22" font="ui\large_ui" color="#FF2896FF" text_y="4">
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_state" type="text" controller="1" width="134" height="22" font="ui\small_ui" color="#FF2896FF" align="center" text_y="6" text_flags="no_focus_test">
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_details" width="640" height="480">
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_details_name"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_details_text"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_picture"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_details_name" type="text" controller="1" left="412" top="84" width="200" height="44" font="ui\large_ui" color="#FFFFFFFF">
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_details_text" type="text" controller="1" left="412" top="130" width="200" height="132" font="ui\small_ui" color="#FF2896FF">
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_picture" type="text" controller="1" left="448" top="262" width="128" height="128" font="ui\small_ui" text_flags="no_focus_test">
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/button_bar" type="column_list" width="640" height="28" flags="pass_unhandled_to_focused_child left_right_tabs_items">
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/button_back" x="510" y="1"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/button_back" type="text" width="128" height="24" bitmap="bitmaps/text_button_background" text="BACK" font="ui\small_ui" color="#FFFFFFFF" align="center" text_y="2">
+		<on event="a" run="port steam back"/>
+		<on event="start" run="port steam back"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+	</widget>
+</menus>

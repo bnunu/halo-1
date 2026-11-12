@@ -27,6 +27,7 @@
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_server_browser" x="54" y="193" platform="web"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_discord_account" x="54" y="313" platform="desktop android"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_discord_account" x="54" y="223" platform="web"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_steam_workshop" x="54" y="343" platform="android"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/button_bar" y="414"/>
 	</widget>
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/button_bar" type="column_list" width="640" height="28" flags="pass_unhandled_to_focused_child left_right_tabs_items">
@@ -110,6 +111,14 @@
 	</widget>
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/discord_account_label" type="text" controller="1" width="512" height="22" string_list="main_menu/settings_select/player_setup/player_profile_edit/network_setup/labels" string_index="8" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
 	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_steam_workshop" width="512" height="28" flags="pass_unhandled_to_focused_child" bitmap="bitmaps/option_bkds" color="#FF2896FF" platform="android">
+		<on event="a" open="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_workshop_screen"/>
+		<on event="start" open="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_workshop_screen"/>
+		<on event="left_mouse" run="mouse emit accept event"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop_label"/>
+	</widget>
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop_label" type="text" controller="1" width="512" height="22" string_list="main_menu/settings_select/player_setup/player_profile_edit/network_setup/labels" string_index="9" font="ui\large_ui" color="#FF2896FF" text_x="13" text_y="4">
+	</widget>
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/button_defaults" type="text" width="128" height="24" bitmap="bitmaps/text_button_background" string_list="strings/common_button_captions" string_index="3" font="ui\small_ui" color="#FFFFFFFF" align="center" text_y="2">
 		<on event="a" run="port settings defaults"/>
 		<on event="start" run="port settings defaults"/>
@@ -130,6 +139,7 @@
 		<string text="STREAMER MODE:"/>
 		<string text="SERVER BROWSER:"/>
 		<string text="DISCORD ACCOUNT:"/>
+		<string text="STEAM WORKSHOP:"/>
 	</strings>
 	<strings name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/help_strings">
 		<string text=""/>
@@ -142,5 +152,6 @@
 		<string text="Hide offensive words in names and text from\nother players, maps and mods, as stars."/>
 		<string text="What the Server Browser lists and its order: the\nsame settings as its Filters screen."/>
 		<string text="Link a Discord account, which lets you join\nservers that block VPNs while you use one."/>
+		<string text="Sign in with Steam to download MCC's shared files\nand Halo 1 Workshop maps into mcc_maps."/>
 	</strings>
 </menus>

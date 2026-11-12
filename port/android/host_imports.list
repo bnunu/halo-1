@@ -71,3 +71,22 @@ host_touch_devices
 host_https_get
 
 host_errno
+# the Steam Workshop screen (port/android/host/steam_downloads.c)
+host_steam_open
+host_steam_close
+host_steam_poll
+host_steam_count
+host_steam_view
+host_steam_first
+host_steam_set_first
+host_steam_chosen
+host_steam_set_chosen
+host_steam_row
+host_steam_details
+host_steam_choose
+host_steam_back
+host_steam_picture
+host_steam_text_wanted
+host_steam_text_caption
+host_steam_text_typed
+host_steam_qr

@@ -359,6 +359,7 @@ The decompilation's upstream, punpckhdq/halo, is AGPL 3.0 from 17 October
 | [docs/mcc_maps.md](docs/mcc_maps.md) | MCC maps: their format, installation, sharing, the implementation's layout and limits ([docs/reading](docs/reading/README.md) follows the sources) |
 | [docs/dedicated_server.md](docs/dedicated_server.md) | The dedicated server: its command line, exit codes, commands, HTTP API, RCON, events and files |
 | [docs/master_protocol.md](docs/master_protocol.md) | The master servers' protocol: publishing, the probe, the signed list |
+| [docs/steam_workshop.md](docs/steam_workshop.md) | Android's Steam Workshop screen: signing in with Steam and downloading MCC content from its depots, in the app's host |
 | [docs/mods.md](docs/mods.md) | Mods: folders of Halo PC tag files whose sounds, bitmaps, text and models play over a map's on one machine |
 | [port/assets/text_filter/README.md](port/assets/text_filter/README.md) | Streamer mode's words: Surge AI's list, the review, the allowed words |
 | [port/assets/menus/README.md](port/assets/menus/README.md) | The menu files' format and how to write them again |
