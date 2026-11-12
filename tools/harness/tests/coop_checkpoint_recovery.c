@@ -211,7 +211,7 @@ static void distributed_restore_checkpoint(void) {
     int i;
     recovery_barriers++;memset(objects_client_checkpoint_pending,TRUE,sizeof(objects_client_checkpoint_pending));
     for(i=0;i<MAXIMUM_LOCAL_PLAYERS;i++)objects_client_own_inventories[i].unit_index=NONE;
-    objects_client_synchronized=FALSE;
+    objects_client_synchronized=FALSE;objects_client_ready_time=NONE;
 }
 static int effect_cleanups;
 static void effects_discard_gameplay(void) {effect_cleanups++;}
@@ -382,8 +382,9 @@ static void distributed_client_ready_picked_up_weapons(void) {prediction_ticks++
 static void mcc_network_client_tick(void) {prediction_ticks++;}
 static void distributed_client_send_vehicles(void) {prediction_ticks++;}
 static void distributed_client_carry_unsteered_vehicles(void) {prediction_ticks++;}
-static void distributed_client_send_identity(void) {prediction_ticks++;}
-static void distributed_client_send_build(void) {prediction_ticks++;}
+static int identity_sends,build_sends;
+static void distributed_client_send_identity(void) {prediction_ticks++;identity_sends++;}
+static void distributed_client_send_build(void) {prediction_ticks++;build_sends++;}
 
 #include "engine.inc"
 #include "under_test.inc"
@@ -538,6 +539,19 @@ static int exercise(char const *name) {
     network_objects_handle_changes(&change,1);finish_snapshot();CHECK(constructed==1,"initial replica");
     corpse=object_get(index);state=live_state(index);
     if(!strncmp(name,"snapshot-",9))return snapshot_inventory_case(index,!strcmp(name,"snapshot-batches"));
+    if(!strcmp(name,"identity-after-boundary")){
+        int identity_before,build_before;
+        objects_client_synchronized=FALSE;network_objects_client_tick();
+        CHECK(client_ready_sends==1&&objects_client_ready_time==now,"a ready went");
+        begin_checkpoint();CHECK(objects_client_ready_time==NONE,"the boundary cleared the ready's time");
+        /* the snapshot's end came in the same read: no tick between to ask again */
+        finish_snapshot();network_objects_handle_synchronized();
+        identity_before=identity_sends;build_before=build_sends;
+        now++;network_objects_client_tick();
+        CHECK(objects_client_synchronized&&identity_sends==identity_before+1&&build_sends==build_before+1,
+            "identity and build go once the snapshot is whole, though the boundary cleared the ready's time");
+        return 0;
+    }
     if(!strcmp(name,"partial-producers")){
         long projectile,child;
         int prediction_resets;

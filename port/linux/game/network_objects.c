@@ -3801,13 +3801,13 @@ void network_objects_client_tick(
 	mcc_network_client_tick();
 	distributed_client_send_vehicles();
 	distributed_client_carry_unsteered_vehicles();
-	/* (who it is, as its Discord told it, and its build: once its ready went, which makes
-	it a machine the host takes messages of) */
-	if (objects_client_ready_time != NONE)
-	{
-		distributed_client_send_identity();
-		distributed_client_send_build();
-	}
+	/* (who it is, as its Discord told it, and its build: the checkpoint gate above means the
+	host has answered a ready, which makes this a machine it takes messages of. Not
+	"once the ready's time is set": a checkpoint boundary adopted in the same read as
+	the snapshot's end clears that time (network_objects_reverted) with no tick in
+	between to ask again, and both were then never sent) */
+	distributed_client_send_identity();
+	distributed_client_send_build();
 }
 
 /* ---------- the game */

@@ -165,6 +165,7 @@ def test_reconstructed_unit_rejects_old_life_kill():
     "invalid-identifier", "outside-pool", "allocation-failure", "repeat", "retry",
     "inventory", "hierarchy", "late-inventory", "projectiles", "partial-producers", "same-epoch-create", "snapshot-empty", "snapshot-batches",
     "kill-current", "kill-unknown", "kill-invalid-number", "kill-invalid-tag", "kill-invalid-node",
+    "identity-after-boundary",
 ])
 def test_replica_controls(case):
     status, output = run(build("coop_checkpoint_recovery", generated()), case)
@@ -185,6 +186,9 @@ def test_replica_controls(case):
     ("distributed_host_send_inventories_to_machine(machine_index);", "(void)machine_index;", "snapshot-empty"),
     ("if (!distributed_checkpoint_ready())\n\t\treturn;", "(void)0;", "snapshot-empty"),
     ("network_objects_discard_client_effects();", "(void)0;", "partial-producers"),
+    ("\tdistributed_client_send_identity();\n\tdistributed_client_send_build();\n}",
+     "\tif (objects_client_ready_time != NONE)\n\t{\n\t\tdistributed_client_send_identity();\n"
+     "\t\tdistributed_client_send_build();\n\t}\n}", "identity-after-boundary"),
     ("network_damage_new_game();", "(void)0;", "partial-producers"),
     ("if (!distributed_checkpoint_synchronized)\n\t\t\t{", "if (TRUE)\n\t\t\t{", "partial-producers"),
     ("short limit = MIN(MAXIMUM_ENTRIES_PER_MESSAGE, RELIABLE_ENTRIES(struct distributed_inventory));",
