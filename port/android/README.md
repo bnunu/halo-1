@@ -282,16 +282,23 @@ built-in controller of a handheld. A device without a touchscreen (a TV)
 never shows them. The setting `input.touch_controls` changes this (refer
 to "Settings").
 
+Moving a controller stick or pressing a controller button hides the toolbar.
+Touch the screen to bring it back. The toolbar stays visible while editing
+the layout. On handhelds with built-in controls, such as the AYN Odin 2
+Portal, set `input.touch_controls` to `"on"` to use the overlay's gyroscope
+aiming and device vibration alongside the controller.
+
 The buttons at the top of the screen:
 
-- "Hide" removes the controls (and stops the gyroscope aiming and the
-  vibration) until you push "Touch"; the app remembers it.
+- "Hide" removes the touch buttons and turns off swipe aiming until you push
+  "Touch". Gyroscope aiming and device vibration keep working when enabled.
+  The app remembers whether the buttons are hidden.
 - "Options" opens these items:
   - "General": the phone's vibration (on by default; it follows the
     vibration setting of the game's profile), aiming with the gyroscope
     (off by default), a floating move stick (off by default: the stick goes
     where your thumb lands in the lower left of the screen), the opacity of
-    the controls, "Held buttons don't aim" (off by default: a finger
+    the controls (5% to 100%), "Held buttons don't aim" (off by default: a finger
     that swipes from a button only holds it),
     "Hide or add buttons" (hide a button, add a copy of a
     button) and "Edit buttons size".

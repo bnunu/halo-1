@@ -22,7 +22,7 @@ final class TouchLayout {
     static final int MAX_CONTROLS = 64;
     static final float MIN_SIZE = 0.5f;
     static final float MAX_SIZE = 2f;
-    static final float MIN_OPACITY = 0.2f;
+    static final float MIN_OPACITY = 0.05f;
     static final float MAX_OPACITY = 1f;
     static final float MIN_SENSITIVITY = 0.25f;
     static final float MAX_SENSITIVITY = 4f;
@@ -171,7 +171,7 @@ final class TouchLayout {
 
     void setOpacity(float opacity) {
         if (!validOpacity(opacity))
-            throw new IllegalArgumentException("Opacity must be between 20% and 100%");
+            throw new IllegalArgumentException("Opacity must be between 5% and 100%");
         this.opacity = opacity;
     }
 

@@ -9,6 +9,9 @@ import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Display;
+import android.view.InputDevice;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -191,6 +194,26 @@ public class HaloActivity extends SDLActivity {
         acquireMulticastLock();
         // a new version looked for while the game starts
         Updater.start(this);
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (touchControls != null && event.getAction() == KeyEvent.ACTION_DOWN
+                && event.getRepeatCount() == 0
+                && (event.isFromSource(InputDevice.SOURCE_GAMEPAD)
+                    || event.isFromSource(InputDevice.SOURCE_DPAD))) {
+            touchControls.controllerUsed();
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        if (touchControls != null && event.getActionMasked() == MotionEvent.ACTION_MOVE
+                && event.isFromSource(InputDevice.SOURCE_JOYSTICK)) {
+            touchControls.controllerMoved(event);
+        }
+        return super.dispatchGenericMotionEvent(event);
     }
 
     /** the system's file picker, for the touch layout; no storage permission */

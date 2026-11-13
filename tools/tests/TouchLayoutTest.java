@@ -95,7 +95,10 @@ public final class TouchLayoutTest {
         sized.layout.setOpacity(0.45f);
         String translucent = sized.layout.exportConfiguration(2.25f);
         check(TouchLayout.importConfiguration(translucent).layout.opacity == 0.45f, "Opacity must survive export/import");
-        reject(translucent.replace("opacity=0.45", "opacity=0.05"));
+        sized.layout.setOpacity(0.05f);
+        check(TouchLayout.importConfiguration(sized.layout.exportConfiguration(2.25f)).layout.opacity == 0.05f,
+              "Minimum opacity must survive export/import");
+        reject(translucent.replace("opacity=0.45", "opacity=0.04"));
         reject(translucent.replace("opacity=0.45", "opacity=NaN"));
         sized.layout.floatingStick = true;
         check(TouchLayout.importConfiguration(sized.layout.exportConfiguration(2.25f)).layout.floatingStick,
