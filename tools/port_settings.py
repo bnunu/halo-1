@@ -2655,12 +2655,14 @@ def _steam_workshop() -> list:
                          ['<on event="a" run="port steam choose"/>', '<on event="start" run="port steam choose"/>',
                           '<on event="left_mouse" run="mouse emit accept event"/>',
                           f'<child widget="{base}/steam_name" x="12"/>',
-                          f'<child widget="{base}/steam_state" x="250"/>'])
+                          f'<child widget="{base}/steam_state" x="196"/>'])
+    # (the name shortened to fit, steam_update; the state whole: "A AGAIN TO
+    # REMOVE", an account's name)
     lines += _widget(f"{base}/steam_name",
-                     [("type", "text"), ("controller", 1), ("width", 238), ("height", 22), ("font", "ui\\large_ui"),
+                     [("type", "text"), ("controller", 1), ("width", 180), ("height", 22), ("font", "ui\\large_ui"),
                       ("color", "#FF2896FF"), ("text_y", 4)], [])
     lines += _widget(f"{base}/steam_state",
-                     [("type", "text"), ("controller", 1), ("width", 134), ("height", 22), ("font", "ui\\small_ui"),
+                     [("type", "text"), ("controller", 1), ("width", 188), ("height", 22), ("font", "ui\\small_ui"),
                       ("color", "#FF2896FF"), ("align", "center"), ("text_y", 6), ("text_flags", "no_focus_test")],
                      [])
     lines += _widget(f"{base}/steam_details", [("width", 640), ("height", 480)],
