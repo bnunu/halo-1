@@ -52,7 +52,14 @@ with ideas from VALORANT's netcode articles, keeping the 30 Hz tick:
   (`camera_control`) its first observer films their camera as a player's
   would (`director_unattended_scripted_camera`, director.c); before, it
   never ran, and every client watched a cutscene from the world's origin.
-  Only the camera's values changed: no network version.
+  Only the camera's values changed: no network version. A dedicated server
+  of an earlier build still sends that camera, which stays as a map's start
+  leaves an observer (at the world's origin, looking down x), where no shot
+  is. A client that gets it keeps the cutscene's view but watches the
+  cutscene's actors instead (`client_watch_cutscene`, network_coop.c): the
+  unit the host's scripts last started a custom animation on, which every
+  build sends, else its own player, framed as spectating frames a teammate
+  the scripts hold.
 
   The scripts' looping sounds (music, ambience, a cutscene's music and
   dialogue) are resent every two seconds, so a machine that joins hears
