@@ -478,7 +478,8 @@ static struct
 	struct dead_camera unmoved_camera;
 	/* the unit the host's scripts last started a custom animation on in this
 	cinematic, as a cutscene's actors are animated: the one that view watches
-	(NONE outside a cinematic) */
+	(cutscene_subject_set FALSE outside a cinematic) */
+	boolean cutscene_subject_set;
 	long cutscene_subject;
 	/* the eased view behind the host, used while there is nothing else to
 	watch (watching_host_valid is FALSE until it is first set) */
@@ -1575,7 +1576,7 @@ static void host_presentation(
 static void client_cinematic_end(
 	void)
 {
-	coop_presentation.cutscene_subject = NONE;
+	coop_presentation.cutscene_subject_set = FALSE;
 	if (!coop_presentation.cinematic_started)
 		return;
 	coop_presentation.cinematic_started = FALSE;
@@ -1669,7 +1670,7 @@ static void client_watch_cutscene(
 	real_point3d behind;
 	real height;
 
-	if (coop_presentation.cutscene_subject != NONE &&
+	if (coop_presentation.cutscene_subject_set &&
 		object_try_and_get_and_verify_type(coop_presentation.cutscene_subject, _object_mask_unit))
 	{
 		unit_index = coop_presentation.cutscene_subject;
@@ -1829,6 +1830,7 @@ static void client_apply_unit_animation(
 		/* (a cutscene's actor, for a host whose camera never moved:
 		client_watch_cutscene) */
 		coop_presentation.cutscene_subject = event->object_index;
+		coop_presentation.cutscene_subject_set = TRUE;
 	}
 }
 
@@ -2226,7 +2228,6 @@ void network_coop_new_game(
 	void)
 {
 	csmemset(&coop_presentation, 0, sizeof(coop_presentation));
-	coop_presentation.cutscene_subject = NONE;
 	csmemset(&coop_events, 0, sizeof(coop_events));
 	csmemset(&host_devices, 0, sizeof(host_devices));
 	csmemset(&client_devices, 0, sizeof(client_devices));
@@ -3334,7 +3335,6 @@ void network_coop_reset_recovery(void)
 		client_host_camera_set(FALSE);
 	}
 	csmemset(&coop_presentation, 0, sizeof(coop_presentation));
-	coop_presentation.cutscene_subject = NONE;
 	csmemset(&coop_events, 0, sizeof(coop_events));
 	csmemset(&client_devices, 0, sizeof(client_devices));
 	csmemset(client_names_differing, 0, sizeof(client_names_differing));
