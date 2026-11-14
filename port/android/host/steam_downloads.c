@@ -16,7 +16,8 @@ or network is touched there, and the lock is held only to copy.
 The session's file (steam_seal.h: the app's private storage): "account=", "seed=" (32 hex
 digits: this install's identity, from which the logon's machine id is
 made) and "sealed=" (the refresh token a sign-in gave, sealed with a key of
-the device's: steam_seal.c), or "token=" where the device has no such key.
+the device's: steam_seal.c). Where it cannot be sealed, the token is not
+written at all, and the sign-in lasts until the app closes.
 The token never leaves the host: the guest is shown the account's name.
 Logging out revokes it with Steam as well as forgetting it here. What was
 downloaded is in steam/downloads.txt of the data root: "shared <manifest>"
@@ -317,20 +318,21 @@ static void remove_tree(char const *path)
 		if (is_directory)
 			remove_tree(child);
 		else if (!posix_mcc_share_remove(child, 0))
-			remove(child);
+			steam_log("steam: not removed (a link, or not a managed path): %s", child);
 	}
 	if (directory)
 		posix_directory_close(directory);
+	/* (the MCC helpers' refusals stand: a link inside the tree is neither
+	followed nor removed, and what it leads to is left alone) */
 	if (!posix_mcc_share_remove(path, 1))
-		remove(path);
+		steam_log("steam: not removed (not empty, a link, or not a managed path): %s", path);
 }
 
-/* from to to, which must not be there (posix_mcc_share_publish's, else a rename) */
+/* from to to, which must not be there (posix_mcc_share_publish's, whose
+refusal of a link or an unmanaged path stands) */
 static int move_folder(char const *from, char const *to)
 {
-	if (path_exists(to, NULL))
-		return 0;
-	return posix_mcc_share_publish(from, to) || rename(from, to) == 0;
+	return posix_mcc_share_publish(from, to);
 }
 
 /* the session file's path */
@@ -355,11 +357,13 @@ static void session_save(void)
 
 	session_path(path, sizeof(path), "session.txt");
 	snprintf(part, sizeof(part), "%s.part", path);
+	/* (a token is kept on the device only sealed: where it cannot be, the
+	sign-in lasts as long as the app does) */
 	if (steam.token[0])
 	{
 		is_sealed = steam_seal(steam.token, sealed, sizeof(sealed));
 		if (!is_sealed)
-			steam_log("steam: this device has no key to seal the sign-in with: it is kept as it is");
+			steam_log("steam: the sign-in could not be sealed: it is kept for this run alone");
 	}
 	file = steam_seal_create(part);
 	if (!file)
@@ -372,8 +376,6 @@ static void session_save(void)
 	fprintf(file, "account=%s\nseed=%s\n", steam.account, seed);
 	if (is_sealed)
 		fprintf(file, "sealed=%s\n", sealed);
-	else if (steam.token[0])
-		fprintf(file, "token=%s\n", steam.token);
 	steam_wipe(sealed, sizeof(sealed));
 	if (fflush(file) != 0 || fclose(file) != 0)
 	{
@@ -392,7 +394,6 @@ static void session_load(void)
 	static char line[2 * 4096 + 64];
 	char path[1100];
 	FILE *file;
-	int resave = 0;
 
 	session_path(path, sizeof(path), "session.txt");
 	file = fopen(path, "r");
@@ -412,12 +413,6 @@ static void session_load(void)
 		{
 			if (!steam_unseal(value, steam.token, sizeof(steam.token)))
 				steam_log("steam: the saved sign-in is another device's, or its key is gone: sign in again");
-		}
-		else if (!strcmp(line, "token") && length < sizeof(steam.token))
-		{
-			/* (kept as it is where there was no key: sealed now if there is) */
-			snprintf(steam.token, sizeof(steam.token), "%s", value);
-			resave = 1;
 		}
 		else if (!strcmp(line, "seed") && length == 32)
 		{
@@ -441,8 +436,6 @@ static void session_load(void)
 		steam_random(steam.seed, sizeof(steam.seed));
 		steam.seeded = 1;
 	}
-	if (resave)
-		session_save();
 }
 
 /* (session_lock held) the sign-in forgotten: the token wiped, the file
@@ -453,6 +446,9 @@ static void session_forget(void)
 
 	steam_wipe(steam.token, sizeof(steam.token));
 	session_path(path, sizeof(path), "session.txt");
+	remove(path);
+	/* (and one a save left unfinished) */
+	session_path(path, sizeof(path), "session.txt.part");
 	remove(path);
 	steam_seal_forget();
 }

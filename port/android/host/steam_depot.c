@@ -39,8 +39,16 @@ enum
 	MANIFEST_PAYLOAD = 0x71F617D0,
 	MANIFEST_METADATA = 0x1F4812BE,
 	MANIFEST_END = 0x32C415AB,
-	FLAG_DIRECTORY = 64
+	FLAG_DIRECTORY = 64,
+	/* a manifest's bounds, far past any MCC item's (a package is a few files
+	of at most a few hundred megabytes): what lies outside them is refused */
+	MAXIMUM_MANIFEST_FILES = 65536,
+	MAXIMUM_FILE_CHUNKS = 65536
 };
+
+/* (the same, past an enum's int) */
+#define MAXIMUM_FILE_BYTES ((uint64_t)16 << 30)
+#define MAXIMUM_MANIFEST_BYTES ((uint64_t)64 << 30)
 
 static struct
 {
@@ -128,8 +136,10 @@ int steam_depot_servers(char *error, int error_size)
 }
 
 /* a depot's path from one of the servers, the next after a failure: over
-the kept HTTP connection (Steam's client's way), HTTPS when that fails */
-static int depot_get(struct steam_http *http, uint32_t depot, char const *path, unsigned long maximum,
+the kept HTTP connection (Steam's client's way), HTTPS when that fails; over
+HTTPS alone when secure (a manifest, whose chunk hashes are what the chunks
+are checked against) */
+static int depot_get(struct steam_http *http, uint32_t depot, char const *path, unsigned long maximum, int secure,
 	unsigned char **body, unsigned long *size, char *error, int error_size)
 {
 	int attempt;
@@ -154,7 +164,7 @@ static int depot_get(struct steam_http *http, uint32_t depot, char const *path, 
 		}
 		pthread_mutex_unlock(&servers.lock);
 		snprintf(full, sizeof(full), "/depot/%u/%s", (unsigned)depot, path);
-		got = steam_http_get(http, host, full, maximum, body, size, &status, error, error_size);
+		got = !secure && steam_http_get(http, host, full, maximum, body, size, &status, error, error_size);
 		if (!got)
 		{
 			snprintf(url, sizeof(url), "https://%s%s", host, full);
@@ -239,6 +249,8 @@ static int mapping_read(unsigned char const *data, size_t size, struct steam_aes
 			unsigned char const *inner_bytes;
 			size_t inner_length;
 			struct steam_depot_chunk chunk;
+			uint64_t size = 0, packed = 0;
+			int have_sha = 0;
 
 			if (file->chunk_count == capacity)
 			{
@@ -256,11 +268,18 @@ static int mapping_read(unsigned char const *data, size_t size, struct steam_aes
 			inner.failed = 0;
 			while (steam_pb_next(&inner, &inner_field, &inner_wire, &inner_value, &inner_bytes, &inner_length))
 			{
-				if (inner_field == 1 && inner_length == 20) memcpy(chunk.sha, inner_bytes, 20);
+				if (inner_field == 1 && inner_length == 20) { memcpy(chunk.sha, inner_bytes, 20); have_sha = 1; }
 				else if (inner_field == 3) chunk.offset = inner_value;
-				else if (inner_field == 4) chunk.size = (uint32_t)inner_value;
-				else if (inner_field == 5) chunk.packed = (uint32_t)inner_value;
+				else if (inner_field == 4) size = inner_value;
+				else if (inner_field == 5) packed = inner_value;
 			}
+			/* (a chunk whose record is malformed, or that no download could be:
+			the whole list refused, not the file left out) */
+			if (inner.failed || !have_sha || !size || size > MAXIMUM_CHUNK || !packed || packed > MAXIMUM_CHUNK ||
+				file->chunk_count >= MAXIMUM_FILE_CHUNKS)
+				return 0;
+			chunk.size = (uint32_t)size;
+			chunk.packed = (uint32_t)packed;
 			file->chunks[file->chunk_count++] = chunk;
 		}
 	}
@@ -271,9 +290,25 @@ static int mapping_read(unsigned char const *data, size_t size, struct steam_aes
 			if (*slash == '\\')
 				*slash = '/';
 	}
+	if (reader.failed || !file->name[0] || file->size > MAXIMUM_FILE_BYTES)
+		return 0;
 	if (file->chunk_count > 1)
 		qsort(file->chunks, (size_t)file->chunk_count, sizeof(file->chunks[0]), chunk_compare);
-	return !reader.failed && file->name[0];
+	/* (each chunk inside the file, after the one before it) */
+	{
+		uint64_t end = 0;
+		int i;
+
+		for (i = 0; i < file->chunk_count; i++)
+		{
+			struct steam_depot_chunk const *chunk = &file->chunks[i];
+
+			if (chunk->offset < end || chunk->size > file->size || chunk->offset > file->size - chunk->size)
+				return 0;
+			end = chunk->offset + chunk->size;
+		}
+	}
+	return 1;
 }
 
 int steam_depot_manifest(uint32_t depot, uint64_t manifest, uint64_t request_code, unsigned char const key[32],
@@ -284,27 +319,15 @@ int steam_depot_manifest(uint32_t depot, uint64_t manifest, uint64_t request_cod
 	unsigned long zipped_size;
 	unsigned char *content;
 	size_t content_size;
-	unsigned char const *payload = NULL;
-	size_t payload_size = 0;
-	int encrypted = 0;
-	size_t at;
-	struct steam_aes aes;
-	struct steam_pb_reader reader;
-	int field, wire;
-	uint64_t value;
-	unsigned char const *bytes;
-	size_t length;
-	int capacity = 0;
-
 	struct steam_http http;
-	int fetched;
+	int fetched, parsed;
 
 	memset(result, 0, sizeof(*result));
 	if (!steam_depot_servers(error, error_size))
 		return 0;
 	snprintf(path, sizeof(path), "manifest/%llu/5/%llu", (unsigned long long)manifest, (unsigned long long)request_code);
 	steam_http_init(&http);
-	fetched = depot_get(&http, depot, path, MAXIMUM_MANIFEST, &zipped, &zipped_size, error, error_size);
+	fetched = depot_get(&http, depot, path, MAXIMUM_MANIFEST, 1, &zipped, &zipped_size, error, error_size);
 	steam_http_close(&http);
 	if (!fetched)
 		return 0;
@@ -316,6 +339,28 @@ int steam_depot_manifest(uint32_t depot, uint64_t manifest, uint64_t request_cod
 		snprintf(error, (size_t)error_size, "the files' list is not readable");
 		return 0;
 	}
+	parsed = steam_depot_manifest_parse(content, content_size, key, result, error, error_size);
+	free(content);
+	return parsed;
+}
+
+int steam_depot_manifest_parse(unsigned char const *content, size_t content_size, unsigned char const key[32],
+	struct steam_depot_manifest *result, char *error, int error_size)
+{
+	unsigned char const *payload = NULL;
+	size_t payload_size = 0;
+	int encrypted = 0;
+	size_t at;
+	struct steam_aes aes;
+	struct steam_pb_reader reader;
+	int field, wire;
+	uint64_t value;
+	unsigned char const *bytes;
+	size_t length;
+	int capacity = 0;
+	uint64_t total = 0;
+
+	memset(result, 0, sizeof(*result));
 	for (at = 0; at + 8 <= content_size;)
 	{
 		uint32_t magic = get32(content + at);
@@ -336,12 +381,16 @@ int steam_depot_manifest(uint32_t depot, uint64_t manifest, uint64_t request_cod
 			while (steam_pb_next(&reader, &field, &wire, &value, &bytes, &length))
 				if (field == 4)
 					encrypted = value != 0;
+			if (reader.failed)
+			{
+				snprintf(error, (size_t)error_size, "the files' list could not be read (malformed)");
+				return 0;
+			}
 		}
 		at += 8 + section;
 	}
 	if (!payload)
 	{
-		free(content);
 		snprintf(error, (size_t)error_size, "the files' list has no files");
 		return 0;
 	}
@@ -353,6 +402,11 @@ int steam_depot_manifest(uint32_t depot, uint64_t manifest, uint64_t request_cod
 	{
 		if (field != 1 || !bytes)
 			continue;
+		if (result->file_count >= MAXIMUM_MANIFEST_FILES)
+		{
+			reader.failed = 1;
+			break;
+		}
 		if (result->file_count == capacity)
 		{
 			struct steam_depot_file *grown;
@@ -360,19 +414,29 @@ int steam_depot_manifest(uint32_t depot, uint64_t manifest, uint64_t request_cod
 			capacity = capacity ? 2 * capacity : 64;
 			grown = realloc(result->files, (size_t)capacity * sizeof(*grown));
 			if (!grown)
+			{
+				reader.failed = 1;
 				break;
+			}
 			result->files = grown;
 		}
-		if (mapping_read(bytes, length, &aes, encrypted, &result->files[result->file_count]))
-			result->file_count++;
-		else
+		/* (one malformed file, or past the bounds, and the whole list is
+		refused: a list cut short would install part of a package) */
+		if (!mapping_read(bytes, length, &aes, encrypted, &result->files[result->file_count]) ||
+			result->files[result->file_count].size > MAXIMUM_MANIFEST_BYTES - total)
+		{
 			free(result->files[result->file_count].chunks);
+			reader.failed = 1;
+			break;
+		}
+		total += result->files[result->file_count].size;
+		result->file_count++;
 	}
-	free(content);
-	if (!result->file_count)
+	if (reader.failed || !result->file_count)
 	{
 		steam_depot_manifest_free(result);
-		snprintf(error, (size_t)error_size, "the files' list could not be read (the key is not the depot's?)");
+		snprintf(error, (size_t)error_size, "the files' list could not be read (malformed, or the key is not "
+			"the depot's?)");
 		return 0;
 	}
 	return 1;
@@ -449,7 +513,7 @@ static unsigned char *chunk_get(struct fetch_job *job, struct steam_http *http, 
 
 	steam_hex(chunk->sha, 20, hex);
 	snprintf(path, sizeof(path), "chunk/%s", hex);
-	if (!depot_get(http, job->depot, path, MAXIMUM_CHUNK, &body, &size, error, error_size))
+	if (!depot_get(http, job->depot, path, MAXIMUM_CHUNK, 0, &body, &size, error, error_size))
 		return NULL;
 	if (!steam_aes_decrypt(&job->aes, body, size, body, &plain))
 	{

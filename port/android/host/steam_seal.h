@@ -10,8 +10,8 @@ as good as the account to whoever has it, until it is revoked):
   storage access can read), sealed with an AES-GCM key of the Android
   Keystore that never leaves it (HaloActivity.steamSeal): a copy of the file
   opens on no other phone, nor on this one once the app is uninstalled;
-- when there is no key to be had, the token is kept as it is, and the log
-  says so.
+- when there is no key to be had, the token is not written at all: the
+  sign-in lasts until the app closes, and the log says so.
 
 The file is written whole to a .part, readable by its owner alone where the
 file system has such a thing, then renamed over the old one.

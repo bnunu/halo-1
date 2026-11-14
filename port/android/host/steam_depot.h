@@ -49,6 +49,10 @@ int steam_depot_servers(char *error, int error_size);
 int steam_depot_manifest(uint32_t depot, uint64_t manifest, uint64_t request_code, unsigned char const key[32],
 	struct steam_depot_manifest *result, char *error, int error_size);
 void steam_depot_manifest_free(struct steam_depot_manifest *manifest);
+/* a manifest's unzipped bytes read: 1, or 0 and why (malformed, past its
+bounds, or not the key's) */
+int steam_depot_manifest_parse(unsigned char const *content, size_t content_size, unsigned char const key[32],
+	struct steam_depot_manifest *result, char *error, int error_size);
 /* the file of a name (case aside), or NULL */
 struct steam_depot_file const *steam_depot_find(struct steam_depot_manifest const *manifest, char const *name);
 

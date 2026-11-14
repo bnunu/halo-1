@@ -57,9 +57,8 @@ Keystore that never leaves it (`HaloActivity.steamSeal`).
 - **A copied file opens nowhere else:** a copy of the file doesn't open on
   another phone. It also stops opening once the app is uninstalled or the
   player logs out, because the key is deleted.
-- **Without a key:** if a device has no key to give, the token is stored
-  unsealed. The log says so, and the token is sealed at the next load once a key
-  is available.
+- **Without a key:** if the Keystore can't seal the token, it isn't written
+  at all. The sign-in lasts until the app closes, and the log says so.
 - **How the file is written:** to a `.part` file with mode 0600 (where the file
   system has modes), then renamed over the old one.
 - **The token stays in the host:**

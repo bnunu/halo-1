@@ -29,12 +29,32 @@ int update_https_request(const char *method, const char *url, const char *header
 	return 0;
 }
 
-/* (the sockets: none, offline) */
+/* (the sockets: none, offline; but for "http", whose CANNED_SOCKET answers
+with a file's bytes) */
+#define CANNED_SOCKET 7
+static unsigned char *canned;
+static size_t canned_size, canned_at;
+
 int posix_socket(int family, int type, int protocol) { (void)family; (void)type; (void)protocol; return -1; }
 int posix_socket_close(int socket) { (void)socket; return 0; }
 int posix_socket_connect(int socket, const void *address, int length) { (void)socket; (void)address; (void)length; return -1; }
-int posix_socket_send(int socket, const void *buffer, int length, int flags) { (void)socket; (void)buffer; (void)length; (void)flags; return -1; }
-int posix_socket_recv(int socket, void *buffer, int length, int flags) { (void)socket; (void)buffer; (void)length; (void)flags; return -1; }
+int posix_socket_send(int socket, const void *buffer, int length, int flags)
+{
+	(void)buffer; (void)flags;
+	return canned && socket == CANNED_SOCKET ? length : -1;
+}
+int posix_socket_recv(int socket, void *buffer, int length, int flags)
+{
+	size_t count;
+
+	(void)flags;
+	if (!canned || socket != CANNED_SOCKET)
+		return -1;
+	count = canned_size - canned_at < (size_t)length ? canned_size - canned_at : (size_t)length;
+	memcpy(buffer, canned + canned_at, count);
+	canned_at += count;
+	return (int)count;
+}
 int posix_socket_set_nonblocking(int socket, int on) { (void)socket; (void)on; return 0; }
 int posix_socket_set_nodelay(int socket) { (void)socket; return 0; }
 int posix_socket_getsockopt(int socket, int level, int name, void *value, int *length)
@@ -47,7 +67,7 @@ int posix_socket_select(int *read, int *read_count, int *write, int *write_count
 {
 	(void)read; (void)read_count; (void)write; (void)write_count; (void)error; (void)error_count;
 	(void)seconds; (void)microseconds; (void)infinite;
-	return -1;
+	return canned ? 1 : -1;
 }
 posix_ulong posix_resolve_ipv4(const char *host) { (void)host; return 0; }
 void posix_random_bytes(void *buffer, posix_ulong size)
@@ -117,6 +137,68 @@ int main(int argc, char **argv)
 
 	if (!strcmp(command, "crypto"))
 		return crypto_answers();
+	/* a manifest's unzipped bytes (a file's, names not encrypted) read:
+	"ok <files> <chunks>" or "fail <error>" */
+	if (!strcmp(command, "manifest") && argc == 3)
+	{
+		static unsigned char content[1 << 20];
+		unsigned char key[32];
+		struct steam_depot_manifest manifest;
+		char error[256] = "";
+		FILE *file = fopen(argv[2], "rb");
+		size_t size = file ? fread(content, 1, sizeof(content), file) : 0;
+		int i, chunks = 0;
+
+		if (file)
+			fclose(file);
+		memset(key, 0, sizeof(key));
+		if (!steam_depot_manifest_parse(content, size, key, &manifest, error, sizeof(error)))
+		{
+			printf("fail %s\n", error);
+			return 0;
+		}
+		for (i = 0; i < manifest.file_count; i++)
+			chunks += manifest.files[i].chunk_count;
+		printf("ok %d %d\n", manifest.file_count, chunks);
+		steam_depot_manifest_free(&manifest);
+		return 0;
+	}
+	/* a staged folder removed, as an install's staging is */
+	if (!strcmp(command, "remove_tree") && argc == 3)
+	{
+		remove_tree(argv[2]);
+		return 0;
+	}
+	/* a content server's answer (a file's bytes) to one request, at most
+	maximum bytes of body: "ok <size> <body>" or "fail <error>" */
+	if (!strcmp(command, "http") && argc == 4)
+	{
+		struct steam_http http;
+		unsigned char *body = NULL;
+		unsigned long size = 0;
+		int status = 0;
+		char error[256] = "";
+		FILE *file = fopen(argv[2], "rb");
+		long length;
+
+		if (!file || fseek(file, 0, SEEK_END) || (length = ftell(file)) < 0 || fseek(file, 0, SEEK_SET))
+			return 2;
+		canned = malloc((size_t)length + 1);
+		if (!canned || fread(canned, 1, (size_t)length, file) != (size_t)length)
+			return 2;
+		fclose(file);
+		canned_size = (size_t)length;
+		steam_http_init(&http);
+		http.socket = CANNED_SOCKET;
+		snprintf(http.host, sizeof(http.host), "cache");
+		if (steam_http_get(&http, "cache", "/depot/1/chunk/0", strtoul(argv[3], NULL, 10), &body, &size, &status,
+			error, sizeof(error)))
+			printf("ok %lu %.*s\n", size, (int)size, (char const *)body);
+		else
+			printf("fail %s\n", error);
+		free(body);
+		return 0;
+	}
 	if (!strcmp(command, "envelope"))
 		return envelope();
 	if (!strcmp(command, "save") && argc == 5)

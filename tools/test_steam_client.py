@@ -122,21 +122,28 @@ def test_a_damaged_seal_opens_nothing(client, tmp_path):
     assert run(client, "load", tmp_path, secret="device one").decode() == "account player\ntoken \n"
 
 
-def test_without_a_key_kept_as_it_is_then_sealed(client, tmp_path):
+def test_without_a_key_never_written(client, tmp_path):
+    # (unsealed, the token is not written: the sign-in is the run's alone)
     run(client, "save", tmp_path, "player", TOKEN)
     text = session_file(tmp_path).read_text()
-    assert f"token={TOKEN}\n" in text and "sealed=" not in text
-    assert stat.S_IMODE(session_file(tmp_path).stat().st_mode) == 0o600
-    # (a key now: the load seals what it read)
-    assert run(client, "load", tmp_path, secret="device one").decode() == f"account player\ntoken {TOKEN}\n"
-    text = session_file(tmp_path).read_text()
-    assert "sealed=device:" in text and TOKEN not in text
+    assert TOKEN not in text and "token=" not in text and "sealed=" not in text
+    assert run(client, "load", tmp_path, secret="device one").decode() == "account player\ntoken \n"
+
+
+def test_a_plain_token_line_is_not_taken(client, tmp_path):
+    run(client, "save", tmp_path, "player", TOKEN, secret="device one")
+    path = session_file(tmp_path)
+    path.write_text(path.read_text().split("sealed=")[0] + f"token={TOKEN}\n")
+    assert run(client, "load", tmp_path, secret="device one").decode() == "account player\ntoken \n"
 
 
 def test_forgotten(client, tmp_path):
     run(client, "save", tmp_path, "player", TOKEN, secret="device one")
+    # (a save left unfinished goes with it)
+    (tmp_path / "steam" / "session.txt.part").write_text(f"sealed=x\n")
     run(client, "forget", tmp_path, secret="device one")
     assert not session_file(tmp_path).exists()
+    assert not (tmp_path / "steam" / "session.txt.part").exists()
 
 
 def unpack(client, tmp_path, chunk, size):
@@ -193,3 +200,107 @@ def test_unknown_chunk_refused(client, tmp_path):
 ])
 def test_item_paths(client, name, expected):
     assert run(client, "path", name).decode().strip() == (expected or "(refused)")
+
+
+def http(client, tmp_path, answer, maximum=1 << 20):
+    path = tmp_path / "answer.bin"
+    path.write_bytes(answer)
+    result = subprocess.run([str(client), "http", str(path), str(maximum)], capture_output=True)
+    assert result.returncode == 0, result
+    return result.stdout.decode(errors="replace")
+
+
+CHUNKED = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+
+
+def test_chunked_body(client, tmp_path):
+    assert http(client, tmp_path, CHUNKED + b"5\r\nhello\r\n6;x=1\r\n world\r\n0\r\n\r\n") == "ok 11 hello world\n"
+
+
+@pytest.mark.parametrize("length", [b"FFFFFFFFFFFFFFF0", b"-10", b"200000", b"zz", b""])
+def test_chunk_length_refused(client, tmp_path, length):
+    # (after 16 bytes, a length of 2^64 - 16 wrapped the bounds checks to zero
+    # and asked for an enormous copy; past maximum, negative, not hex or
+    # missing: each refused, nothing copied)
+    answer = CHUNKED + b"10\r\n" + b"y" * 16 + b"\r\n" + length + b"\r\n" + b"x" * 64 + b"\r\n0\r\n\r\n"
+    assert http(client, tmp_path, answer).startswith("fail ")
+
+
+def test_remove_tree_leaves_what_a_link_leads_to(client, tmp_path):
+    # (a link inside a staged folder: the MCC helpers refuse it, and that
+    # refusal stands, so what it leads to is neither followed nor removed)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "keep.txt").write_text("keep")
+    staging = tmp_path / "mcc_staging" / "steam_1"
+    (staging / "maps").mkdir(parents=True)
+    (staging / "maps" / "a.map").write_bytes(b"map")
+    (staging / "link").symlink_to(outside, target_is_directory=True)
+    run(client, "remove_tree", staging)
+    assert (outside / "keep.txt").read_text() == "keep"
+    assert not (staging / "maps").exists()
+
+
+def varint(value):
+    out = b""
+    while value > 127:
+        out += bytes([(value & 127) | 128])
+        value >>= 7
+    return out + bytes([value])
+
+
+def pb_bytes(field, data):
+    return varint(field << 3 | 2) + varint(len(data)) + data
+
+
+def pb_varint(field, value):
+    return varint(field << 3) + varint(value)
+
+
+def chunk_record(offset, size, packed=None, sha=b"\x11" * 20):
+    return pb_bytes(6, pb_bytes(1, sha) + pb_varint(3, offset) + pb_varint(4, size) + pb_varint(5, packed or size))
+
+
+def manifest_bytes(*mappings, metadata=pb_varint(4, 0)):
+    payload = b"".join(pb_bytes(1, mapping) for mapping in mappings)
+    return (struct.pack("<II", 0x71F617D0, len(payload)) + payload +
+            struct.pack("<II", 0x1F4812BE, len(metadata)) + metadata + struct.pack("<II", 0x32C415AB, 0))
+
+
+def mapping(name, size, *chunks):
+    return pb_bytes(1, name) + pb_varint(2, size) + b"".join(chunks)
+
+
+def parse(client, tmp_path, data):
+    (tmp_path / "manifest").write_bytes(data)
+    return run(client, "manifest", tmp_path / "manifest").decode()
+
+
+def test_manifest_read(client, tmp_path):
+    good = manifest_bytes(mapping(b"maps\\a.map", 3000, chunk_record(0, 1000), chunk_record(1000, 2000)),
+                          mapping(b"b.json", 10, chunk_record(0, 10)))
+    assert parse(client, tmp_path, good) == "ok 2 3\n"
+
+
+@pytest.mark.parametrize("bad", [
+    # a chunk past the file's end, and two that overlap
+    mapping(b"a.map", 1500, chunk_record(1000, 1000)),
+    mapping(b"a.map", 3000, chunk_record(0, 2000), chunk_record(1000, 1000)),
+    # an offset that wraps, a chunk bigger than any download, a chunk with no hash
+    mapping(b"a.map", 3000, chunk_record((1 << 64) - 10, 20)),
+    mapping(b"a.map", 8 << 20, chunk_record(0, 8 << 20)),
+    mapping(b"a.map", 10, pb_bytes(6, pb_varint(3, 0) + pb_varint(4, 10) + pb_varint(5, 10))),
+    # a chunk record cut short inside (its nested message malformed)
+    mapping(b"a.map", 10, pb_bytes(6, pb_bytes(1, b"\x11" * 20)[:-5])),
+    # a file larger than the bounds
+    mapping(b"a.map", 32 << 30),
+])
+def test_manifest_refused(client, tmp_path, bad):
+    # (one bad file and the whole list is refused, not just that file left out)
+    good = mapping(b"b.json", 10, chunk_record(0, 10))
+    assert parse(client, tmp_path, manifest_bytes(good, bad)).startswith("fail ")
+
+
+def test_manifest_malformed_metadata_refused(client, tmp_path):
+    good = mapping(b"b.json", 10, chunk_record(0, 10))
+    assert parse(client, tmp_path, manifest_bytes(good, metadata=varint(4 << 3 | 2) + varint(50))).startswith("fail ")

@@ -217,6 +217,29 @@ static int header_has(char const *headers, char const *name, char const *value)
 	return 0;
 }
 
+/* a chunked body's part length (the hex digits from text to line_end, an
+extension after ';' ignored): 1 with *length at most left, 0 malformed or
+longer */
+static int chunk_length(char const *text, char const *line_end, size_t left, unsigned long *length)
+{
+	unsigned long value = 0;
+	int digits = 0;
+
+	for (; text < line_end && *text != ';'; text++)
+	{
+		int digit = *text >= '0' && *text <= '9' ? *text - '0' : *text >= 'a' && *text <= 'f' ? *text - 'a' + 10 :
+			*text >= 'A' && *text <= 'F' ? *text - 'A' + 10 : -1;
+
+		/* (value * 16 is at most left here, which is far from overflowing) */
+		if (digit < 0 || value > left / 16 || value * 16 + (unsigned long)digit > left)
+			return 0;
+		value = value * 16 + (unsigned long)digit;
+		digits++;
+	}
+	*length = value;
+	return digits > 0;
+}
+
 /* one request on the open connection: 1 answered, 0 failed (the
 connection then closed) */
 static int http_exchange(struct steam_http *http, char const *path, unsigned long maximum, unsigned char **body,
@@ -323,19 +346,22 @@ static int http_exchange(struct steam_http *http, char const *path, unsigned lon
 			line_end = strstr(stream + at, "\r\n");
 			if (line_end)
 			{
-				part = strtoul(stream + at, NULL, 16);
+				size_t head = (size_t)(line_end + 2 - stream);
+
+				/* (the length's hex digits alone, and never more than is left
+				of maximum: a length near ULONG_MAX would wrap the sums below) */
+				if (!chunk_length(stream + at, line_end, maximum - out, &part))
+					break;
 				if (!part)
 				{
 					done = 1;
 					break;
 				}
-				if (out + part > maximum)
-					break;
-				if (stream_have >= (size_t)(line_end + 2 - stream) + part + 2)
+				if (stream_have - head >= part + 2)
 				{
 					memcpy(data + out, line_end + 2, part);
 					out += part;
-					at = (size_t)(line_end + 2 - stream) + part + 2;
+					at = head + part + 2;
 					continue;
 				}
 			}
