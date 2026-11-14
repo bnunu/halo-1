@@ -14,6 +14,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 DRIVER = ROOT / "tools/tests/host_mcc_hash.c"
+ZLIB = ROOT / "port/third_party/zlib"
 NDK = Path(os.environ.get("ANDROID_NDK_HOME") or os.environ.get("ANDROID_NDK_ROOT") or "/nonexistent",
            "toolchains/llvm/prebuilt/linux-x86_64/bin/clang")
 PREFIX = b"GulchCE MCC content v1"
@@ -71,8 +72,14 @@ def check(command, tmp_path, expect_kind=None):
 
 def build(tmp_path, compiler, *flags, threads=("-lpthread",)):
     exe = tmp_path / "driver"
-    subprocess.run([*compiler, "-O2", "-std=gnu11", "-Wall", "-Werror", *flags, str(DRIVER),
-                    "-o", str(exe), *threads], check=True)
+    # (with the port's zlib, whose CRC-32 is the portable one's)
+    zlib_objects = []
+    for source in ["crc32.c", "zutil.c"]:
+        zlib_objects.append(tmp_path / (source + ".o"))
+        subprocess.run([*compiler, "-O2", "-w", "-DZ_PREFIX", "-c", str(ZLIB / source), "-o", str(zlib_objects[-1])],
+                       check=True)
+    subprocess.run([*compiler, "-O2", "-std=gnu11", "-Wall", "-Werror", "-I", str(ZLIB), *flags, str(DRIVER),
+                    *map(str, zlib_objects), "-o", str(exe), *threads], check=True)
     return exe
 
 

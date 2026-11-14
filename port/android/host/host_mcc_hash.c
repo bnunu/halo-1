@@ -37,6 +37,7 @@ map's checksum when asked (crc32_combine's way), so one entry serves each.
 #include "host.h"
 #endif
 #include "host_mcc_hash.h"
+#include "zlib_prefixed.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -178,28 +179,10 @@ static void (*sha_blocks)(uint32_t state[8], unsigned char const *data, size_t b
 
 /* ---------- CRC32 (zlib's: reflected 0xEDB88320) */
 
-static uint32_t crc_table[8][256];
-
+/* (zlib's, where the CPU has no CRC32 instructions) */
 static uint32_t crc_portable(uint32_t crc, unsigned char const *data, size_t size)
 {
-	crc = ~crc;
-	while (size && ((uintptr_t)data & 7)) {
-		crc = crc_table[0][(crc ^ *data++) & 0xFF] ^ (crc >> 8);
-		size--;
-	}
-	while (size >= 8) {
-		uint32_t low = crc ^ ((uint32_t)data[0] | (uint32_t)data[1] << 8 | (uint32_t)data[2] << 16 | (uint32_t)data[3] << 24);
-		uint32_t high = (uint32_t)data[4] | (uint32_t)data[5] << 8 | (uint32_t)data[6] << 16 | (uint32_t)data[7] << 24;
-
-		crc = crc_table[7][low & 0xFF] ^ crc_table[6][(low >> 8) & 0xFF] ^ crc_table[5][(low >> 16) & 0xFF] ^
-			crc_table[4][low >> 24] ^ crc_table[3][high & 0xFF] ^ crc_table[2][(high >> 8) & 0xFF] ^
-			crc_table[1][(high >> 16) & 0xFF] ^ crc_table[0][high >> 24];
-		data += 8;
-		size -= 8;
-	}
-	while (size--)
-		crc = crc_table[0][(crc ^ *data++) & 0xFF] ^ (crc >> 8);
-	return ~crc;
+	return (uint32_t)crc32(crc, data, (uInt)size);
 }
 
 #if defined(__aarch64__)
@@ -228,55 +211,10 @@ static uint32_t crc_arm(uint32_t crc, unsigned char const *data, size_t size)
 
 static uint32_t (*crc_update)(uint32_t crc, unsigned char const *data, size_t size) = crc_portable;
 
-/* zlib's crc32_combine: the CRC of A then B from A's, B's (from 0) and B's length */
-static uint32_t gf2_times(uint32_t const *matrix, uint32_t vector)
-{
-	uint32_t sum = 0;
-
-	while (vector) {
-		if (vector & 1)
-			sum ^= *matrix;
-		vector >>= 1;
-		matrix++;
-	}
-	return sum;
-}
-
-static void gf2_square(uint32_t *square, uint32_t const *matrix)
-{
-	int n;
-
-	for (n = 0; n < 32; n++)
-		square[n] = gf2_times(matrix, matrix[n]);
-}
-
+/* the CRC of A then B, from A's, B's (from 0) and B's length (zlib's) */
 static uint32_t crc_combine(uint32_t crc1, uint32_t crc2, uint64_t length2)
 {
-	uint32_t even[32], odd[32], row = 1;
-	int n;
-
-	if (!length2)
-		return crc1;
-	odd[0] = 0xEDB88320u;
-	for (n = 1; n < 32; n++) {
-		odd[n] = row;
-		row <<= 1;
-	}
-	gf2_square(even, odd);
-	gf2_square(odd, even);
-	do {
-		gf2_square(even, odd);
-		if (length2 & 1)
-			crc1 = gf2_times(even, crc1);
-		length2 >>= 1;
-		if (!length2)
-			break;
-		gf2_square(odd, even);
-		if (length2 & 1)
-			crc1 = gf2_times(odd, crc1);
-		length2 >>= 1;
-	} while (length2);
-	return crc1 ^ crc2;
+	return (uint32_t)crc32_combine(crc1, crc2, (z_off_t)length2);
 }
 
 static pthread_once_t hash_once = PTHREAD_ONCE_INIT;
@@ -284,17 +222,6 @@ static char const *sha_kind = "portable", *crc_kind = "portable";
 
 static void hash_setup(void)
 {
-	uint32_t n, k, c;
-
-	for (n = 0; n < 256; n++) {
-		c = n;
-		for (k = 0; k < 8; k++)
-			c = c & 1 ? 0xEDB88320u ^ (c >> 1) : c >> 1;
-		crc_table[0][n] = c;
-	}
-	for (n = 0; n < 256; n++)
-		for (k = 1; k < 8; k++)
-			crc_table[k][n] = crc_table[0][crc_table[k - 1][n] & 0xFF] ^ (crc_table[k - 1][n] >> 8);
 #if defined(HOST_MCC_HASH_PORTABLE)
 	return;
 #elif defined(__aarch64__)
