@@ -119,10 +119,17 @@ enum
 	/* reads of a connection a call at most, while it has more (64 input
 	buffers: 1.5 MB) */
 	MAXIMUM_READS_PER_CALL = 64,
-	/* pieces asked of one connection at once, and of all of them; pieces
-	another machine may ask of this one at once */
-	REQUESTS_PER_CONNECTION = 2,
-	MAXIMUM_PIECES_IN_FLIGHT = 16,
+	/* pieces asked of one connection at once (the host's; another
+	player's), and of all of them; pieces another machine may ask of this one
+	at once. The host's is asked as many as every version sends at once (it
+	refuses more): a piece comes a round trip after it is asked for, about
+	two frames, and two at a time held a download from it to about 15 MB/s.
+	Another player sends 10 MB/s at most, 256 KB/s unless set otherwise, so
+	it is asked two, which keep up with that, and holds few of the last
+	pieces (connection_requests) */
+	REQUESTS_PER_CONNECTION = 8,
+	PLAYER_REQUESTS_PER_CONNECTION = 2,
+	MAXIMUM_PIECES_IN_FLIGHT = 32,
 	SERVING_PER_CONNECTION = 8,
 	/* the pieces' hashes sent at once */
 	HASHES_PER_FRAME = 256,
@@ -167,9 +174,9 @@ enum
 	MAXIMUM_RESOURCE_MAP_BYTES = 0x20000000,
 
 	/* the kilobytes a second a machine sends, at least and at most: the
-	host 20 MB/s, a player helping it 10 MB/s */
+	host 250 MB/s, a player helping it 10 MB/s */
 	MINIMUM_UPLOAD_KILOBYTES = 16,
-	MAXIMUM_HOST_UPLOAD_KILOBYTES = 20480,
+	MAXIMUM_HOST_UPLOAD_KILOBYTES = 256000,
 	MAXIMUM_SEED_UPLOAD_KILOBYTES = 10240,
 
 	/* network_server_manager.c's host state in game, transport_endpoint_winsock.c's
@@ -522,6 +529,11 @@ struct map_share_globals
 	/* the upload's allowance (bytes) and when it was topped up */
 	long upload_tokens;
 	unsigned long upload_at;
+	/* the files of this machine's own that block_read reads, kept open while
+	serve_blocks runs (it closes them): an open a block held a host to about
+	25 MB/s, its frames' time spent opening */
+	FILE *serving_streams[MAXIMUM_FILES];
+	char serving_paths[MAXIMUM_FILES][MAP_SHARE_PATH_SIZE];
 	/* the catalog files of the game's map and its resource maps, which
 	this machine sends (NONE: none), and the level they are of */
 	char current_level[LEVEL_NAME_BYTES];
@@ -2129,6 +2141,18 @@ static boolean download_unasked_pieces(
 	return FALSE;
 }
 
+/* the pieces the connection may be asked for at once: the host's (this
+machine's connection to it, as hashes_source knows it) REQUESTS_PER_CONNECTION,
+another player's PLAYER_REQUESTS_PER_CONNECTION */
+static short connection_requests(
+	struct connection const *connection)
+{
+	struct download const *download = &map_share_globals.download;
+
+	return connection->outgoing && connection->source != NONE && connection->source < download->source_count &&
+		download->sources[connection->source].host ? REQUESTS_PER_CONNECTION : PLAYER_REQUESTS_PER_CONNECTION;
+}
+
 /* the connection asked for pieces, while it may */
 static void connection_ask(
 	struct connection *connection)
@@ -2141,7 +2165,7 @@ static void connection_ask(
 		return;
 	for (index = 0; index < MAXIMUM_CONNECTIONS; index++)
 		in_flight += map_share_globals.connections[index].used ? map_share_globals.connections[index].request_count : 0;
-	while (connection->request_count < REQUESTS_PER_CONNECTION && in_flight < MAXIMUM_PIECES_IN_FLIGHT &&
+	while (connection->request_count < connection_requests(connection) && in_flight < MAXIMUM_PIECES_IN_FLIGHT &&
 		frame_room(connection, 5))
 	{
 		struct request *request;
@@ -2667,6 +2691,48 @@ static unsigned long serving_file_size(
 	return 0;
 }
 
+/* a file of this machine's own, as block_read reads it: the stream open
+for it, else it opened in a free place (or the first's, more files than its
+kinds being open) */
+static FILE *serving_stream_open(
+	char const *path)
+{
+	struct map_share_globals *globals = &map_share_globals;
+	short index;
+	short place = NONE;
+
+	for (index = 0; index < MAXIMUM_FILES; index++)
+	{
+		if (globals->serving_streams[index] && !csstrcmp(globals->serving_paths[index], path))
+			return globals->serving_streams[index];
+		if (!globals->serving_streams[index] && place == NONE)
+			place = index;
+	}
+	if (place == NONE)
+	{
+		place = 0;
+		fclose(globals->serving_streams[place]);
+	}
+	globals->serving_streams[place] = fopen(path, "rb");
+	csstrncpy(globals->serving_paths[place], path, MAP_SHARE_PATH_SIZE - 1);
+	globals->serving_paths[place][MAP_SHARE_PATH_SIZE - 1] = 0;
+	return globals->serving_streams[place];
+}
+
+static void serving_streams_close(
+	void)
+{
+	struct map_share_globals *globals = &map_share_globals;
+	short index;
+
+	for (index = 0; index < MAXIMUM_FILES; index++)
+	{
+		if (globals->serving_streams[index])
+			fclose(globals->serving_streams[index]);
+		globals->serving_streams[index] = NULL;
+	}
+}
+
 /* a block of a piece asked for, read from this machine's file */
 static boolean block_read(
 	struct connection *connection,
@@ -2679,12 +2745,11 @@ static boolean block_read(
 	unsigned long size;
 	unsigned long offset = (unsigned long)serving->piece * MAP_SHARE_PIECE_BYTES + serving->offset;
 	FILE *stream;
-	boolean read;
 
 	if (catalog_file && catalog_file->ready && map_share_sending())
 	{
 		size = catalog_file->size;
-		stream = fopen(catalog_file->path, "rb");
+		stream = serving_stream_open(catalog_file->path);
 	}
 	else if (connection->download_file[serving->file] != NONE)
 	{
@@ -2702,9 +2767,7 @@ static boolean block_read(
 	if (!stream)
 		return FALSE;
 	*bytes = MIN(MAP_SHARE_BLOCK_BYTES, MIN(size - offset, MAP_SHARE_PIECE_BYTES - serving->offset));
-	read = fseek(stream, (long)offset, SEEK_SET) == 0 && fread(buffer, 1, *bytes, stream) == *bytes;
-	fclose(stream);
-	return read;
+	return fseek(stream, (long)offset, SEEK_SET) == 0 && fread(buffer, 1, *bytes, stream) == *bytes;
 }
 
 /* the pieces asked of this machine, a block at a time, round all the
@@ -2717,8 +2780,11 @@ static void serve_blocks(
 	long limit = upload_limit();
 	boolean sent = TRUE;
 
-	/* (the allowance: the limit a second, a quarter second of it at once) */
-	globals->upload_tokens += (long)(MIN(now - globals->upload_at, 1000UL) * (unsigned long)limit / 1000);
+	/* (the allowance: the limit a second, a quarter second of it at once;
+	the milliseconds times the bytes a second in 64 bits, which pass 32 bits
+	above 4 MB/s) */
+	globals->upload_tokens += (long)((unsigned long long)MIN(now - globals->upload_at, 1000UL) *
+		(unsigned long)limit / 1000);
 	globals->upload_tokens = MIN(globals->upload_tokens, MAX(limit / 4, MAP_SHARE_BLOCK_BYTES * 2));
 	globals->upload_at = now;
 	while (sent && globals->upload_tokens >= MAP_SHARE_BLOCK_BYTES)
@@ -2766,6 +2832,7 @@ static void serve_blocks(
 		}
 		globals->next_connection = (short)((globals->next_connection + 1) % MAXIMUM_CONNECTIONS);
 	}
+	serving_streams_close();
 }
 
 /* whether a download's file's pieces' hashes may be asked of the
@@ -2932,6 +2999,15 @@ static void connections_update(
 
 /* ---------- the client's download, each frame */
 
+/* the bytes a second of the download's last window (the bytes times a
+thousand in 64 bits, which pass 32 bits above 2 MB/s) */
+static unsigned long download_rate(
+	struct download const *download)
+{
+	return download->last_window_time ?
+		(unsigned long)((unsigned long long)download->last_window_bytes * 1000 / download->last_window_time) : 0;
+}
+
 static void download_update(
 	void)
 {
@@ -3032,8 +3108,7 @@ static void download_update(
 		}
 		download->logged_at = now;
 		error(_error_silent, "map sharing: %lu of %lu bytes, %d connections, %lu bytes a second",
-			download->done_bytes, download->total_bytes, (int)connections,
-			download->last_window_time ? download->last_window_bytes * 1000 / download->last_window_time : 0);
+			download->done_bytes, download->total_bytes, (int)connections, download_rate(download));
 	}
 	if (elapsed(download->window_at, now, RATE_WINDOW))
 	{
@@ -3579,8 +3654,7 @@ void map_share_render(
 	}
 	else
 	{
-		unsigned long rate = download->last_window_time ?
-			download->last_window_bytes * 1000 / download->last_window_time : 0;
+		unsigned long rate = download_rate(download);
 		short sources = 0;
 		short index;
 

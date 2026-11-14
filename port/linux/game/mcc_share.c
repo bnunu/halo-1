@@ -235,13 +235,14 @@ static void mcc_share_host_package_files(void *user, char const *level,
     mcc_share_package_build(level,package);
 }
 
+/* the host's limit, as map_share.c takes it (16 KB/s to 250 MB/s) */
 static uint32_t mcc_share_upload_limit(
 	void *user)
 {
 	long kilobytes = config_integer("network.map_share_upload");
 
 	(void)user;
-	return (uint32_t)PIN(kilobytes, 16, 20480) * 1024;
+	return (uint32_t)PIN(kilobytes, 16, 256000) * 1024;
 }
 
 static uint64_t mcc_share_free_bytes(

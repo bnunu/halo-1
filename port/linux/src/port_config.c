@@ -723,8 +723,8 @@ static const struct config_setting config_settings[] =
 	{ "network.map_share_upload", _config_integer, "1024", "HALO_NET_MAP_SHARE_UPLOAD", _environment_value,
 		_platform_all,
 		"Hosting: the most kilobytes a second the host sends of maps (16 to\n"
-		"20480: 20 MB/s), so that the game's own traffic keeps the rest of the\n"
-		"upload." },
+		"256000: 250 MB/s), so that the game's own traffic keeps the rest of\n"
+		"the upload." },
 	{ "network.map_seed", _config_boolean, "true", "HALO_NET_MAP_SEED", _environment_value, _platform_all,
 		"Playing in another's game: help send its map to players who join\n"
 		"without it, as a torrent's peers do (the pieces this machine has, at\n"

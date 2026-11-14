@@ -107,7 +107,16 @@ would not fit; `debug.txt` has the details.
 
 A Custom Edition campaign map has no next level: winning it ends the game
 as the campaign's last level does (alone) or plays it again (network
-co-op), and it is not the campaign's saved game.
+co-op), and it is not the campaign's saved game. A campaign whose scripts
+name the next level with `map_name` (`(map_name "c20")`) moves on to it:
+the level ends as a won one does, and the next is that Custom Edition
+campaign map (`custom_maps\c20`), alone or for every machine of a network
+co-op game (a dedicated server plays its rotation's next entry, as after
+any won level). A map's script may name no other map, and one that names no
+campaign map present does nothing (`debug.txt` says so); the console's
+`map_name` loads any map, as before (`main_script_map_name`, main.c).
+Global initializers may not change maps, including through a static script:
+the map is not ready yet. Such a call is logged and does nothing.
 
 ### From the console
 

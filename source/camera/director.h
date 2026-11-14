@@ -159,6 +159,12 @@ void director_initialize_for_saved_game(
 	void);
 void director_update(
 	real time_delta_sec);
+/* port: whether the observer films the scripts' camera for a host with no
+player of its own (a dedicated server): its network co-op clients are shown
+where the camera looks (network_coop.c), the first observer, as its first
+local player's would be */
+boolean director_unattended_scripted_camera(
+	short local_player_index);
 
 /* ---------- globals */
 
