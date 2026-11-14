@@ -1643,6 +1643,9 @@ static void install_run(uint64_t id)
 	}
 	pthread_mutex_lock(&steam.state_lock);
 	steam.cancel_download = 0;
+	/* (its progress from nothing: host_steam_install_progress) */
+	steam.done = steam.size = 0;
+	speed_reset();
 	pthread_mutex_unlock(&steam.state_lock);
 	/* (by what download_item says, not item_installed: the screen's list of
 	packages, which that asks, is looked at again only by the files thread;
@@ -2915,6 +2918,19 @@ int host_steam_install_status(void)
 	state = fetch.install_state;
 	pthread_mutex_unlock(&steam.state_lock);
 	return state;
+}
+
+/* the joiner's install's progress, in KB: done, of all (0 not yet known),
+and a second (0 not yet measured) */
+void host_steam_install_progress(unsigned int progress_address)
+{
+	uint32_t *progress = GUEST_POINTER(progress_address);
+
+	pthread_mutex_lock(&steam.state_lock);
+	progress[0] = (uint32_t)(steam.done >> 10);
+	progress[1] = (uint32_t)(steam.size >> 10);
+	progress[2] = (uint32_t)(steam.speed >> 10);
+	pthread_mutex_unlock(&steam.state_lock);
 }
 
 /* nonzero once when files were put in mcc_maps since the last ask (an

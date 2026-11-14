@@ -102,4 +102,5 @@ host_steam_shared_fetch
 host_steam_shared_state
 host_steam_install_start
 host_steam_install_status
+host_steam_install_progress
 host_steam_take_rescan

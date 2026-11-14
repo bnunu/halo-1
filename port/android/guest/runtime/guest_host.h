@@ -197,6 +197,8 @@ int host_steam_shared_state(void);
 /* a whole Workshop item installed in mcc_maps for a joiner (a package with no resource maps of its own) */
 int host_steam_install_start(unsigned int data_root, unsigned int id_low, unsigned int id_high);
 int host_steam_install_status(void);
+/* its progress, in KB: done, of all (0 not yet known), and a second */
+void host_steam_install_progress(unsigned int progress);
 /* files put in mcc_maps by the Steam downloader since the last ask (once) */
 int host_steam_take_rescan(void);
 

@@ -613,6 +613,7 @@ boolean mcc_share_game_machine_needs_map(long machine_index)
 #if defined(HALO_ANDROID)
 int host_steam_install_start(unsigned int data_root, unsigned int id_low, unsigned int id_high);
 int host_steam_install_status(void);
+void host_steam_install_progress(unsigned int progress);
 int host_steam_take_rescan(void);
 #endif
 /* the host's offer kept alive while the Workshop installs: asked again this
@@ -1064,7 +1065,31 @@ void mcc_share_game_render(
 	name = name ? name + 1 : mcc_share_globals.level;
 	percent = mcc_share_client_percent(&mcc_share_globals);
 	if (mcc_share_installing)
-		snprintf(mcc_share_text,sizeof(mcc_share_text),"Installing the map %s from the Workshop...",name);
+	{
+		/* (from the Workshop: its bytes and speed, in KB, once Steam has said how many) */
+		uint32_t progress[3] = { 0, 0, 0 };
+		char speed[32];
+
+#if defined(HALO_ANDROID)
+		host_steam_install_progress(MCC_SHARE_HOST_ADDRESS(progress));
+#endif
+		speed[0] = 0;
+		if (progress[2] >= 1024)
+			snprintf(speed, sizeof(speed), " %.1f MB/s", (double)progress[2] / 1024.0);
+		else if (progress[2])
+			snprintf(speed, sizeof(speed), " %lu KB/s", (unsigned long)progress[2]);
+		if (progress[0] > progress[1])
+			progress[0] = progress[1];
+		if (!progress[1])
+			snprintf(mcc_share_text, sizeof(mcc_share_text), "Downloading %s...", name);
+		/* (in MB past 150 MB, where kilobytes are too many digits to read) */
+		else if (progress[1] > 150 * 1024)
+			snprintf(mcc_share_text, sizeof(mcc_share_text), "Downloading %s %lu/%lu MB%s", name,
+				(unsigned long)(progress[0] / 1024), (unsigned long)(progress[1] / 1024), speed);
+		else
+			snprintf(mcc_share_text, sizeof(mcc_share_text), "Downloading %s %lu/%lu KB%s", name,
+				(unsigned long)progress[0], (unsigned long)progress[1], speed);
+	}
 	else if (mcc_share_globals.state==MCC_SHARE_CLIENT_VERIFYING)
         snprintf(mcc_share_text,sizeof(mcc_share_text),"Verifying the downloaded map %s...",name);
 	else if (percent <= 0)
