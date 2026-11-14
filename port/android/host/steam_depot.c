@@ -37,7 +37,7 @@ enum
 	MAXIMUM_CHUNK = 4 * 1024 * 1024,
 	ATTEMPTS = 4,
 	/* the wait before the next server after one refuses (401, 403) */
-	REFUSED_WAIT_MILLISECONDS = 2000,
+	REFUSED_WAIT_MILLISECONDS = 500,
 	/* how long a server that refused is left out of the turns */
 	REFUSED_SKIP_MILLISECONDS = 5 * 60 * 1000,
 	FETCHERS = 4,
@@ -270,8 +270,8 @@ static int depot_get(struct steam_http *http, uint32_t depot, char const *path, 
 					snprintf(error, (size_t)error_size, "every content server refused it (%d)", status);
 					return 0;
 				}
-				snprintf(notice, sizeof(notice), "%s refused the download (%d): trying another server in %d s.",
-					host, status, REFUSED_WAIT_MILLISECONDS / 1000);
+				snprintf(notice, sizeof(notice), "%s refused the download (%d): trying another server...",
+					host, status);
 				if (depot_notice)
 					depot_notice(notice);
 				steam_http_close(http);
