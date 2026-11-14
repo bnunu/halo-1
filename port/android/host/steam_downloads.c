@@ -2084,6 +2084,8 @@ static void row_build(int place, char *name, int name_size, char *state, int sta
 			percent_text(state, state_size);
 		else if (queue_find(-1, 0) >= 0)
 			snprintf(state, (size_t)state_size, "QUEUED");
+		else if (steam.confirm == place)
+			snprintf(state, (size_t)state_size, "DOWNLOAD AGAIN?");
 		else if (steam.files_known)
 			snprintf(state, (size_t)state_size, "%s", shared_installed() ? "INSTALLED" :
 				steam.owns_halo1 == 0 ? "NOT OWNED" : "DOWNLOAD");
@@ -2219,8 +2221,9 @@ static void details_build(int place, char *title, int title_size, char *text, in
 		else
 		{
 			shared_text(body, sizeof(body));
-			snprintf(body + strlen(body), sizeof(body) - strlen(body), "\n\nA downloads them%s.",
-				shared_installed() ? " again" : "");
+			snprintf(body + strlen(body), sizeof(body) - strlen(body), "\n\n%s",
+				!shared_installed() ? "A downloads them." : steam.confirm == place ?
+				"They are installed: A again downloads them anew." : "A downloads them again (press it twice).");
 		}
 		break;
 	case ROW_PACKAGE:
@@ -2383,6 +2386,9 @@ void steam_downloads_choose(int place)
 			steam.cancel_download = 1;
 		else if (queue_find(-1, 0) >= 0)
 			queue_remove(queue_find(-1, 0));
+		/* (installed already: downloaded again only on a second A) */
+		else if (steam.files_known && shared_installed() && confirm != place)
+			steam.confirm = place;
 		else
 			download_ask(-1, NULL);
 		break;
