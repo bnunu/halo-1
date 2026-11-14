@@ -202,7 +202,9 @@ SCREENS = {
     "network_setup": {
         "screen": "network_settings_screen",
         "header": ("header_profile_network_settings", f"{PE}/network_setup/header_profile_network_settings"),
-        "spacing": 30,
+        # (27: ten places on Android, the last clear of the help at 350, as
+        # Controller Setup's; at 30 the tenth was on it)
+        "spacing": 27,
         # (the router, the clipboard and the updates, which the web build
         # has not: the other rows from the top there)
         "platform_places": True,
@@ -412,7 +414,7 @@ _audio["categories"] = [
 SEED_UPLOADS = (64, 128, 256, 512, 1024, 2048, 4096, 8192, 10240)
 _network = SCREENS["network_setup"]
 # (and the multiplayer HUD's rows, and streamer mode, screens of their own:
-# Network Setup has room for nine places)
+# Network Setup has room for ten places, at its spacing of 27)
 _hud_settings = ("display.player_names", "display.player_name_scale", "display.scoreboard_team_layout",
                  "display.scoreboard_background")
 _hud_rows = [row for row in _network["rows"] if row[1] in _hud_settings]

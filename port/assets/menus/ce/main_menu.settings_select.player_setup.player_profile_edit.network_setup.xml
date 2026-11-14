@@ -14,20 +14,20 @@
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/options_menu" type="column_list" width="640" height="480" flags="pass_unhandled_to_focused_child up_down_tabs_children" description="main_menu/settings_select/player_setup/player_profile_edit/network_setup/help">
 		<data input="port settings help"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_online" x="54" y="73" platform="desktop android web"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_allow_upnp" x="54" y="103" platform="desktop android"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_join_from_clipboard" x="54" y="133" platform="desktop android"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_auto" x="54" y="163" platform="desktop android"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_map_sharing" x="54" y="193" platform="desktop android"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_map_sharing" x="54" y="103" platform="web"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_multiplayer_hud" x="54" y="223" platform="desktop android"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_multiplayer_hud" x="54" y="133" platform="web"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_streamer_mode" x="54" y="253" platform="desktop android"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_streamer_mode" x="54" y="163" platform="web"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_server_browser" x="54" y="283" platform="desktop android"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_server_browser" x="54" y="193" platform="web"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_discord_account" x="54" y="313" platform="desktop android"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_discord_account" x="54" y="223" platform="web"/>
-		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_steam_workshop" x="54" y="343" platform="android"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_allow_upnp" x="54" y="100" platform="desktop android"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_join_from_clipboard" x="54" y="127" platform="desktop android"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_auto" x="54" y="154" platform="desktop android"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_map_sharing" x="54" y="181" platform="desktop android"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_map_sharing" x="54" y="100" platform="web"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_multiplayer_hud" x="54" y="208" platform="desktop android"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_multiplayer_hud" x="54" y="127" platform="web"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_streamer_mode" x="54" y="235" platform="desktop android"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_streamer_mode" x="54" y="154" platform="web"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_server_browser" x="54" y="262" platform="desktop android"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_server_browser" x="54" y="181" platform="web"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_discord_account" x="54" y="289" platform="desktop android"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_discord_account" x="54" y="208" platform="web"/>
+		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/op_steam_workshop" x="54" y="316" platform="android"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/button_bar" y="414"/>
 	</widget>
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/button_bar" type="column_list" width="640" height="28" flags="pass_unhandled_to_focused_child left_right_tabs_items">
