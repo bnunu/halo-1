@@ -37,25 +37,20 @@ Steam's own client downloads Workshop items and the game finds them in place
 
 ## Joining an MCC game
 
-A joiner signed in with Steam gets a host's MCC package from Steam when the
-package is a Workshop item (`port/linux/game/mcc_share.c`,
-`steam_downloads.c`'s joiner's fetch):
-
-- **The whole item from Steam**, when the Workshop has it as the host has it:
-  installed into `mcc_maps` and checked against the host's fingerprint, with
-  no prompt, since the host is not the only source.
-- **Its resource maps from Steam**, otherwise: the package's own
-  `bitmaps.map` and `sounds.map` (most of its size) come from Steam while the
-  host sends the rest. Each is checked against the host's SHA-256, then
-  copied into the staged download, and the host is told the joiner has it,
-  as with a local copy (`MCC_SHARE_OP_HAVE`). A file that does not match is
-  the host's to send.
+A joiner signed in with Steam installs a host's MCC package from Steam when
+the package is a Workshop item (`port/linux/game/mcc_share.c`,
+`steam_downloads.c`'s joiner's install), with no prompt, since the host is
+not the only source. MCC's shared files come from Steam too when they're
+missing; no host sends them. The host's offer is kept meanwhile, so the host
+keeps counting the joiner as downloading, and the package is checked against
+the host's fingerprint once it's in. If it doesn't match, or the install
+fails, the joiner is asked to download it from the host as before.
 
 Nothing new goes between the machines, so any host takes it, and a joiner
-without a sign-in downloads from the host as before. The fingerprints the
-lobby and the host's offer need are worked out in the app's host with the
-CPU's SHA-256 and CRC32 instructions (`host_mcc_hash.c`) and kept on the
-card (`mcc_fingerprints.txt`); an item is fingerprinted as it is installed.
+without a sign-in downloads from the host. The fingerprints the lobby and the
+host's offer need are worked out in the app's host with the CPU's SHA-256 and
+CRC32 instructions (`host_mcc_hash.c`) and kept on the card
+(`mcc_fingerprints.txt`); an item is fingerprinted as it is installed.
 
 ## How it reaches Steam
 

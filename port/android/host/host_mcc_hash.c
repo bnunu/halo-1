@@ -12,7 +12,7 @@ at a time on a worker thread: a package whose bitmaps.map is 310 MB took a
 phone 30 to 60 seconds, the lobby showing its stock map the while.
 
 Here it is the host's, at the speed of the card: the CPU's SHA-256 and
-CRC32 instructions when it has them (ARMv8's; x86-64's SHA extensions), on
+CRC32 instructions when it has them (ARMv8's), on
 two threads, one reading the file and doing the CRC while the other does
 the SHA-256 of what was read. What it works out is kept on the card
 (mcc_fingerprints.txt of the data root), by each file's path, size and time,
@@ -55,9 +55,6 @@ map's checksum when asked (crc32_combine's way), so one entry serves each.
 #if defined(__ANDROID__)
 #include <sys/auxv.h>
 #endif
-#elif defined(__x86_64__)
-#include <cpuid.h>
-#include <immintrin.h>
 #endif
 
 #ifndef HOST_MCC_HASH_TEST
@@ -174,67 +171,6 @@ static void sha_blocks_arm(uint32_t state[8], unsigned char const *data, size_t 
 	}
 	vst1q_u32(state, abcd);
 	vst1q_u32(state + 4, efgh);
-}
-#endif
-
-#if defined(__x86_64__)
-/* x86-64's SHA extensions (tools/test_host_mcc_hash.py's native build) */
-__attribute__((target("sha,sse4.1,ssse3"), unused))
-static void sha_blocks_x86(uint32_t state[8], unsigned char const *data, size_t blocks)
-{
-	__m128i const mask = _mm_set_epi64x(0x0c0d0e0f08090a0bULL, 0x0405060700010203ULL);
-	__m128i tmp = _mm_loadu_si128((__m128i const *)state);
-	__m128i state1 = _mm_loadu_si128((__m128i const *)(state + 4));
-	__m128i state0;
-
-	tmp = _mm_shuffle_epi32(tmp, 0xB1);          /* CDAB */
-	state1 = _mm_shuffle_epi32(state1, 0x1B);    /* EFGH */
-	state0 = _mm_alignr_epi8(tmp, state1, 8);    /* ABEF */
-	state1 = _mm_blend_epi16(state1, tmp, 0xF0); /* CDGH */
-	while (blocks--) {
-		__m128i abef_saved = state0, cdgh_saved = state1, msg, m0, m1, m2, m3;
-		int k;
-
-		m0 = _mm_shuffle_epi8(_mm_loadu_si128((__m128i const *)data), mask);
-		m1 = _mm_shuffle_epi8(_mm_loadu_si128((__m128i const *)(data + 16)), mask);
-		m2 = _mm_shuffle_epi8(_mm_loadu_si128((__m128i const *)(data + 32)), mask);
-		m3 = _mm_shuffle_epi8(_mm_loadu_si128((__m128i const *)(data + 48)), mask);
-		for (k = 0; k < 16; k++) {
-			__m128i current = k % 4 == 0 ? m0 : k % 4 == 1 ? m1 : k % 4 == 2 ? m2 : m3;
-
-			msg = _mm_add_epi32(current, _mm_loadu_si128((__m128i const *)(sha_constants + k * 4)));
-			state1 = _mm_sha256rnds2_epu32(state1, state0, msg);
-			msg = _mm_shuffle_epi32(msg, 0x0E);
-			state0 = _mm_sha256rnds2_epu32(state0, state1, msg);
-			if (k < 12) {
-				/* the next four words of the schedule: w[i] for this group's
-				successor three groups on */
-				switch (k % 4) {
-				case 0:
-					m0 = _mm_sha256msg2_epu32(_mm_add_epi32(_mm_sha256msg1_epu32(m0, m1), _mm_alignr_epi8(m3, m2, 4)), m3);
-					break;
-				case 1:
-					m1 = _mm_sha256msg2_epu32(_mm_add_epi32(_mm_sha256msg1_epu32(m1, m2), _mm_alignr_epi8(m0, m3, 4)), m0);
-					break;
-				case 2:
-					m2 = _mm_sha256msg2_epu32(_mm_add_epi32(_mm_sha256msg1_epu32(m2, m3), _mm_alignr_epi8(m1, m0, 4)), m1);
-					break;
-				default:
-					m3 = _mm_sha256msg2_epu32(_mm_add_epi32(_mm_sha256msg1_epu32(m3, m0), _mm_alignr_epi8(m2, m1, 4)), m2);
-					break;
-				}
-			}
-		}
-		state0 = _mm_add_epi32(state0, abef_saved);
-		state1 = _mm_add_epi32(state1, cdgh_saved);
-		data += 64;
-	}
-	tmp = _mm_shuffle_epi32(state0, 0x1B);       /* FEBA */
-	state1 = _mm_shuffle_epi32(state1, 0xB1);    /* DCHG */
-	state0 = _mm_blend_epi16(tmp, state1, 0xF0); /* DCBA */
-	state1 = _mm_alignr_epi8(state1, tmp, 8);    /* ABEF -> HGFE */
-	_mm_storeu_si128((__m128i *)state, state0);
-	_mm_storeu_si128((__m128i *)(state + 4), state1);
 }
 #endif
 
@@ -378,16 +314,6 @@ static void hash_setup(void)
 		if (crc32) {
 			crc_update = crc_arm;
 			crc_kind = "ARMv8 CRC32";
-		}
-	}
-#elif defined(__x86_64__)
-	{
-		unsigned int a, b, cx, d;
-
-		if (__get_cpuid_count(7, 0, &a, &b, &cx, &d) && (b & (1u << 29)) &&
-			__get_cpuid(1, &a, &b, &cx, &d) && (cx & (1u << 19)) && (cx & (1u << 9))) {
-			sha_blocks = sha_blocks_x86;
-			sha_kind = "x86 SHA extensions";
 		}
 	}
 #endif
@@ -1015,19 +941,6 @@ static int sha256_file_sized(char const *path, unsigned char digest[32], unsigne
 		sha_end(&sha, digest);
 	if (size)
 		*size = total;
-	return ok;
-}
-
-/* a file's plain SHA-256, read a megabyte at a time (host_mcc_hash.h) */
-int host_sha256_file(char const *path, unsigned char digest[32], volatile int const *cancel)
-{
-	static unsigned char buffer[1 << 20];
-	static pthread_mutex_t buffer_lock = PTHREAD_MUTEX_INITIALIZER;
-	int ok;
-
-	pthread_mutex_lock(&buffer_lock);
-	ok = sha256_file_sized(path, digest, NULL, cancel, buffer, sizeof(buffer));
-	pthread_mutex_unlock(&buffer_lock);
 	return ok;
 }
 

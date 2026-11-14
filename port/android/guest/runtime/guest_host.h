@@ -191,14 +191,6 @@ int host_steam_picture(unsigned int key, unsigned int pixels);
 int host_steam_text_wanted(unsigned int initial, int initial_size, unsigned int secret);
 void host_steam_text_caption(int kind, unsigned int text, int text_size);
 void host_steam_text_typed(int kind, unsigned int text, int saved);
-/* a joiner's fetch of an MCC package's own bitmaps.map and sounds.map from
-the Workshop item it is, beside the host's download (steam_downloads.c):
-records of fixed-size fields (struct host_steam_fetch_file, _status there) */
-int host_steam_fetch_start(unsigned int data_root, unsigned int id_low, unsigned int id_high, unsigned int files,
-	int count);
-int host_steam_fetch_status(int index, unsigned int status);
-void host_steam_fetch_skip(int index);
-void host_steam_fetch_stop(void);
 /* MCC's shared sets (the base resources no host sends): queued when missing */
 int host_steam_shared_fetch(unsigned int data_root);
 int host_steam_shared_state(void);

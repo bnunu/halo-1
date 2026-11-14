@@ -16,9 +16,6 @@
 #define MCC_SHARE_REUSE_SLICE 0x400000u
 /* A local copy's time an update: it hashes as it copies, on the game's thread. */
 #define MCC_SHARE_REUSE_MILLISECONDS 12u
-/* The longest a file's host request is held for reuse_wait: the host gives a
- * transfer up when it has not advanced for MCC_SHARE_ACTIVE_ADVANCED. */
-#define MCC_SHARE_HOLD_LIMIT 60000u
 /* how long the last package's digests stand in for hashing it again */
 #define MCC_SHARE_HASHED_LIFETIME 600000u
 
@@ -691,27 +688,10 @@ static void client_pump(struct mcc_share *share)
         !share->outstanding) {
         struct mcc_share_file const *file=&share->stage.files[current];
         char path[1024];
-        int resource=file->kind==MCC_SHARE_FILE_BITMAPS || file->kind==MCC_SHARE_FILE_SOUNDS,found=0;
-        uint32_t now=share_now(share);
         share->reuse_checked_file=current;
         memset(path,0,sizeof(path));
-        if (resource && share->env.reuse_file) found=share->env.reuse_file(share->env.user,file,path);
-        if (resource && !found && share->env.reuse_wait) {
-            if (share->hold_file!=current) { share->hold_file=current; share->hold_since=now; }
-            if (!share_elapsed(now,share->hold_since,MCC_SHARE_HOLD_LIMIT) &&
-                share->env.reuse_wait(share->env.user,file,share->host_rate)) {
-                /* Asked again next update; the host hears from us meanwhile. */
-                share->reuse_checked_file=-1;
-                share->progress_at=now;
-                if (share_elapsed(now,share->reported_at,MCC_SHARE_OFFER_HEARTBEAT) &&
-                    client_send(share,MCC_SHARE_OP_MANIFEST,0,0,0,0)) share->reported_at=now;
-                return;
-            }
-            /* (it may have come in just as the hold ended) */
-            memset(path,0,sizeof(path));
-            found=share->env.reuse_file(share->env.user,file,path);
-        }
-        if (found) {
+        if (share->env.reuse_file && (file->kind==MCC_SHARE_FILE_BITMAPS || file->kind==MCC_SHARE_FILE_SOUNDS) &&
+            share->env.reuse_file(share->env.user,file,path)) {
             long bytes=-1;
             if (memchr(path,0,sizeof(path))) share->reuse_stream=share_open_native(share,path);
             if (share->reuse_stream && !fseek(share->reuse_stream,0,SEEK_END)) bytes=ftell(share->reuse_stream);
@@ -795,9 +775,6 @@ int mcc_share_client_begin(struct mcc_share *share, char const *level, unsigned 
     share->request_offset=0;
     share->outstanding=0;
     share->reuse_checked_file=-1;
-    share->hold_file=-1;
-    share->host_rate=share->host_rate_bytes=share->host_bytes=0;
-    share->host_rate_at=share_now(share);
     share->offer_count=share->offer_received=0;
     share->offer_total=0;
     share->state=MCC_SHARE_CLIENT_ASKING;
@@ -908,14 +885,6 @@ static void client_chunk(struct mcc_share *share, struct mcc_share_response cons
     share->outstanding--;
     result=mcc_share_stage_write(&share->stage,data,head->length);
     share->progress_at=share_now(share);
-    share->host_bytes+=head->length;
-    if (share_elapsed(share->progress_at,share->host_rate_at,1000u)) {
-        uint32_t measured=(uint32_t)((uint64_t)(share->host_bytes-share->host_rate_bytes)*1000u/
-            (share->progress_at-share->host_rate_at));
-        share->host_rate=share->host_rate ? (share->host_rate+measured)/2 : measured;
-        share->host_rate_bytes=share->host_bytes;
-        share->host_rate_at=share->progress_at;
-    }
     switch (result) {
     case MCC_SHARE_STAGE_OK:
     case MCC_SHARE_STAGE_FILE_DONE:

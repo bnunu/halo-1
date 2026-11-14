@@ -65,13 +65,6 @@ static char mcc_share_name[128];
 static unsigned char mcc_share_digest[32], mcc_share_metadata[32];
 static boolean mcc_share_prompt_pending, mcc_share_prompt_visible;
 static boolean mcc_share_prompt_download;
-/* The host's offer is in and the Workshop is being asked whether it has the
- * package's resource maps (mcc_share_offered): the download is taken without
- * asking when it does, the consent prompt shown only when the host is the
- * only source (no Steam sign-in, not a Workshop item, the Workshop's copy not
- * the host's, or no answer in MCC_SHARE_DECIDE_MS). Declined: the Workshop
- * was asked and could not, so it is not asked again for this offer. */
-static boolean mcc_share_deciding, mcc_share_workshop_declined;
 /* A package that is a Workshop item, with a Steam sign-in: its whole item
  * installed from Steam (mcc_share_install_begin), the host's offer let go, and
  * the package checked again once it is in; the level tried that way, so a
@@ -92,8 +85,6 @@ static struct mcc_validation_proof mcc_share_install_proof;
 static boolean mcc_share_install_joining;
 static unsigned long mcc_share_install_joining_at;
 #define MCC_SHARE_INSTALL_JOIN_MS 3000u
-static unsigned long mcc_share_deciding_at;
-#define MCC_SHARE_DECIDE_MS 20000u
 /* Manual guidance outlives the refused join, but never a new session. */
 static enum {
     MCC_SHARE_MANUAL_NONE,
@@ -382,7 +373,7 @@ int host_steam_shared_fetch(unsigned int data_root);
 int host_steam_shared_state(void);
 #endif
 /* MCC's shared sets asked of Steam with the download's resources
-(mcc_share_fetch_begin): the identity check reads them, so it waits for them */
+(mcc_share_shared_begin): the identity check reads them, so it waits for them */
 static int mcc_share_shared_asked;
 
 static int mcc_share_shared_pending(void)
@@ -469,230 +460,34 @@ static int mcc_share_prepare_install(void *user,struct mcc_share_stage *stage)
         mcc_workshop_wire_unpack(mcc_share_name,&item) ? &item : NULL);
 }
 
-/* ---------- the resource maps from the Workshop as well
-
-A package that is a Workshop item, joined on Android with a Steam
-sign-in: the host's own bitmaps.map and sounds.map (most of its size) are
-downloaded from the Workshop while the host sends the level's map, by the
-host's threads (port/android/host/steam_downloads.c, "a joiner's fetch").
-Each is checked there against the host's SHA-256; the session then copies a
-ready one into the staged download, checking it again, and tells the host it
-has it (MCC_SHARE_OP_HAVE), as it does with a local copy: nothing new goes
-between the machines, any host takes it. When the host's turn comes to a
-resource the Workshop has not finished, its request is held only while the
-Workshop would finish sooner (mcc_share_reuse_wait); else the host sends it. */
-
-#define MCC_SHARE_FETCH_FILES 2
-/* (steam_downloads.c's records and states) */
-struct mcc_share_fetch_file { char leaf[128]; uint32_t size; unsigned char sha256[32]; };
-struct mcc_share_fetch_status { int32_t state; uint32_t done; uint32_t size; uint32_t speed; char path[1024]; char reason[160]; };
-enum { MCC_FETCH_UNAVAILABLE=-1, MCC_FETCH_WAITING, MCC_FETCH_DOWNLOADING, MCC_FETCH_CHECKING, MCC_FETCH_READY };
-/* the Workshop's item looked up and its manifest read: longer, and the host sends them */
-#define MCC_SHARE_FETCH_LOOKUP_MS 20000u
-/* a Workshop download that has not moved for this long: the host sends it */
-#define MCC_SHARE_FETCH_STALL_MS 15000u
-/* the most a file is waited for: under the session's MCC_SHARE_HOLD_LIMIT */
-#define MCC_SHARE_FETCH_WAIT_MS 55000u
-
 #if defined(HALO_ANDROID)
-int host_steam_fetch_start(unsigned int data_root, unsigned int id_low, unsigned int id_high, unsigned int files,
-    int count);
-int host_steam_fetch_status(int index, unsigned int status);
-void host_steam_fetch_skip(int index);
-void host_steam_fetch_stop(void);
 const char *platform_data_root(void);
 #define MCC_SHARE_HOST_ADDRESS(pointer) ((unsigned int)(uintptr_t)(pointer))
+/* (the data root, as the host's Steam calls are given it) */
+static char mcc_share_steam_root[1024];
 #endif
 
-static struct {
-    int active, count;
-    struct mcc_share_fetch_file files[MCC_SHARE_FETCH_FILES];
-    int skipped[MCC_SHARE_FETCH_FILES], taken[MCC_SHARE_FETCH_FILES];
-    uint32_t last_done[MCC_SHARE_FETCH_FILES];
-    unsigned long moved_at[MCC_SHARE_FETCH_FILES];
-    unsigned long started_at;
-    uint64_t workshop_bytes;
-    char root[1024];
-    struct mcc_share_fetch_status status;
-} mcc_share_fetch;
-/* reuse_file's look at the installed packages, once a file a download */
-static struct { unsigned char sha256[32]; int known, found; char path[1024]; } mcc_share_reuse_cache[MCC_SHARE_FETCH_FILES];
-
-static int mcc_share_fetch_index(struct mcc_share_file const *file)
+/* the download accepted: MCC's shared sets queued from Steam when they are
+missing, as a host never sends them */
+static void mcc_share_shared_begin(void)
 {
-    int i;
-    for (i=0;i<mcc_share_fetch.count;i++)
-        if (mcc_share_fetch.files[i].size==file->size && !memcmp(mcc_share_fetch.files[i].sha256,file->sha256,32))
-            return i;
-    return -1;
-}
-
-/* the state of a wanted file, mcc_share_fetch.status filled */
-static int mcc_share_fetch_state(int index)
-{
-#if defined(HALO_ANDROID)
-    return host_steam_fetch_status(index,MCC_SHARE_HOST_ADDRESS(&mcc_share_fetch.status));
-#else
-    (void)index;
-    memset(&mcc_share_fetch.status,0,sizeof(mcc_share_fetch.status));
-    return MCC_FETCH_UNAVAILABLE;
-#endif
-}
-
-static void mcc_share_fetch_skip(int index,char const *why)
-{
-    if (mcc_share_fetch.skipped[index]) return;
-    mcc_share_fetch.skipped[index]=1;
-#if defined(HALO_ANDROID)
-    host_steam_fetch_skip(index);
-#endif
-    error(_error_silent,"mcc share: %s from the host (%s)",mcc_share_fetch.files[index].leaf,why);
-}
-
-static void mcc_share_fetch_end(void)
-{
-    if (!mcc_share_fetch.active) return;
-    mcc_share_fetch.active=0;
-#if defined(HALO_ANDROID)
-    host_steam_fetch_stop();
-#endif
-    error(_error_silent,"mcc share: %.1f MiB from the host, %.1f MiB from the Workshop",
-        (double)mcc_share_globals.host_bytes/(1024.0*1024.0),(double)mcc_share_fetch.workshop_bytes/(1024.0*1024.0));
-}
-
-/* the download accepted: the package's resource maps asked of the Workshop
-too, when it is an item and there is a Steam sign-in */
-static void mcc_share_fetch_begin(void)
-{
-    struct mcc_workshop_item item;
-    int i;
-    mcc_share_fetch_end();
-    memset(&mcc_share_fetch,0,sizeof(mcc_share_fetch));
-    memset(mcc_share_reuse_cache,0,sizeof(mcc_share_reuse_cache));
     mcc_share_shared_asked=0;
-    for (i=0;i<mcc_share_globals.offer_count && mcc_share_fetch.count<MCC_SHARE_FETCH_FILES;i++) {
-        struct mcc_share_file const *file=&mcc_share_globals.offer_files[i];
-        struct mcc_share_fetch_file *wanted=&mcc_share_fetch.files[mcc_share_fetch.count];
-        if (file->kind!=MCC_SHARE_FILE_BITMAPS && file->kind!=MCC_SHARE_FILE_SOUNDS) continue;
-        memcpy(wanted->leaf,file->leaf,sizeof(wanted->leaf));
-        wanted->size=file->size;
-        memcpy(wanted->sha256,file->sha256,32);
-        mcc_share_fetch.count++;
-    }
 #if defined(HALO_ANDROID)
-    /* (any package's: a host never sends MCC's base resources) */
-    snprintf(mcc_share_fetch.root,sizeof(mcc_share_fetch.root),"%s",platform_data_root());
-    mcc_share_shared_asked=host_steam_shared_fetch(MCC_SHARE_HOST_ADDRESS(mcc_share_fetch.root))==1;
+    snprintf(mcc_share_steam_root,sizeof(mcc_share_steam_root),"%s",platform_data_root());
+    mcc_share_shared_asked=host_steam_shared_fetch(MCC_SHARE_HOST_ADDRESS(mcc_share_steam_root))==1;
     if (mcc_share_shared_asked)
         error(_error_silent,"mcc share: MCC's shared files are missing here: downloading them from Steam too");
 #endif
-    if (!mcc_share_fetch.count) return;
-    if (mcc_share_workshop_declined) {
-        mcc_share_fetch.count=0;
-        return;
-    }
-    if (!mcc_workshop_wire_unpack(mcc_share_name,&item) || !item.id[0]) {
-        error(_error_silent,"mcc share: %s is not a Workshop item: all from the host",mcc_share_globals.level);
-        mcc_share_fetch.count=0;
-        return;
-    }
-#if defined(HALO_ANDROID)
-    {
-        unsigned long long id=strtoull(item.id,NULL,10);
-        snprintf(mcc_share_fetch.root,sizeof(mcc_share_fetch.root),"%s",platform_data_root());
-        if (!id || !host_steam_fetch_start(MCC_SHARE_HOST_ADDRESS(mcc_share_fetch.root),(unsigned int)id,
-            (unsigned int)(id>>32),MCC_SHARE_HOST_ADDRESS(mcc_share_fetch.files),mcc_share_fetch.count)) {
-            error(_error_silent,"mcc share: no Steam sign-in: all of %s from the host",mcc_share_globals.level);
-            mcc_share_fetch.count=0;
-            return;
-        }
-        mcc_share_fetch.active=1;
-        mcc_share_fetch.started_at=system_milliseconds();
-        for (i=0;i<mcc_share_fetch.count;i++) mcc_share_fetch.moved_at[i]=mcc_share_fetch.started_at;
-        error(_error_silent,"mcc share: %s's resource maps from Workshop item %s as well (%d)",
-            mcc_share_globals.level,item.id,mcc_share_fetch.count);
-    }
-#else
-    mcc_share_fetch.count=0;
-#endif
 }
-
-static int mcc_share_fetch_readable(int index,char const *path,uint32_t size);
 
 static int mcc_share_reuse_file(void *user,struct mcc_share_file const *file,char path[1024])
 {
     char root[1024];
     struct mcc_share_io io;
-    int index=mcc_share_fetch_index(file),slot=index>=0 ? index : -1;
     (void)user;
-    /* an installed package's verified copy first, looked for once a file
-       (the session asks each update while it holds a file) */
-    if (slot>=0 && mcc_share_reuse_cache[slot].known && !memcmp(mcc_share_reuse_cache[slot].sha256,file->sha256,32)) {
-        if (mcc_share_reuse_cache[slot].found) { memcpy(path,mcc_share_reuse_cache[slot].path,1024); return 1; }
-    } else {
-        int found;
-        platform_translate_path("d:\\mcc_maps",root,sizeof(root));
-        mcc_share_storage_native_io(&io);
-        found=mcc_share_storage_find_resource(root,&io,file,path);
-        if (slot<0) return found;
-        memcpy(mcc_share_reuse_cache[slot].sha256,file->sha256,32);
-        mcc_share_reuse_cache[slot].known=1;
-        mcc_share_reuse_cache[slot].found=found;
-        if (found) { memcpy(mcc_share_reuse_cache[slot].path,path,1024); return 1; }
-    }
-    /* the Workshop's, checked against the host's SHA-256 */
-    if (!mcc_share_fetch.active || index<0 || mcc_share_fetch.skipped[index] ||
-        mcc_share_fetch_state(index)!=MCC_FETCH_READY) return 0;
-    memset(path,0,1024);
-    snprintf(path,1024,"%s",mcc_share_fetch.status.path);
-    if (!mcc_share_fetch_readable(index,path,file->size)) { memset(path,0,1024); return 0; }
-    if (!mcc_share_fetch.taken[index]) {
-        mcc_share_fetch.taken[index]=1;
-        mcc_share_fetch.workshop_bytes+=file->size;
-        error(_error_silent,"mcc share: %s from the Workshop (%.1f MiB)",file->leaf,(double)file->size/(1024.0*1024.0));
-    }
-    return 1;
-}
-
-static int mcc_share_reuse_wait(void *user,struct mcc_share_file const *file,uint32_t host_rate)
-{
-    int index=mcc_share_fetch_index(file),state;
-    unsigned long now=system_milliseconds();
-    uint64_t remaining,workshop_ms,host_ms;
-    char why[96];
-    (void)user;
-    if (!mcc_share_fetch.active || index<0 || mcc_share_fetch.skipped[index]) return 0;
-    state=mcc_share_fetch_state(index);
-    if (state==MCC_FETCH_READY || state==MCC_FETCH_CHECKING) return 1;
-    if (state==MCC_FETCH_UNAVAILABLE) {
-        mcc_share_fetch_skip(index,mcc_share_fetch.status.reason[0] ? mcc_share_fetch.status.reason : "not on the Workshop");
-        return 0;
-    }
-    if (mcc_share_fetch.status.done!=mcc_share_fetch.last_done[index]) {
-        mcc_share_fetch.last_done[index]=mcc_share_fetch.status.done;
-        mcc_share_fetch.moved_at[index]=now;
-    }
-    if (state==MCC_FETCH_WAITING) {
-        /* (the item still being looked up: the host's turn comes to bitmaps.map
-           only after the level's map, and to sounds.map only after bitmaps.map,
-           which the Workshop downloads first) */
-        if (now-mcc_share_fetch.started_at<MCC_SHARE_FETCH_LOOKUP_MS) return 1;
-        mcc_share_fetch_skip(index,"the Workshop had not begun it");
-        return 0;
-    }
-    if (now-mcc_share_fetch.moved_at[index]>=MCC_SHARE_FETCH_STALL_MS) {
-        mcc_share_fetch_skip(index,"the Workshop's download stopped moving");
-        return 0;
-    }
-    if (!mcc_share_fetch.status.speed) return 1;
-    remaining=file->size>mcc_share_fetch.status.done ? file->size-mcc_share_fetch.status.done : 0;
-    workshop_ms=remaining*1000u/mcc_share_fetch.status.speed;
-    host_ms=host_rate ? (uint64_t)file->size*1000u/host_rate : (uint64_t)-1;
-    if (workshop_ms<=host_ms && workshop_ms<=MCC_SHARE_FETCH_WAIT_MS) return 1;
-    snprintf(why,sizeof(why),"the Workshop %llu s, the host %llu s",(unsigned long long)(workshop_ms/1000u),
-        host_rate ? (unsigned long long)(host_ms/1000u) : 0ull);
-    mcc_share_fetch_skip(index,why);
-    return 0;
+    platform_translate_path("d:\\mcc_maps",root,sizeof(root));
+    mcc_share_storage_native_io(&io);
+    return mcc_share_storage_find_resource(root,&io,file,path);
 }
 
 /* the session's reads of a package's files (the host's hashing and serving,
@@ -712,37 +507,6 @@ static FILE *mcc_share_open_native_said(char const *path)
             present ? (unsigned long)information.size_low : 0ul);
     }
     return file;
-}
-
-/* a Workshop file the session is to copy: one it can open, of the host's
-size; else the host sends it (rather than the whole download failing) */
-static int mcc_share_fetch_readable(int index,char const *path,uint32_t size)
-{
-    FILE *file=mcc_share_open_native_said(path);
-    long end=-1;
-    if (file && !fseek(file,0,SEEK_END)) end=ftell(file);
-    if (file) fclose(file);
-    if (end==(long)size) return 1;
-    if (file) error(_error_silent,"mcc share: %s is %ld bytes, not the host's %lu",path,end,(unsigned long)size);
-    mcc_share_fetch_skip(index,"the Workshop's copy could not be read here");
-    return 0;
-}
-
-/* the Workshop's part of the download, 0 to 100, or -1 when none */
-static int mcc_share_fetch_percent(void)
-{
-    uint64_t done=0,size=0;
-    int i;
-    if (!mcc_share_fetch.active) return -1;
-    for (i=0;i<mcc_share_fetch.count;i++) {
-        int state;
-        if (mcc_share_fetch.skipped[i]) continue;
-        state=mcc_share_fetch_state(i);
-        if (state==MCC_FETCH_UNAVAILABLE) continue;
-        size+=mcc_share_fetch.files[i].size;
-        done+=state>=MCC_FETCH_CHECKING ? mcc_share_fetch.files[i].size : mcc_share_fetch.status.done;
-    }
-    return size ? (int)(done*100u/size) : -1;
 }
 
 static void mcc_share_release_validation(void)
@@ -876,8 +640,8 @@ static int mcc_share_install_begin(void)
             mcc_share_globals.level);
         return 0;
     }
-    snprintf(mcc_share_fetch.root,sizeof(mcc_share_fetch.root),"%s",platform_data_root());
-    if (!host_steam_install_start(MCC_SHARE_HOST_ADDRESS(mcc_share_fetch.root),(unsigned int)id,(unsigned int)(id>>32))) {
+    snprintf(mcc_share_steam_root,sizeof(mcc_share_steam_root),"%s",platform_data_root());
+    if (!host_steam_install_start(MCC_SHARE_HOST_ADDRESS(mcc_share_steam_root),(unsigned int)id,(unsigned int)(id>>32))) {
         error(_error_silent,"mcc share: no Steam sign-in: asking the player for %s (the host's alone)",
             mcc_share_globals.level);
         return 0;
@@ -885,7 +649,7 @@ static int mcc_share_install_begin(void)
     snprintf(mcc_share_install_tried,sizeof(mcc_share_install_tried),"%s",mcc_share_globals.level);
     error(_error_silent,"mcc share: installing Workshop item %s for %s from Steam instead of the host's download",
         item.id,mcc_share_globals.level);
-    mcc_share_shared_asked=host_steam_shared_fetch(MCC_SHARE_HOST_ADDRESS(mcc_share_fetch.root))==1;
+    mcc_share_shared_asked=host_steam_shared_fetch(MCC_SHARE_HOST_ADDRESS(mcc_share_steam_root))==1;
     if (mcc_share_shared_asked)
         error(_error_silent,"mcc share: MCC's shared files are missing here: downloading them from Steam too");
     mcc_share_installing=TRUE;
@@ -1004,50 +768,12 @@ static void mcc_share_offered(void *user,uint64_t bytes,char const *credit)
         "Maps, required metadata/resources and supported previews are included.\n"
         "Your existing installation will be kept.\nMaker: %s",
         (double)bytes/(1024.0*1024.0),credit[0] ? credit : "Not provided");
-    /* The Workshop asked first (its files go to mcc_staging/steam_fetch alone
-     * until the download is taken): the prompt only when the host is the only
-     * source (mcc_share_workshop_decide). */
-    mcc_share_workshop_declined=TRUE;
     /* (an offer asked again while the Workshop installs: left waiting) */
     if ((mcc_share_installing || mcc_share_install_joining) &&
         !strcmp(mcc_share_install_tried,mcc_share_globals.level)) return;
     if (mcc_share_install_begin()) return;
     /* (the host the only source: the player asked) */
     mcc_share_prompt_pending=TRUE;
-}
-
-/* (each frame while deciding) the Workshop has the package's resource maps
-(one of them downloading, or done): the download taken without asking; none
-of them there, or no answer in time: the prompt, the host the only source */
-static void mcc_share_workshop_decide(void)
-{
-    int i,available=0,unavailable=0;
-    if (!mcc_share_deciding) return;
-    if (!mcc_share_fetch.active || mcc_share_globals.state!=MCC_SHARE_CLIENT_WAITING || !mcc_share_client_current()) {
-        mcc_share_deciding=FALSE;
-        return;
-    }
-    for (i=0;i<mcc_share_fetch.count;i++) {
-        int state=mcc_share_fetch_state(i);
-        available+=state==MCC_FETCH_DOWNLOADING || state==MCC_FETCH_CHECKING || state==MCC_FETCH_READY;
-        unavailable+=state==MCC_FETCH_UNAVAILABLE;
-    }
-    if (available) {
-        mcc_share_deciding=FALSE;
-        mcc_share_prompt_download=FALSE;
-        error(_error_silent,"mcc share: the Workshop has %s's resource maps: downloading without asking",
-            mcc_share_globals.level);
-        mcc_share_client_accept(&mcc_share_globals);
-        return;
-    }
-    if (unavailable==mcc_share_fetch.count || system_milliseconds()-mcc_share_deciding_at>=MCC_SHARE_DECIDE_MS) {
-        error(_error_silent,"mcc share: the Workshop cannot give %s's resource maps (%s): asking the player",
-            mcc_share_globals.level,unavailable==mcc_share_fetch.count ? "not there or not the host's" : "no answer");
-        mcc_share_deciding=FALSE;
-        mcc_share_workshop_declined=TRUE;
-        mcc_share_fetch_end();
-        mcc_share_prompt_pending=TRUE;
-    }
 }
 
 static int mcc_share_client_current(void)
@@ -1132,7 +858,7 @@ void mcc_share_game_prompt_action(int action)
     }
     if (!manual && action==0 && download) {
         mcc_share_prompt_download=FALSE;
-        if (mcc_share_client_accept(&mcc_share_globals)) mcc_share_fetch_begin();
+        if (mcc_share_client_accept(&mcc_share_globals)) mcc_share_shared_begin();
         return;
     }
     if (manual) {
@@ -1233,7 +959,6 @@ void mcc_share_game_update(
         env.installed_ready = mcc_share_installed_ready;
         env.prepare_install = mcc_share_prepare_install;
         env.reuse_file = mcc_share_reuse_file;
-        env.reuse_wait = mcc_share_reuse_wait;
 		env.finished = mcc_share_finished;
 		env.send_response = mcc_share_send_response;
 		env.host_package = mcc_share_host_package_files;
@@ -1296,9 +1021,7 @@ void mcc_share_game_update(
     /* (files the Steam downloader put in mcc_maps, whatever put them there) */
     if (host_steam_take_rescan()) mcc_maps_rescan();
 #endif
-    mcc_share_workshop_decide();
     mcc_share_install_update();
-    if (mcc_share_fetch.active && !mcc_share_client_busy(&mcc_share_globals)) mcc_share_fetch_end();
     if ((mcc_share_prompt_pending || mcc_share_prompt_visible) && !mcc_share_prompt_download &&
         mcc_share_manual==MCC_SHARE_MANUAL_NONE && mcc_share_client_current()) {
         /* There is no admission path without this content. Leave now rather
@@ -1344,13 +1067,8 @@ void mcc_share_game_render(
 		snprintf(mcc_share_text,sizeof(mcc_share_text),"Installing the map %s from the Workshop...",name);
 	else if (mcc_share_globals.state==MCC_SHARE_CLIENT_VERIFYING)
         snprintf(mcc_share_text,sizeof(mcc_share_text),"Verifying the downloaded map %s...",name);
-	else if (mcc_share_deciding)
-		snprintf(mcc_share_text, sizeof(mcc_share_text), "Looking for the map %s on the Workshop...", name);
 	else if (percent <= 0)
 		snprintf(mcc_share_text, sizeof(mcc_share_text), "Asking the host for the map %s...", name);
-	else if (mcc_share_fetch_percent() >= 0)
-		snprintf(mcc_share_text, sizeof(mcc_share_text), "Getting the map %s: %d%% (its resources from the Workshop: %d%%)",
-			name, percent, mcc_share_fetch_percent());
 	else
 		snprintf(mcc_share_text, sizeof(mcc_share_text), "Getting the map %s from the host: %d%%", name, percent);
 	bounds = render.camera.window_bounds;

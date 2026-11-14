@@ -97,11 +97,7 @@ host_steam_picture
 host_steam_text_wanted
 host_steam_text_caption
 host_steam_text_typed
-# a joiner's fetch of an MCC package's resource maps from the Workshop (steam_downloads.c)
-host_steam_fetch_start
-host_steam_fetch_status
-host_steam_fetch_skip
-host_steam_fetch_stop
+# a joiner's MCC package from the Workshop (steam_downloads.c)
 host_steam_shared_fetch
 host_steam_shared_state
 host_steam_install_start

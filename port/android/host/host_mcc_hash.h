@@ -19,10 +19,6 @@ The maps it did; -1 if it could not begin. */
 int host_mcc_hash_package(char const *data_root, char const *folder, volatile int const *cancel,
 	void (*progress)(unsigned long long done, unsigned long long total, void *context), void *context);
 
-/* a file's plain SHA-256 (the CPU's instructions when it has them): 1, or 0
-when it could not be read or cancel (may be NULL) became nonzero */
-int host_sha256_file(char const *path, unsigned char digest[32], volatile int const *cancel);
-
 /* the guest's (guest_host.h) */
 int host_mcc_hash_start(unsigned int request);
 int host_mcc_hash_wait(int id, int milliseconds, unsigned int result);

@@ -25,8 +25,7 @@ CASES = ["list", "admit", "manifest", "redirect", "stage_cancel", "stage_hash_an
          "reuse_missing", "reuse_backpressure", "have_fields", "done_expired", "done_cancelled",
          "verify_success", "verify_recheck", "verify_heartbeat", "verify_cancel", "verify_disconnect", "verify_timeout",
          "verify_refused", "verify_invalid", "verify_metadata_failure", "verify_receipt_failure",
-         "verify_install_failure", "verify_bind_failure", "hold_reuse", "hold_limit", "hold_declined", "window", "hashed_elsewhere",
-         "hashed_elsewhere_fails"]
+         "verify_install_failure", "verify_bind_failure", "window", "hashed_elsewhere", "hashed_elsewhere_fails"]
 
 
 @pytest.fixture(scope="module")
@@ -81,13 +80,7 @@ def test_share(share_tool, tmp_path, case):
     ("cancel(stage->check_user);", "(void)cancel;", "verify_refused"),
     ("if (share->env.installed_ready && !share->env.installed_ready(share->env.user)) {",
      "if (0) {", "verify_success"),
-    # a resource on its way from elsewhere holds the host's request for it, the host
-    # hearing from us, for at most the hold's limit; never more requests in flight
-    # than every host queues
-    ("share->env.reuse_wait(share->env.user,file,share->host_rate)) {", "0) {", "hold_reuse"),
-    ("client_send(share,MCC_SHARE_OP_MANIFEST,0,0,0,0)) share->reported_at=now;\n                return;",
-     "0) share->reported_at=now;\n                return;", "hold_reuse"),
-    ("#define MCC_SHARE_HOLD_LIMIT 60000u", "#define MCC_SHARE_HOLD_LIMIT 200000u", "hold_limit"),
+    # never more requests in flight than every host queues
     ("while (share->outstanding<MCC_SHARE_CLIENT_WINDOW &&", "while (share->outstanding<MCC_SHARE_CLIENT_WINDOW+1 &&",
      "window"),
     # a file hashed elsewhere is waited for, and its digest taken

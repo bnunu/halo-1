@@ -147,8 +147,6 @@ static struct {
     int stop_after_page;
     int check_result,check_polls,check_cancels,install_calls,install_ok,prepare_mode;
     int verify_heartbeats;
-    /* reuse_wait: its calls and answer; whether the held files have come in */
-    int wait_calls, wait_answer, reuse_ready;
     /* hash_begin's jobs: their files, polls each, cancels; a failing one */
     char hash_paths[4][1024];
     int hash_jobs, hash_polls[4], hash_cancels, hash_fail;
@@ -278,17 +276,6 @@ static int env_reuse(void *u, struct mcc_share_file const *file, char path[1024]
     W.reuse_candidates++;
     snprintf(path,1024,"%scached/%s",J,W.reuse_missing ? "missing.map" : file->leaf);
     return 1;
-}
-/* a resource on its way from elsewhere (the Workshop): not here until reuse_ready */
-static int env_reuse_late(void *u, struct mcc_share_file const *file, char path[1024])
-{
-    return W.reuse_ready ? env_reuse(u,file,path) : 0;
-}
-static int env_wait(void *u, struct mcc_share_file const *file, uint32_t host_rate)
-{
-    (void)u;(void)file;(void)host_rate;
-    W.wait_calls++;
-    return W.wait_answer;
 }
 /* a file hashed elsewhere: done on its third poll */
 static int env_hash_begin(void *u, char const *path)
@@ -1256,52 +1243,6 @@ int main(int argc,char **argv)
                 }
             }
         }
-        return 0;
-    }
-
-    if (!strcmp(argv[1],"hold_reuse") || !strcmp(argv[1],"hold_limit") || !strcmp(argv[1],"hold_declined")) {
-        char path[400],source[400];
-        unsigned char *data;
-        unsigned bytes;
-        snprintf(path,sizeof(path),"%scached",J);CHECK(io_make(path));
-        for (i=1;i<=2;i++) {
-            snprintf(source,sizeof(source),"%smcc_maps/solar_flare/%s",H,names[i]);
-            data=read_file(source,&bytes);CHECK(data);
-            snprintf(path,sizeof(path),"%scached/%s",J,names[i]);
-            CHECK(write_file(path,data,bytes));free(data);
-        }
-        W.join.env.reuse_file=env_reuse_late;
-        W.join.env.reuse_wait=env_wait;
-        W.reuse_mask=(1u<<MCC_SHARE_FILE_BITMAPS)|(1u<<MCC_SHARE_FILE_SOUNDS);
-        W.wait_answer=strcmp(argv[1],"hold_declined")!=0;
-        CHECK(mcc_share_client_begin(&W.join,LEVEL,W.digest));
-        for (i=0;i<400 && !W.wait_calls;i++) step();
-        CHECK(W.wait_calls && W.join.stage.current==1);
-        if (!strcmp(argv[1],"hold_declined")) {
-            /* the host asked at once */
-            for (i=0;i<5;i++) step();
-            CHECK(W.file_requests[1]);
-            CHECK(run_until_finished(2000) && W.finished_ok && !W.have_requests);
-            return 0;
-        }
-        /* held: nothing asked of the host for it, the host hearing from us */
-        /* (past the host's 30 s idle limit: the hold's heartbeats keep it) */
-        for (i=0;i<40;i++) { W.clock+=980; step(); }
-        CHECK(!W.file_requests[1] && !W.finished && W.host.transfers[0].used);
-        if (!strcmp(argv[1],"hold_reuse")) {
-            W.reuse_ready=1;
-            CHECK(run_until_finished(2000) && W.finished_ok);
-            CHECK(W.have_requests==2 && !W.file_requests[1] && !W.file_requests[2]);
-            for (i=0;i<5;i++) step();
-            CHECK(W.host_completions==1);
-            return 0;
-        }
-        /* never in: each file asked of the host once its hold reaches the limit,
-           the host's transfer kept the while */
-        for (i=0;i<400 && !W.finished;i++) { W.clock+=980; step(); }
-        CHECK(W.finished && W.finished_ok && W.file_requests[1] && W.file_requests[2] && !W.have_requests);
-        for (i=0;i<5;i++) step();
-        CHECK(W.host_completions==1);
         return 0;
     }
 
