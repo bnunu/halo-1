@@ -72,6 +72,10 @@ static boolean mcc_share_prompt_download;
  * host sends it. */
 static boolean mcc_share_installing;
 static char mcc_share_install_tried[64];
+/* where Steam installs it: the item's own folder (mcc_maps\<item id>\<map>),
+which the host's may not be (a package the host downloaded from another
+host is in a dl_ folder of its own) */
+static char mcc_share_install_level[64];
 /* Once it is in, the package is checked here against the host's identity, as
  * a download from the host is (mcc_share_identity_check), not by asking the
  * host for a second validation window: a host gives each machine one a join
@@ -648,8 +652,13 @@ static int mcc_share_install_begin(void)
         return 0;
     }
     snprintf(mcc_share_install_tried,sizeof(mcc_share_install_tried),"%s",mcc_share_globals.level);
-    error(_error_silent,"mcc share: installing Workshop item %s for %s from Steam instead of the host's download",
-        item.id,mcc_share_globals.level);
+    {
+        char const *leaf=strrchr(mcc_share_globals.level,'\\');
+        snprintf(mcc_share_install_level,sizeof(mcc_share_install_level),"mcc_maps\\%s\\%s",item.id,
+            leaf ? leaf+1 : mcc_share_globals.level);
+    }
+    error(_error_silent,"mcc share: installing Workshop item %s for %s from Steam (as %s) instead of the host's download",
+        item.id,mcc_share_globals.level,mcc_share_install_level);
     mcc_share_shared_asked=host_steam_shared_fetch(MCC_SHARE_HOST_ADDRESS(mcc_share_steam_root))==1;
     if (mcc_share_shared_asked)
         error(_error_silent,"mcc share: MCC's shared files are missing here: downloading them from Steam too");
@@ -723,8 +732,8 @@ static void mcc_share_install_update(void)
         mcc_maps_rescan();
         if (status>0) {
             error(_error_silent,"mcc share: %s installed from the Workshop: checking it against the host's",
-                mcc_share_install_tried);
-            mcc_share_install_check=mcc_validation_check_begin(mcc_share_install_tried,NULL);
+                mcc_share_install_level);
+            mcc_share_install_check=mcc_validation_check_begin(mcc_share_install_level,NULL);
             mcc_validation_check_expect(mcc_share_install_check,mcc_share_digest);
             if (mcc_share_install_check) return;
         }
@@ -740,9 +749,9 @@ static void mcc_share_install_update(void)
         why="is not the host's";
         if (status>0 && !memcmp(mcc_share_install_proof.digest,mcc_share_digest,32) &&
             (!game->map.version || mcc_share_install_proof.checksum==(uint32_t)game->map.version) &&
-            mcc_validation_publish(mcc_share_install_tried,&mcc_share_install_proof) &&
-            mcc_identity_accept_installed(mcc_share_name,mcc_share_digest,mcc_share_metadata,mcc_share_install_tried)) {
-            error(_error_silent,"mcc share: %s from the Workshop is the host's: joining",mcc_share_install_tried);
+            mcc_validation_publish(mcc_share_install_level,&mcc_share_install_proof) &&
+            mcc_identity_accept_installed(mcc_share_name,mcc_share_digest,mcc_share_metadata,mcc_share_install_level)) {
+            error(_error_silent,"mcc share: %s from the Workshop is the host's: joining",mcc_share_install_level);
             mcc_share_release_validation();
             mcc_share_installing=FALSE;
             mcc_share_install_joining=TRUE;
