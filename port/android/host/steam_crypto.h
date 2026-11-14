@@ -1,9 +1,8 @@
 /*
 STEAM_CRYPTO.H
 
-What the Steam client (steam_cm.c, steam_depot.c) needs of cryptography, in
-plain C for every build (the guests have no TLS or crypto library of their
-own): SHA-1 and HMAC-SHA1, AES-256 (Steam's "vector encrypted alone, then
+What the Steam client (steam_cm.c, steam_depot.c) needs of cryptography, on
+the host's Mbed TLS: SHA-1 and HMAC-SHA1, AES-256 (Steam's "vector encrypted alone, then
 CBC" layout, with and without the connection's HMAC'd vector), RSA
 encryption with OAEP and SHA-1 under the public universe's key (the
 connection's handshake), CRC-32 and base64.
@@ -17,14 +16,14 @@ None of it protects a secret of this machine's: it speaks Steam's formats.
 #include <stddef.h>
 #include <stdint.h>
 
+#include "mbedtls/aes.h"
+#include "mbedtls/sha1.h"
+
 /* ---------- SHA-1 */
 
 struct steam_sha1
 {
-	uint32_t state[5];
-	uint64_t length;
-	unsigned char block[64];
-	unsigned used;
+	mbedtls_sha1_context context;
 };
 
 void steam_sha1_begin(struct steam_sha1 *sha);
@@ -37,10 +36,8 @@ void steam_hmac_sha1(void const *key, size_t key_size, void const *data, size_t 
 
 struct steam_aes
 {
-	/* the round keys, encrypting and decrypting (FIPS 197's equivalent
-	inverse cipher) */
-	uint32_t encrypt[60];
-	uint32_t decrypt[60];
+	mbedtls_aes_context encrypt;
+	mbedtls_aes_context decrypt;
 };
 
 void steam_aes_key(struct steam_aes *aes, unsigned char const key[32]);
