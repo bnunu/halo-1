@@ -948,6 +948,8 @@ any other map. Before, the refused call disabled its whole script: the
 missions' endings (their last cutscene and level change) never ran.
 Global initializers may not change maps, even through a static script; the
 call is logged and ignored until made by a script thread or the console.
+`mcc_main_script_level_resolve` owns the same-package destination lookup;
+the shared `main_script_level_resolve` delegates only MCC level names to it.
 
 MCC scenarios may call the zero-argument, void `ai_deselect` operation through
 the MCC registry in [`mcc_scripts.c`](../port/linux/game/mcc_scripts.c).

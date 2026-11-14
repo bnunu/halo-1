@@ -408,7 +408,6 @@ symbols in this file:
 #include "custom_edition_cache.h" /* port: custom_edition_level_name */
 #include "mcc_cache.h" /* port: port/linux/game/mcc_cache.h */
 #include "mcc_main.h" /* port: port/linux/game/mcc_main.h */
-#include "mcc_maps.h" /* port: main_script_map_name, an MCC package's missions */
 #include "custom_edition_maps.h" /* port: main_script_map_name, a Custom Edition campaign's maps */
 #include "view_fov.h" /* port: display.fov, before the projection and culling */
 
@@ -960,6 +959,9 @@ static boolean main_script_level_resolve(
 
 	if (!current || !current[0] || !requested)
 		return FALSE;
+	/* port: package mission identities and lookup belong to mcc_main.c. */
+	if (mcc_level_name(current))
+		return mcc_main_script_level_resolve(current, requested, next, size);
 	for (cursor = requested; *cursor; cursor++)
 	{
 		if (*cursor == '\\' || *cursor == '/')
@@ -970,21 +972,6 @@ static boolean main_script_level_resolve(
 		length -= 4;
 	if (!length || length > 64)
 		return FALSE;
-	if (mcc_level_name(current))
-	{
-		char const *separator = strrchr(current, '\\');
-		short index;
-
-		if (!separator)
-			return FALSE;
-		snprintf(candidate, sizeof(candidate), "%.*s\\%.*s", (int)(separator - current), current, (int)length, leaf);
-		index = mcc_maps_find(candidate);
-		if (index == NONE || !mcc_maps_campaign(index) || strlen(mcc_maps_level_name(index)) >= size)
-			return FALSE;
-		csstrncpy(next, mcc_maps_level_name(index), size - 1);
-		next[size - 1] = 0;
-		return TRUE;
-	}
 	if (custom_edition_level_name(current))
 	{
 		snprintf(candidate, sizeof(candidate), "%s%.*s", CUSTOM_EDITION_LEVEL_NAME_PREFIX, (int)length, leaf);

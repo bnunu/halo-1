@@ -16,6 +16,34 @@
 #include "networking/network_game_manager.h"
 #include "../src/port_config.h"
 
+/* The script may spell a path or .map suffix, but only its last component
+ * names a mission, and it remains in the current package. */
+boolean mcc_main_script_level_resolve(char const *current, char const *requested, char *next, size_t size)
+{
+    char const *leaf = requested;
+    char const *cursor;
+    char const *separator;
+    char candidate[160];
+    size_t length;
+    short index;
+
+    if (!current || !mcc_level_name(current) || !requested || !next || !size) return FALSE;
+    separator = strrchr(current, '\\');
+    if (!separator) return FALSE;
+    for (cursor = requested; *cursor; cursor++) {
+        if (*cursor == '\\' || *cursor == '/') leaf = cursor + 1;
+    }
+    length = strlen(leaf);
+    if (length > 4 && !_stricmp(leaf + length - 4, ".map")) length -= 4;
+    if (!length || length > 64) return FALSE;
+    snprintf(candidate, sizeof(candidate), "%.*s\\%.*s", (int)(separator - current), current, (int)length, leaf);
+    index = mcc_maps_find(candidate);
+    if (index == NONE || !mcc_maps_campaign(index) || strlen(mcc_maps_level_name(index)) >= size) return FALSE;
+    csstrncpy(next, mcc_maps_level_name(index), size - 1);
+    next[size - 1] = 0;
+    return TRUE;
+}
+
 boolean mcc_main_campaign_won(char const *requested)
 {
     struct network_game *game;
