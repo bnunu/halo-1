@@ -186,6 +186,9 @@ static struct
 	int want_password;
 	int want_sign_out;
 	int want_page;
+	/* the page asked for by PREVIOUS or NEXT: its first item chosen once it
+	has come */
+	int page_jump;
 	int want_updates;
 	int cancel_sign_in;
 	char typed_account[TEXT_SIZE];
@@ -1018,9 +1021,13 @@ static void do_page(void)
 		steam.item_count = kept;
 		steam.total = total;
 		steam.message[0] = 0;
+		/* (the screen moves its focus to it: steam_update, menu_functions.c) */
+		if (steam.page_jump && kept && steam.view == VIEW_BROWSE)
+			steam.chosen = BROWSE_FILTER_ROWS;
 	}
 	else
 		snprintf(steam.message, sizeof(steam.message), "The Workshop could not be listed: %s", error);
+	steam.page_jump = 0;
 	pthread_mutex_unlock(&steam.state_lock);
 }
 
@@ -2432,12 +2439,12 @@ void steam_downloads_choose(int place)
 	case ROW_PREVIOUS:
 		steam.page--;
 		steam.want_page = 1;
-		steam.chosen = BROWSE_FILTER_ROWS;
+		steam.page_jump = 1;
 		break;
 	case ROW_NEXT:
 		steam.page++;
 		steam.want_page = 1;
-		steam.chosen = BROWSE_FILTER_ROWS;
+		steam.page_jump = 1;
 		break;
 	default:
 		break;

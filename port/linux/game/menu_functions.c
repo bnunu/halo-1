@@ -6551,6 +6551,9 @@ static struct
 	host asked for it (steam_choose): its asking, when it comes, let go */
 	boolean password_early;
 	unsigned long password_early_at;
+	/* the row chosen as last passed to the host: one the host chose since
+	(a page's first item, as the page comes) is focused */
+	short chosen_set;
 } steam_screen;
 
 static struct widget_instance *steam_row(struct widget_instance *widget)
@@ -6676,8 +6679,8 @@ static void steam_update(struct widget_instance *list)
 	first = (short)steam_screen_first();
 	chosen = (short)steam_screen_chosen();
 	count = (short)steam_screen_count();
-	/* (a list opened: its row chosen focused) */
-	if (steam_screen.list_shown != steam_screen_view())
+	/* (a list opened, or a row the host chose: that row focused) */
+	if (steam_screen.list_shown != steam_screen_view() || chosen != steam_screen.chosen_set)
 	{
 		steam_screen.list_shown = (short)steam_screen_view();
 		if (chosen < first || chosen >= first + STEAM_ROWS)
@@ -6703,6 +6706,7 @@ static void steam_update(struct widget_instance *list)
 		chosen = (short)(first + focused_index);
 	steam_screen_set_first(first);
 	steam_screen_set_chosen(chosen);
+	steam_screen.chosen_set = chosen;
 	steam_text_update(focused);
 	for (row = list->child; row; row = row->next)
 	{
@@ -6827,6 +6831,7 @@ static boolean steam_choose(struct widget_instance *widget)
 	if (place == NONE)
 		place = (short)steam_screen_chosen();
 	steam_screen_set_chosen(place);
+	steam_screen.chosen_set = place;
 	ui_play_audio_feedback_sound(SOUND_FORWARD);
 	steam_screen_choose(place);
 	return TRUE;
