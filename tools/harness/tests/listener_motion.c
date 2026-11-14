@@ -67,6 +67,9 @@ static struct scenario_cutscene_camera_point test_camera_point;
 #define TAG_BLOCK_GET_ELEMENT(block, index, type) (&test_camera_point)
 static void vectors3d_from_euler_angles3d(real_vector3d *forward, real_vector3d *up,
 	const real_vector3d *orientation) { *forward = zero; *up = zero; }
+/* the cuts the scripts make, as the frames' interpolation hears them */
+static int interpolation_cuts;
+static void render_interpolation_cut(void) { interpolation_cuts++; }
 
 #include "under_test.inc"
 
@@ -144,6 +147,31 @@ int main(int argc, char **argv)
 		p.x += 5;
 		listener_measure_velocity(0, &p, &v);
 		CHECK(v.i == 0, "director selection retained motion");
+		return 0;
+	}
+	/* a cut to another point, or out of another mode, is a new shot to the
+	frames' interpolation; the same point set again, or a point moved to over
+	time, is not */
+	CASE("interpolation-cuts")
+	{
+		camera_script_globals.mode = 0;
+		camera_script_globals.camera_point_index = -1;
+		camera_script_globals.relative_object_index = -1;
+		scripted_camera_set(3, 0, -1);
+		CHECK(interpolation_cuts == 1, "a cut out of another mode: %d", interpolation_cuts);
+		scripted_camera_set(3, 0, -1);
+		CHECK(interpolation_cuts == 1, "the same point set again: %d", interpolation_cuts);
+		scripted_camera_set(4, 0, -1);
+		CHECK(interpolation_cuts == 2, "a cut to another point: %d", interpolation_cuts);
+		scripted_camera_set(4, 0, 9);
+		CHECK(interpolation_cuts == 3, "a cut to the point relative to an object: %d", interpolation_cuts);
+		scripted_camera_set(5, 120, 9);
+		CHECK(interpolation_cuts == 3, "a move over four seconds: %d", interpolation_cuts);
+		scripted_camera_enable(FALSE);
+		CHECK(interpolation_cuts == 4, "the scripted camera turned off: %d", interpolation_cuts);
+		p.x += 1;
+		scripted_camera_set_camera_point_relative(&p, &zero, &zero, 1, 0, -1);
+		CHECK(interpolation_cuts == 4, "co-op's camera each tick: %d", interpolation_cuts);
 		return 0;
 	}
 	CASE("lifecycle")

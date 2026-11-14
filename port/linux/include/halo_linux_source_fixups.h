@@ -24,6 +24,8 @@ int halo_interpolation_enabled(void);
 float game_time_get_tick_fraction(void);
 void render_interpolation_tick(void);
 void render_interpolation_reset(void);
+/* the scripts cut to a new shot (camera_scripting.c) */
+void render_interpolation_cut(void);
 void render_interpolation_frame_begin(void);
 void render_interpolation_frame_end(void);
 float render_interpolation_fraction(void);

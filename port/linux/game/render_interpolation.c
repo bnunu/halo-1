@@ -24,6 +24,15 @@ are told apart by the weapon and its animation graph instead, since its own
 animations (a rocket launcher's melee) move further in a tick than any
 distance that would tell them from another weapon's.
 
+A cut the scripts make (a cinematic's camera set to another point at once,
+an animated camera started, the scripted camera turned on or off) is a new
+shot: the tick it comes on, the camera and every object are drawn as they
+are, not blended from the shot before. The Xbox drew that tick's frame from
+the new shot alone; blended, the camera swept between two shots too close
+together to be told for a cut (CAMERA_CUT_DISTANCE: a10's bridge, 1 to 2
+world units apart), and what the script moved for the new shot (a crewman
+put by a console, Johnson's next walk) slid there from where it stood.
+
 Particles, contrails and other effects already move every frame
 (game_frame), so they need nothing here.
 
@@ -169,6 +178,10 @@ static struct interpolated_object *interpolated_objects;
 static struct interpolated_camera interpolated_cameras[MAXIMUM_LOCAL_PLAYERS];
 static struct interpolated_first_person interpolated_first_person[MAXIMUM_LOCAL_PLAYERS];
 static long interpolation_tick;
+/* a cut the scripts made in the tick being simulated (render_interpolation_cut),
+and the latest tick a cut came on (NONE: none since the map began) */
+static boolean interpolation_cut_pending;
+static long interpolation_cut_tick = NONE;
 static long interpolation_frame;
 static boolean interpolation_rendering;
 static real interpolation_fraction = 1.0f;
@@ -468,9 +481,13 @@ void render_interpolation_tick(void)
 	struct object_iterator iterator;
 	struct object_datum *object;
 	long previous_tick = interpolation_tick++;
+	boolean cut = interpolation_cut_pending;
 
+	interpolation_cut_pending = FALSE;
 	if (!halo_interpolation_enabled())
 		return;
+	if (cut)
+		interpolation_cut_tick = interpolation_tick;
 	/* the cameras' corrections a tick on, as the objects' (below) */
 	{
 		short local_player_index;
@@ -539,9 +556,11 @@ void render_interpolation_tick(void)
 			record->node_capacity = node_count;
 			record->object_index = NONE; /* the old snapshots moved */
 		}
+		/* (none at a cut: the new shot is drawn as it is) */
 		continuing = record->object_index == iterator.index &&
 			record->node_count == node_count &&
-			record->tick == previous_tick;
+			record->tick == previous_tick &&
+			!cut;
 		if (continuing)
 		{
 			record->latest ^= 1;
@@ -591,6 +610,15 @@ void render_interpolation_reset(void)
 		interpolated_first_person[index].node_count = 0;
 		interpolated_first_person[index].has_previous = FALSE;
 	}
+	interpolation_cut_pending = FALSE;
+	interpolation_cut_tick = NONE;
+}
+
+/* the scripts cut to a new shot in the tick being simulated
+(camera_scripting.c): its snapshots are drawn as they are */
+void render_interpolation_cut(void)
+{
+	interpolation_cut_pending = TRUE;
 }
 
 /* ---------- frames */
@@ -948,7 +976,9 @@ static struct observer_result const *render_interpolation_blended_camera(
 			camera->correction = *global_zero_vector3d;
 			camera->correction_pending = *global_zero_vector3d;
 		}
-		camera->has_previous = camera->valid;
+		/* (none from before a cut the scripts made since the last snapshot) */
+		camera->has_previous = camera->valid &&
+			!(interpolation_cut_tick != NONE && interpolation_cut_tick > camera->tick);
 		camera->previous = camera->latest;
 		camera->latest = *observer;
 		/* Several ticks since the last snapshot (a long frame): the objects

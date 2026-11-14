@@ -813,6 +813,13 @@ Each frame shows the world between the last two ticks
   the same way, as it did the tick before), is mixed: a30's lifepod sheds its
   airbrakes as it falls, and the whole pod, with the camera that follows it,
   had stepped once a tick.
+- A cut the scripts make (a cinematic's camera set to another point at
+  once, an animated camera started, the scripted camera turned on or off)
+  starts a new shot: for that tick the camera and every object are drawn as
+  the tick left them, as the Xbox drew them. Mixed, the camera swept from
+  one shot to the next when they were too close to tell for a cut (the
+  Captain's bridge in a10's opening), and what the script moved for the new
+  shot slid there (Sergeant Johnson's next walk).
 - After a long frame (several ticks in one frame), the camera mixes the
   last tick only, as the objects do.
 - In cinematics, a camera that moves with an object (the lifepod in a30,
@@ -1978,6 +1985,7 @@ Other changes:
 | `game/player_queues_new.c` | When a client machine's input stops arriving, its player stands still but keeps its one-shot buttons (flashlight, action, equipment, reload) pressed. Holding them does nothing. If they were released, each one still held when the input comes back would fire a second time. |
 | `sound/game_sound.c` | The game calculates the obstruction of each sound one time for each tick, not for each frame. |
 | `effects/player_effects.c` | A camera shake or impulse is drawn as the first frame after a tick made it by every frame until the next tick, as the Xbox drew it for the tick: its full scale showed only on that first frame, an eighth of the tick at 240 frames a second, so firing shook the view a fraction as much, and the assault rifle's short kick hardly at all. |
+| `camera/camera_scripting.c` | A cut the scripts make (a camera point set at once, unless the camera is at it already, an animated camera started, the scripted camera turned on or off, a first-person or dead camera) tells the frames' interpolation (`render_interpolation_cut`), which draws that tick's camera and objects as they are, not mixed from the shot before (`display.interpolation`). |
 | `sound/sound_manager.c`, `camera/observer.c`, `camera/director.c` | The listener's velocity, which the Doppler effect takes, is the game's velocity for the camera's position as if it were fixed to the unit the camera follows (`director_get_followed_unit`, `object_get_point_velocity`), as the sounds on that unit get theirs, so that they cancel exactly, from a chase camera too, even through a network client's corrections and a turret's swing, and swinging the camera round adds nothing. With no such unit (a cinematic's camera, a flying one) it is measured from how far the focus moves from one tick to the next (`listener_measure_velocity`, `observer_get_focus_position`), and none across a jump of more than 10 world units a tick. The observer's velocity, which the game gave, is a tick's motion divided by a frame's time on the native ports, several times too fast at a high frame rate, and zero while a cinematic forces the camera, so that sounds moving with the camera rose in pitch. |
 | `sound/sound_manager.c`, `sound/sound_dsound_xbox.c` | A stereo sound in the world, panned towards where it is, is shifted by the Doppler effect as a mono one is: the game gives the mixer how fast it comes towards the listener (`dsound_port_set_channel_stereo_position`). The Xbox played stereo sounds flat; panned, without it, a Pelican's wind held its pitch while its engines' changed. The mixer applies it only with `audio.stereo_doppler`, off by default. |
 | `sound/game_sound.c`, `objects/objects.c` | A sound on an object moves as the point it is attached to does, with the spin of the object it rides (`object_get_point_velocity`), not only as the object's centre does, for the Doppler effect. The listener's velocity has the spin in it: without the sounds' too, a vehicle's own engine rose and fell in pitch for whoever rode it as it turned. |
