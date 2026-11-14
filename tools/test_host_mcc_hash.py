@@ -67,7 +67,7 @@ def check(command, tmp_path, expect_kind=None):
     for way in range(4):
         digest, crc = fingerprint(data, bitmaps if way & 1 else None, sounds if way & 2 else None, init)
         assert lines[f"way{way}"] == [digest, f"{crc:08x}"], way
-    assert (root / "mcc_fingerprints.txt").read_text().startswith("mcc fingerprints 1\n")
+    assert (root / "mcc_fingerprints.txt").read_text().startswith("mcc fingerprints 2\n")
 
 
 def build(tmp_path, compiler, *flags, threads=("-lpthread",)):
@@ -92,3 +92,23 @@ def test_arm(tmp_path):
     # (Android's threads are its libc's)
     exe = build(tmp_path, [str(NDK), "--target=aarch64-linux-android29", "-static"], threads=())
     check(["qemu-aarch64-static", "-cpu", "max", str(exe)], tmp_path, "ARMv8 SHA-256 ARMv8 CRC32")
+
+
+def test_cache_not_fooled_by_kept_times(tmp_path):
+    # (a file changed in place with its size and times put back: the cache's
+    # key must not match it, so the fingerprint is worked out again)
+    exe = build(tmp_path, ["cc"])
+    root, folder, maps, bitmaps, sounds = package(tmp_path)
+    name, data = sorted(maps.items())[1]
+    init = 0x1234abcd
+    command = [str(exe), str(root), str(folder), str(folder / name), str(folder / "bitmaps.map"),
+               str(folder / "sounds.map"), f"{init:x}"]
+    subprocess.run(command, check=True, capture_output=True)
+    before = os.stat(folder / "bitmaps.map")
+    changed = bytes([bitmaps[0] ^ 0xFF]) + bitmaps[1:]
+    (folder / "bitmaps.map").write_bytes(changed)
+    os.utime(folder / "bitmaps.map", ns=(before.st_atime_ns, before.st_mtime_ns))
+    output = subprocess.run(command, check=True, capture_output=True, text=True).stdout.split("\n")
+    lines = {line.split()[0]: line.split()[1:] for line in output if line}
+    digest, crc = fingerprint(data, changed, sounds, init)
+    assert lines["job"] == [digest, f"{crc:08x}"]

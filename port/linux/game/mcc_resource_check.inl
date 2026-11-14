@@ -154,6 +154,10 @@ struct mcc_resource_check *mcc_resources_check_begin_candidate(char const *name,
     enum mcc_cache_status status=MCC_CACHE_READ_FAILED;
     check=calloc(1,sizeof(*check));
     if (!check) return NULL;
+#if defined(HALO_ANDROID)
+    /* (no job of its own yet: a failure below must not cancel the host's job 0) */
+    check->host_job=-2;
+#endif
     if (!source || !source->read || source->size>0x7fffffffu ||
         !mcc_package_name(name,check->runtime.level_name) ||
         !source->read(source->context,0,sizeof(header),header)) goto failed;

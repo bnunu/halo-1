@@ -497,7 +497,7 @@ static long long hash_file(char const *path, unsigned type, struct sha **shas, i
 /* ---------- what is known, kept on the card */
 
 #define CACHE_FILE "mcc_fingerprints.txt"
-#define CACHE_HEADER "mcc fingerprints 1\n"
+#define CACHE_HEADER "mcc fingerprints 2\n"
 #define CACHE_LIMIT 2048
 #define KEY_SIZE 1100
 
@@ -517,20 +517,22 @@ static char known_path[1024];
 
 /* a part of a key: the file's path (lower case), size and time; 0 if it
 cannot be looked at */
+/* (a file's part of a key: its path as it is spelled, its size, its device
+and inode, and its modification and change times to the nanosecond; the
+change time is the system's, set by every write or change of the times, and
+no copy that keeps a file's times can set it back) */
 static int key_append(char *key, size_t size, char const *path)
 {
 	struct stat information;
 	size_t used = strlen(key);
-	char lowered[1024];
-	size_t i;
 
-	if (stat(path, &information) || strlen(path) >= sizeof(lowered))
+	if (stat(path, &information))
 		return 0;
-	for (i = 0; path[i]; i++)
-		lowered[i] = (char)(path[i] >= 'A' && path[i] <= 'Z' ? path[i] + 32 : path[i]);
-	lowered[i] = 0;
-	return snprintf(key + used, size - used, "%s%s,%llu,%lld", used ? "|" : "", lowered,
-		(unsigned long long)information.st_size, (long long)information.st_mtime) < (int)(size - used);
+	return snprintf(key + used, size - used, "%s%s,%llu,%llu:%llu,%lld.%09ld,%lld.%09ld", used ? "|" : "", path,
+		(unsigned long long)information.st_size, (unsigned long long)information.st_dev,
+		(unsigned long long)information.st_ino, (long long)information.st_mtim.tv_sec,
+		(long)information.st_mtim.tv_nsec, (long long)information.st_ctim.tv_sec,
+		(long)information.st_ctim.tv_nsec) < (int)(size - used);
 }
 
 /* (known_lock held) */
