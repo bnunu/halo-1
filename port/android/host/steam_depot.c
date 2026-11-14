@@ -24,6 +24,7 @@ from start to end; missing ranges (a file of zeros) are written as zeros.
 #include "steam_cm.h"
 
 #include <pthread.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,6 +36,10 @@ enum
 	MAXIMUM_MANIFEST = 64 * 1024 * 1024,
 	MAXIMUM_CHUNK = 4 * 1024 * 1024,
 	ATTEMPTS = 4,
+	/* the wait before the next server after one refuses (401, 403) */
+	REFUSED_WAIT_MILLISECONDS = 2000,
+	/* how long a server that refused is left out of the turns */
+	REFUSED_SKIP_MILLISECONDS = 5 * 60 * 1000,
 	FETCHERS = 4,
 	MANIFEST_PAYLOAD = 0x71F617D0,
 	MANIFEST_METADATA = 0x1F4812BE,
@@ -56,7 +61,35 @@ static struct
 	int count;
 	char hosts[MAXIMUM_SERVERS][128];
 	unsigned next;
-} servers = { PTHREAD_MUTEX_INITIALIZER, 0, { { 0 } }, 0 };
+	/* when each that refused (401, 403) is taken again (0: it has not) */
+	unsigned long refused_until[MAXIMUM_SERVERS];
+} servers = { PTHREAD_MUTEX_INITIALIZER, 0, { { 0 } }, 0, { 0 } };
+
+static unsigned long depot_milliseconds(void)
+{
+	struct timespec now;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return (unsigned long)now.tv_sec * 1000ul + (unsigned long)(now.tv_nsec / 1000000);
+}
+
+/* (servers.lock held) whether the server of an index is left out, having
+refused within REFUSED_SKIP_MILLISECONDS */
+static int server_skipped(int index, unsigned long now)
+{
+	return servers.refused_until[index] && (long)(servers.refused_until[index] - now) > 0;
+}
+
+/* (servers.lock held) the index of a host, or -1 */
+static int server_index(char const *host)
+{
+	int i;
+
+	for (i = 0; i < servers.count; i++)
+		if (!strcmp(servers.hosts[i], host))
+			return i;
+	return -1;
+}
 
 /* ---------- the servers */
 
@@ -135,16 +168,25 @@ int steam_depot_servers(char *error, int error_size)
 	return 1;
 }
 
+static void (*depot_notice)(char const *text);
+
+void steam_depot_set_notice(void (*notice)(char const *text))
+{
+	depot_notice = notice;
+}
+
 /* a depot's path from one of the servers, the next after a failure: over
 the kept HTTP connection (Steam's client's way), HTTPS when that fails; over
 HTTPS alone when secure (a manifest, whose chunk hashes are what the chunks
-are checked against) */
+are checked against); a server that refuses it (401, 403: some caches serve
+only some content) is left for the next, REFUSED_WAIT_MILLISECONDS later,
+until each has been asked (404: no server has it) */
 static int depot_get(struct steam_http *http, uint32_t depot, char const *path, unsigned long maximum, int secure,
 	unsigned char **body, unsigned long *size, char *error, int error_size)
 {
-	int attempt;
+	int attempt, refused = 0;
 
-	for (attempt = 0; attempt < ATTEMPTS; attempt++)
+	for (attempt = 0; attempt < ATTEMPTS + refused; attempt++)
 	{
 		char host[128];
 		char full[256];
@@ -154,15 +196,31 @@ static int depot_get(struct steam_http *http, uint32_t depot, char const *path, 
 		int got;
 
 		pthread_mutex_lock(&servers.lock);
-		/* (a connection stays with its server while it answers) */
-		if (http->host[0] && !attempt)
-			snprintf(host, sizeof(host), "%s", http->host);
-		else
 		{
-			index = servers.count ? servers.next++ % (unsigned)servers.count : 0;
-			snprintf(host, sizeof(host), "%s", servers.hosts[index]);
+			unsigned long now = depot_milliseconds();
+			int kept = http->host[0] ? server_index(http->host) : -1;
+			int tried;
+
+			host[0] = 0;
+			/* (a connection stays with its server while it answers) */
+			if (http->host[0] && !attempt && (kept < 0 || !server_skipped(kept, now)))
+				snprintf(host, sizeof(host), "%s", http->host);
+			/* (else the next in turn, past those that refused lately) */
+			for (tried = 0; !host[0] && tried < servers.count; tried++)
+			{
+				index = servers.next++ % (unsigned)servers.count;
+				if (!server_skipped((int)index, now))
+					snprintf(host, sizeof(host), "%s", servers.hosts[index]);
+			}
 		}
 		pthread_mutex_unlock(&servers.lock);
+		if (!host[0])
+		{
+			snprintf(error, (size_t)error_size, "every content server refused it");
+			return 0;
+		}
+		if (strcmp(http->host, host))
+			steam_http_close(http);
 		snprintf(full, sizeof(full), "/depot/%u/%s", (unsigned)depot, path);
 		got = !secure && steam_http_get(http, host, full, maximum, body, size, &status, error, error_size);
 		if (!got)
@@ -178,8 +236,50 @@ static int depot_get(struct steam_http *http, uint32_t depot, char const *path, 
 			*body = NULL;
 			snprintf(error, (size_t)error_size, "a content server answered %d", status);
 			steam_log("steam: %s%s: %d", host, full, status);
-			if (status == 401 || status == 403 || status == 404)
+			if (status == 404)
 				return 0;
+			if (status == 401 || status == 403)
+			{
+				char notice[256];
+				struct timespec wait;
+				int skipped = 0, left = 0, i;
+
+				/* (left out for REFUSED_SKIP_MILLISECONDS: the files after
+				this one go to the others straight away) */
+				pthread_mutex_lock(&servers.lock);
+				{
+					unsigned long now = depot_milliseconds();
+					int at = server_index(host);
+
+					if (at >= 0)
+						servers.refused_until[at] = (now + REFUSED_SKIP_MILLISECONDS) | 1;
+					for (i = 0; i < servers.count; i++)
+					{
+						if (server_skipped(i, now))
+							skipped++;
+						else
+							left++;
+					}
+				}
+				pthread_mutex_unlock(&servers.lock);
+				refused++;
+				steam_log("steam: %s left out for %d minutes (%d of %d servers now)", host,
+					REFUSED_SKIP_MILLISECONDS / 60000, skipped, skipped + left);
+				if (!left)
+				{
+					snprintf(error, (size_t)error_size, "every content server refused it (%d)", status);
+					return 0;
+				}
+				snprintf(notice, sizeof(notice), "%s refused the download (%d): trying another server in %d s.",
+					host, status, REFUSED_WAIT_MILLISECONDS / 1000);
+				if (depot_notice)
+					depot_notice(notice);
+				steam_http_close(http);
+				wait.tv_sec = REFUSED_WAIT_MILLISECONDS / 1000;
+				wait.tv_nsec = (REFUSED_WAIT_MILLISECONDS % 1000) * 1000000L;
+				nanosleep(&wait, NULL);
+				continue;
+			}
 		}
 		else
 			steam_log("steam: %s%s: %s", host, full, error);

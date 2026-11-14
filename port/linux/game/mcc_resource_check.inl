@@ -1,12 +1,71 @@
 /* The same CRC and SHA framing as the synchronous load checks, with bounded
  * slices for lobby navigation. Owns its readers and never draws or ticks game
  * state. The source stream belongs to mcc_validation and outlives this check. */
+#if defined(HALO_ANDROID)
+/* The hashing is the host's (port/android/host/host_mcc_hash.c): the CPU's
+ * SHA-256 and CRC32 instructions on two threads, and the results kept on the
+ * card, a Steam Workshop package's worked out as it was installed. The
+ * guest's addresses are the host's, passed as 32-bit numbers. */
+const char *platform_data_root(void);
+void platform_translate_path(const char *xbox_path, char *host_path, unsigned long host_path_size);
+int host_mcc_hash_start(unsigned int request);
+int host_mcc_hash_wait(int id, int milliseconds, unsigned int result);
+void host_mcc_hash_cancel(int id);
+struct mcc_host_hash_request {uint32_t data_root;uint32_t paths[3];uint32_t crc;};
+struct mcc_host_hash_result {uint32_t crc;unsigned char digest[32];};
+#endif
+
+static int mcc_resources_host_fingerprint(struct mcc_runtime *runtime,unsigned char digest[32])
+{
+#if defined(HALO_ANDROID)
+    static char paths[3][1024];
+    static struct mcc_host_hash_request request;
+    static struct mcc_host_hash_result result;
+    char xbox_path[128];
+    unsigned part;
+    int job,status;
+    memset(paths,0,sizeof(paths));
+    if (!mcc_package_map_path(runtime->level_name,xbox_path)) return 0;
+    platform_translate_path(xbox_path,paths[0],sizeof(paths[0]));
+    for (part=1;part<=2;part++) {
+        struct mcc_resource_file *resource;
+        if (!(part==1 ? runtime->report.external_bitmap_count : runtime->report.external_sound_count)) continue;
+        resource=mcc_resource_get(runtime,part);
+        if (!resource || !resource->path[0]) return 0;
+        platform_translate_path(resource->path,paths[part],sizeof(paths[part]));
+    }
+    memset(&request,0,sizeof(request));
+    request.data_root=(uint32_t)(uintptr_t)platform_data_root();
+    for (part=0;part<3;part++) request.paths[part]=paths[part][0] ? (uint32_t)(uintptr_t)paths[part] : 0;
+    job=host_mcc_hash_start((unsigned int)(uintptr_t)&request);
+    if (job<0) return 0;
+    /* (the loading screen kept alive while it waits) */
+    while (!(status=host_mcc_hash_wait(job,20,(unsigned int)(uintptr_t)&result)))
+        mcc_loading_pulse();
+    if (status<0) return 0;
+    memcpy(digest,result.digest,32);
+    return 1;
+#else
+    (void)runtime;
+    (void)digest;
+    return 0;
+#endif
+}
+
 struct mcc_resource_check {
     struct mcc_runtime runtime;
     struct mcc_sha256 hash;
     uint32_t crc, offset, size;
     unsigned type, mask;
     int framed;
+#if defined(HALO_ANDROID)
+    /* the files' paths on the host (map, bitmaps, sounds; "" not used), and
+     * the host's job (-1 none yet, -2 none: the guest hashes) */
+    char host_paths[3][1024];
+    int host_job;
+    struct mcc_host_hash_request host_request;
+    struct mcc_host_hash_result host_result;
+#endif
 };
 
 int mcc_resources_check_paths(struct mcc_resource_check const *check, char paths[2][128])
@@ -26,6 +85,9 @@ int mcc_resources_check_paths(struct mcc_resource_check const *check, char paths
 void mcc_resources_check_end(struct mcc_resource_check *check)
 {
     if (!check) return;
+#if defined(HALO_ANDROID)
+    if (check->host_job>=0) host_mcc_hash_cancel(check->host_job);
+#endif
     mcc_resources_dispose(&check->runtime);
     free(check);
 }
@@ -115,6 +177,25 @@ struct mcc_resource_check *mcc_resources_check_begin_candidate(char const *name,
     check->mask=(check->runtime.report.external_bitmap_count ? 1u : 0u) |
         (check->runtime.report.external_sound_count ? 2u : 0u);
     check->crc=check->runtime.report.identity.checksum;
+#if defined(HALO_ANDROID)
+    /* (the paths now, while a staged package's redirect holds: the worker
+     * hashes after it is cleared) */
+    check->host_job=-2;
+    {
+        char xbox_path[128];
+        unsigned part;
+        int usable=mcc_package_map_path(check->runtime.level_name,xbox_path);
+        if (usable) platform_translate_path(xbox_path,check->host_paths[0],sizeof(check->host_paths[0]));
+        for (part=1;usable && part<=2;part++) {
+            struct mcc_resources const *resources=check->runtime.resources;
+            if (!(check->mask&(1u<<(part-1)))) continue;
+            if (!resources || !resources->files[part-1].stream || !resources->files[part-1].path[0]) usable=0;
+            else platform_translate_path(resources->files[part-1].path,check->host_paths[part],
+                sizeof(check->host_paths[part]));
+        }
+        if (usable && check->host_paths[0][0]) check->host_job=-1;
+    }
+#endif
     mcc_sha256_begin(&check->hash);
     mcc_sha256_add(&check->hash,"GulchCE MCC content v1",sizeof("GulchCE MCC content v1")-1);
     return check;
@@ -140,6 +221,28 @@ int mcc_resources_check_step(struct mcc_resource_check *check, uint32_t *checksu
     uint32_t bytes,spent=0;
     unsigned long began=system_milliseconds();
     long size;
+#if defined(HALO_ANDROID)
+    /* (the host's, when it takes it: the guest's own below otherwise) */
+    if (check->host_job==-1 && !check->offset && !check->type && !check->framed) {
+        unsigned part;
+        check->host_request.data_root=(uint32_t)(uintptr_t)platform_data_root();
+        for (part=0;part<3;part++)
+            check->host_request.paths[part]=check->host_paths[part][0] ? (uint32_t)(uintptr_t)check->host_paths[part] : 0;
+        check->host_request.crc=check->crc;
+        check->host_job=host_mcc_hash_start((unsigned int)(uintptr_t)&check->host_request);
+        if (check->host_job<0) check->host_job=-2;
+    }
+    if (check->host_job>=0) {
+        int status=host_mcc_hash_wait(check->host_job,10,(unsigned int)(uintptr_t)&check->host_result);
+        if (!status) return 0;
+        check->host_job=-2;
+        if (status<0) return -1;
+        *checksum=check->host_result.crc;
+        if (!*checksum) *checksum=1;
+        memcpy(digest,check->host_result.digest,32);
+        return 1;
+    }
+#endif
     /* Bound both CPU work and bytes. No validation slices run in gameplay. */
     do {
         resource=check->type ? mcc_resource_get(&check->runtime,check->type) : NULL;

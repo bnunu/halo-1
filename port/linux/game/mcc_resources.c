@@ -292,6 +292,10 @@ static void mcc_fingerprint_file_header(struct mcc_sha256 *hash, unsigned type, 
     mcc_sha256_add(hash,header,sizeof(header));
 }
 
+/* the same fingerprint worked out by the host (mcc_resource_check.inl): 1, or 0
+when it cannot (the guest works it out then) */
+static int mcc_resources_host_fingerprint(struct mcc_runtime *runtime,unsigned char digest[32]);
+
 int mcc_resources_fingerprint(struct mcc_runtime *runtime,unsigned char digest[32])
 {
     struct mcc_sha256 hash;
@@ -301,6 +305,11 @@ int mcc_resources_fingerprint(struct mcc_runtime *runtime,unsigned char digest[3
     struct mcc_resource_file *resource;
     long size;
     if (!runtime || !runtime->source.read || runtime->source.size>0x7fffffffu) return 0;
+    /* (the host's: the CPU's SHA-256 on its threads, and known at once when its
+       files are unchanged since it last worked them out. In the guest, a slice
+       at a time in software, a 360 MB package's took 24 to 32 seconds of each
+       load of a network game) */
+    if (mcc_resources_host_fingerprint(runtime,digest)) return 1;
     mcc_sha256_begin(&hash);
     mcc_sha256_add(&hash,"GulchCE MCC content v1",sizeof("GulchCE MCC content v1")-1);
     mcc_fingerprint_file_header(&hash,0,runtime->source.size);

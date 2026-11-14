@@ -42,6 +42,10 @@ struct steam_depot_manifest
 	struct steam_depot_file *files;
 };
 
+/* what is told of a content server's refusal while another is waited for
+(steam_downloads.c shows it); NULL for nothing */
+void steam_depot_set_notice(void (*notice)(char const *text));
+
 /* the content servers' host names (asked once, then kept): 1 when there is one */
 int steam_depot_servers(char *error, int error_size);
 

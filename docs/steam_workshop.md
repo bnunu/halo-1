@@ -35,6 +35,28 @@ Steam's own client downloads Workshop items and the game finds them in place
   be reached, the sign-in is forgotten on the device only. The screen then says
   that Steam's own settings can deauthorize it.
 
+## Joining an MCC game
+
+A joiner signed in with Steam gets a host's MCC package from Steam when the
+package is a Workshop item (`port/linux/game/mcc_share.c`,
+`steam_downloads.c`'s joiner's fetch):
+
+- **The whole item from Steam**, when the Workshop has it as the host has it:
+  installed into `mcc_maps` and checked against the host's fingerprint, with
+  no prompt, since the host is not the only source.
+- **Its resource maps from Steam**, otherwise: the package's own
+  `bitmaps.map` and `sounds.map` (most of its size) come from Steam while the
+  host sends the rest. Each is checked against the host's SHA-256, then
+  copied into the staged download, and the host is told the joiner has it,
+  as with a local copy (`MCC_SHARE_OP_HAVE`). A file that does not match is
+  the host's to send.
+
+Nothing new goes between the machines, so any host takes it, and a joiner
+without a sign-in downloads from the host as before. The fingerprints the
+lobby and the host's offer need are worked out in the app's host with the
+CPU's SHA-256 and CRC32 instructions (`host_mcc_hash.c`) and kept on the
+card (`mcc_fingerprints.txt`); an item is fingerprinted as it is installed.
+
 ## How it reaches Steam
 
 - **Connection:** a TCP session with one of Steam's connection servers, found

@@ -35,12 +35,14 @@ buffers on purpose, the way snprintf is made) */
 #include "steam_depot.h"
 #include "steam_net.h"
 #include "steam_seal.h"
+#include "host_mcc_hash.h"
 #include "posix.h"
 
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 
 enum
@@ -53,6 +55,10 @@ enum
 	/* the preview pictures kept (each PREVIEW_SIDE square, 0xAARRGGBB) */
 	PREVIEWS = 12,
 	PREVIEW_SIDE = 256,
+	/* how often a download's speed is measured */
+	SPEED_MILLISECONDS = 1000,
+	/* how long a download's error stays on the screen */
+	ERROR_SHOWN_MILLISECONDS = 2000,
 	STEAM_HALO1_DEPOT = 976733,
 	TEXT_SIZE = 128,
 	/* the downloads waiting their turn behind the one under way */
@@ -204,6 +210,11 @@ static struct
 	uint64_t downloading_id;
 	uint64_t done;
 	uint64_t size;
+	/* the download's speed (bytes a second; 0 until measured), and the
+	bytes and time it was last measured from */
+	uint64_t speed;
+	uint64_t speed_bytes;
+	unsigned long speed_clock;
 	char downloading_name[96];
 	int rescan;
 	/* -1 not known, 0 no, 1 yes */
@@ -228,6 +239,11 @@ static struct
 	unsigned long session_since;
 	char files_activity[96];
 	unsigned long files_since;
+	/* a download's error, shown for ERROR_SHOWN_MILLISECONDS whatever
+	message follows it (a content server's refusal, the next download's
+	start), and gone then */
+	char held_error[256];
+	unsigned long held_until;
 
 	/* the screen's: the list shown, the hub's place kept while another is,
 	and the row whose A asked to be pressed again (-1: none) */
@@ -621,6 +637,23 @@ static void say(char const *format, char const *detail)
 	snprintf(steam.message, sizeof(steam.message), format, detail ? detail : "");
 	pthread_mutex_unlock(&steam.state_lock);
 	steam_log("steam: %s", steam.message);
+}
+
+/* a download's error: said, and kept on the screen for
+ERROR_SHOWN_MILLISECONDS at least */
+static void say_error(char const *format, char const *detail)
+{
+	say(format, detail);
+	pthread_mutex_lock(&steam.state_lock);
+	snprintf(steam.held_error, sizeof(steam.held_error), "%s", steam.message);
+	steam.held_until = steam_milliseconds() + ERROR_SHOWN_MILLISECONDS;
+	pthread_mutex_unlock(&steam.state_lock);
+}
+
+/* steam_depot.c's: a content server refused, another is tried after a wait */
+static void depot_notice(char const *text)
+{
+	say_error("%s", text);
 }
 
 static void set_state(enum session_state state)
@@ -1073,7 +1106,33 @@ static void download_progress(uint64_t done, void *context)
 
 	pthread_mutex_lock(&steam.state_lock);
 	steam.done = base + done;
+	/* (the speed over each second or more, smoothed) */
+	{
+		unsigned long now = steam_milliseconds();
+		unsigned long elapsed = now - steam.speed_clock;
+
+		if (steam.done < steam.speed_bytes)
+		{
+			steam.speed_bytes = steam.done;
+			steam.speed_clock = now;
+		}
+		else if (elapsed >= SPEED_MILLISECONDS)
+		{
+			uint64_t measured = (steam.done - steam.speed_bytes) * 1000 / elapsed;
+
+			steam.speed = steam.speed ? (steam.speed + measured) / 2 : measured;
+			steam.speed_bytes = steam.done;
+			steam.speed_clock = now;
+		}
+	}
 	pthread_mutex_unlock(&steam.state_lock);
+}
+
+/* (state_lock held) a download's start: its speed not yet known */
+static void speed_reset(void)
+{
+	steam.speed = steam.speed_bytes = 0;
+	steam.speed_clock = steam_milliseconds();
 }
 
 static int download_cancelled(void *context)
@@ -1088,13 +1147,14 @@ static int download_cancelled(void *context)
 }
 
 /* a depot's key and a manifest of it, from the session */
-static int depot_open(uint32_t depot, uint64_t manifest, unsigned char key[32], struct steam_depot_manifest *files,
-	char *error, int error_size)
+static int depot_open_shown(uint32_t depot, uint64_t manifest, unsigned char key[32], struct steam_depot_manifest *files,
+	char *error, int error_size, int shown)
 {
 	uint64_t code = 0;
 	int result = STEAM_RESULT_FAIL;
 
-	activity(1, "asking Steam for the files' key");
+	if (shown)
+		activity(1, "asking Steam for the files' key");
 	pthread_mutex_lock(&steam.session_lock);
 	if (session_ensure(error, error_size))
 	{
@@ -1112,8 +1172,15 @@ static int depot_open(uint32_t depot, uint64_t manifest, unsigned char key[32], 
 	pthread_mutex_unlock(&steam.session_lock);
 	if (!code)
 		return 0;
-	activity(1, "reading the files' list from a content server");
+	if (shown)
+		activity(1, "reading the files' list from a content server");
 	return steam_depot_manifest(depot, manifest, code, key, files, error, error_size);
+}
+
+static int depot_open(uint32_t depot, uint64_t manifest, unsigned char key[32], struct steam_depot_manifest *files,
+	char *error, int error_size)
+{
+	return depot_open_shown(depot, manifest, key, files, error, error_size, 1);
 }
 
 /* the public manifest of a depot of the app's information: 0 if none */
@@ -1178,7 +1245,7 @@ static void download_shared(void)
 		if (strstr(error, "no key"))
 			steam.owns_halo1 = 0;
 		pthread_mutex_unlock(&steam.state_lock);
-		say("The shared files could not be downloaded: %s", error);
+		say_error("The shared files could not be downloaded: %s", error);
 		return;
 	}
 	pthread_mutex_lock(&steam.state_lock);
@@ -1200,6 +1267,7 @@ static void download_shared(void)
 	pthread_mutex_lock(&steam.state_lock);
 	steam.size = total;
 	steam.done = 0;
+	speed_reset();
 	pthread_mutex_unlock(&steam.state_lock);
 	for (i = 0; i < SHARED_FILES; i++)
 	{
@@ -1218,8 +1286,8 @@ static void download_shared(void)
 		if (!steam_depot_download(STEAM_HALO1_DEPOT, key, file, path, &progress, error, sizeof(error)))
 		{
 			steam_depot_manifest_free(&files);
-			say(strcmp(error, "cancelled") ? "The shared files could not be downloaded: %s" : "The download was %s.",
-				error);
+			(strcmp(error, "cancelled") ? say_error : say)(strcmp(error, "cancelled") ?
+				"The shared files could not be downloaded: %s" : "The download was %s.", error);
 			return;
 		}
 		base += file->size;
@@ -1273,7 +1341,9 @@ static int item_path(char const *name, char *path, size_t size)
 	return 0;
 }
 
-static void download_item(struct steam_workshop_file const *item)
+static void fingerprint_progress(unsigned long long done, unsigned long long total, void *context);
+
+static int download_item(struct steam_workshop_file const *item)
 {
 	char error[256];
 	unsigned char key[32];
@@ -1291,8 +1361,8 @@ static void download_item(struct steam_workshop_file const *item)
 	steam_log("steam: downloading item %llu (%s)", (unsigned long long)item->id, item->title);
 	if (!depot_open(STEAM_APP_MCC, item->manifest, key, &files, error, sizeof(error)))
 	{
-		say("The item could not be downloaded: %s", error);
-		return;
+		say_error("The item could not be downloaded: %s", error);
+		return 0;
 	}
 	for (i = 0; i < files.file_count; i++)
 	{
@@ -1308,7 +1378,7 @@ static void download_item(struct steam_workshop_file const *item)
 	{
 		steam_depot_manifest_free(&files);
 		say("This item has no Halo 1 maps to install.%s", NULL);
-		return;
+		return 0;
 	}
 	snprintf(folder, sizeof(folder), "%llu", (unsigned long long)item->id);
 	pthread_mutex_lock(&steam.state_lock);
@@ -1319,6 +1389,7 @@ static void download_item(struct steam_workshop_file const *item)
 		snprintf(existing, sizeof(existing), "%s", package_of(item->id)->folder);
 	steam.size = total;
 	steam.done = 0;
+	speed_reset();
 	pthread_mutex_unlock(&steam.state_lock);
 	data_path(staging, sizeof(staging), "mcc_staging/steam_");
 	strncat(staging, folder, sizeof(staging) - strlen(staging) - 1);
@@ -1345,8 +1416,9 @@ static void download_item(struct steam_workshop_file const *item)
 		{
 			steam_depot_manifest_free(&files);
 			remove_tree(staging);
-			say(strcmp(error, "cancelled") ? "The item could not be downloaded: %s" : "The download was %s.", error);
-			return;
+			(strcmp(error, "cancelled") ? say_error : say)(strcmp(error, "cancelled") ?
+				"The item could not be downloaded: %s" : "The download was %s.", error);
+			return 0;
 		}
 		base += file->size;
 	}
@@ -1380,8 +1452,8 @@ static void download_item(struct steam_workshop_file const *item)
 		if (!move_folder(previous, old))
 		{
 			remove_tree(staging);
-			say("The older copy in mcc_maps/%s could not be replaced.", existing);
-			return;
+			say_error("The older copy in mcc_maps/%s could not be replaced.", existing);
+			return 0;
 		}
 	}
 	snprintf(destination, sizeof(destination), "%s/%s", root, folder);
@@ -1395,8 +1467,8 @@ static void download_item(struct steam_workshop_file const *item)
 			move_folder(old, previous);
 		}
 		remove_tree(staging);
-		say("The item could not be put in mcc_maps/%s.", folder);
-		return;
+		say_error("The item could not be put in mcc_maps/%s.", folder);
+		return 0;
 	}
 	remove_tree(old);
 	pthread_mutex_lock(&steam.state_lock);
@@ -1404,7 +1476,35 @@ static void download_item(struct steam_workshop_file const *item)
 	steam.rescan = 1;
 	pthread_mutex_unlock(&steam.state_lock);
 	installed_save();
+	/* (its maps' fingerprints now, kept on the card: the lobby then takes
+	them at once, host_mcc_hash.c) */
+	{
+		int fingerprinted;
+
+		activity(1, "fingerprinting the maps");
+		fingerprinted = host_mcc_hash_package(steam.data_root, destination, &steam.cancel_download,
+			fingerprint_progress, NULL);
+		activity(1, "");
+		if (fingerprinted < 0)
+			steam_log("steam: %s's maps were not fingerprinted", folder);
+	}
 	say("Installed in mcc_maps/%s.", folder);
+	return 1;
+}
+
+/* host_mcc_hash_package's progress, on the files thread's line (not logged) */
+static void fingerprint_progress(unsigned long long done, unsigned long long total, void *context)
+{
+	static unsigned shown = 101;
+	unsigned percent = total ? (unsigned)(done * 100 / total) : 0;
+
+	(void)context;
+	if (percent == shown)
+		return;
+	shown = percent;
+	pthread_mutex_lock(&steam.state_lock);
+	snprintf(steam.files_activity, sizeof(steam.files_activity), "fingerprinting the maps: %u%%", percent);
+	pthread_mutex_unlock(&steam.state_lock);
 }
 
 static void remove_package(char const *folder)
@@ -1495,6 +1595,325 @@ static void *files_thread(void *unused)
 			files_refresh();
 		}
 		activity(1, "");
+	}
+	return NULL;
+}
+
+
+/* ---------- a joiner's fetch of an MCC package's resource maps
+
+A player joining a game on an MCC map it lacks downloads the package from the
+host (port/linux/game/mcc_share_session.c), and the package's own bitmaps.map
+and sounds.map, most of its size, from the Workshop at once when the package
+is a Workshop item and this install has a Steam sign-in: the guest names the
+item and the resource files the host's list gives (name, size, SHA-256); this
+thread finds them in the item's manifest by name and size, downloads them to
+mcc_staging/steam_fetch, and checks each against the host's SHA-256. The
+guest then copies a ready file into its staged download (checking it again)
+and tells the host it has it (MCC_SHARE_OP_HAVE), which every host takes:
+nothing new goes between the machines. A file the host reaches first, or the
+item lacks, is the host's (host_steam_fetch_skip). */
+
+enum
+{
+	FETCH_FILES = 2,
+	FETCH_UNAVAILABLE = -1,
+	FETCH_WAITING = 0,
+	FETCH_DOWNLOADING,
+	FETCH_CHECKING,
+	FETCH_READY
+};
+
+struct fetch_file
+{
+	char leaf[128];
+	uint32_t size;
+	unsigned char sha256[32];
+	int state;
+	int skip;
+	uint64_t done;
+	uint64_t speed;
+	uint64_t speed_bytes;
+	unsigned long speed_clock;
+	char path[1024];
+};
+
+/* (state_lock) */
+static struct
+{
+	pthread_cond_t wake;
+	/* a job given and not yet taken; the stop of the last one (its files
+	deleted once the thread is free) */
+	int want;
+	int cleanup;
+	unsigned generation;
+	uint64_t id;
+	int count;
+	struct fetch_file files[FETCH_FILES];
+	char reason[160];
+	/* a whole item installed for a joiner (a package with no resource maps of
+	its own, whose level the host could only send): asked, its id, and how it
+	went (0 under way, 1 installed, -1 not) */
+	int install_want;
+	uint64_t install_id;
+	int install_state;
+} fetch = { .wake = PTHREAD_COND_INITIALIZER };
+
+struct fetch_progress
+{
+	unsigned generation;
+	int index;
+};
+
+/* (state_lock held) whether the job of a generation is over (stopped, or
+replaced by another) */
+static int fetch_over(unsigned generation)
+{
+	return fetch.generation != generation || fetch.cleanup;
+}
+
+static void fetch_progressed(uint64_t done, void *context)
+{
+	struct fetch_progress const *progress = context;
+	struct fetch_file *file;
+	unsigned long now = steam_milliseconds();
+
+	pthread_mutex_lock(&steam.state_lock);
+	if (!fetch_over(progress->generation))
+	{
+		file = &fetch.files[progress->index];
+		file->done = done;
+		if (now - file->speed_clock >= SPEED_MILLISECONDS && done >= file->speed_bytes)
+		{
+			uint64_t measured = (done - file->speed_bytes) * 1000 / (now - file->speed_clock);
+
+			file->speed = file->speed ? (file->speed + measured) / 2 : measured;
+			file->speed_bytes = done;
+			file->speed_clock = now;
+		}
+	}
+	pthread_mutex_unlock(&steam.state_lock);
+}
+
+static int fetch_cancelled(void *context)
+{
+	struct fetch_progress const *progress = context;
+	int cancelled;
+
+	pthread_mutex_lock(&steam.state_lock);
+	cancelled = fetch_over(progress->generation) || fetch.files[progress->index].skip;
+	pthread_mutex_unlock(&steam.state_lock);
+	return cancelled;
+}
+
+/* (state_lock held) a file of the job unavailable, or the whole job's,
+with why (the first reason kept) */
+static void fetch_unavailable(unsigned generation, int index, char const *reason)
+{
+	int i;
+
+	if (fetch_over(generation))
+		return;
+	for (i = 0; i < fetch.count; i++)
+		if (index < 0 || i == index)
+			fetch.files[i].state = FETCH_UNAVAILABLE;
+	if (reason && !fetch.reason[0])
+		snprintf(fetch.reason, sizeof(fetch.reason), "%s", reason);
+}
+
+static void fetch_run(unsigned generation, uint64_t id, int count, struct fetch_file const *wanted)
+{
+	char error[256];
+	char staging[1024];
+	unsigned char key[32];
+	struct steam_depot_manifest files;
+	struct steam_workshop_file item;
+	int found = 0, have, i;
+
+	data_path(staging, sizeof(staging), "mcc_staging/steam_fetch");
+	remove_tree(staging);
+	make_folders(staging, 1);
+	pthread_mutex_lock(&steam.session_lock);
+	have = steam.token[0] != 0;
+	error[0] = 0;
+	memset(&item, 0, sizeof(item));
+	if (have && session_ensure(error, sizeof(error)))
+		found = steam_cm_workshop_details(steam.cm, id, &item);
+	pthread_mutex_unlock(&steam.session_lock);
+	if (!have || !found || !item.manifest)
+	{
+		steam_log("steam fetch: item %llu: %s", (unsigned long long)id, !have ? "no Steam sign-in" :
+			error[0] ? error : "not found on the Workshop");
+		pthread_mutex_lock(&steam.state_lock);
+		fetch_unavailable(generation, -1, !have ? "no Steam sign-in" : "not on the Workshop");
+		pthread_mutex_unlock(&steam.state_lock);
+		return;
+	}
+	if (!depot_open_shown(STEAM_APP_MCC, item.manifest, key, &files, error, sizeof(error), 0))
+	{
+		steam_log("steam fetch: item %llu: %s", (unsigned long long)id, error);
+		pthread_mutex_lock(&steam.state_lock);
+		fetch_unavailable(generation, -1, error);
+		pthread_mutex_unlock(&steam.state_lock);
+		return;
+	}
+	for (i = 0; i < count; i++)
+	{
+		struct steam_depot_file const *match = NULL;
+		struct fetch_progress progress = { generation, i };
+		struct steam_depot_progress callbacks;
+		unsigned char digest[32];
+		char path[1200];
+		int j, skipped;
+
+		/* (the item's file of that name, at the package's top as the
+		importer lays it out, and of that size) */
+		for (j = 0; j < files.file_count && !match; j++)
+		{
+			char relative[260];
+
+			if (!files.files[j].directory && item_path(files.files[j].name, relative, sizeof(relative)) &&
+				!strchr(relative, '/') && !strcasecmp(relative, wanted[i].leaf) &&
+				files.files[j].size == wanted[i].size)
+				match = &files.files[j];
+		}
+		pthread_mutex_lock(&steam.state_lock);
+		skipped = fetch_over(generation) || fetch.files[i].skip;
+		if (!match)
+			fetch_unavailable(generation, i, "the Workshop's copy differs from the host's");
+		else if (!skipped)
+		{
+			fetch.files[i].state = FETCH_DOWNLOADING;
+			fetch.files[i].speed_clock = steam_milliseconds();
+		}
+		pthread_mutex_unlock(&steam.state_lock);
+		if (fetch_over(generation))
+			break;
+		if (!match || skipped)
+		{
+			steam_log("steam fetch: item %llu: %s %s", (unsigned long long)id, wanted[i].leaf,
+				!match ? "is not the host's size on the Workshop" : "is the host's to send");
+			continue;
+		}
+		snprintf(path, sizeof(path), "%s/%s", staging, wanted[i].leaf);
+		callbacks.progress = fetch_progressed;
+		callbacks.cancelled = fetch_cancelled;
+		callbacks.context = &progress;
+		if (!steam_depot_download(STEAM_APP_MCC, key, match, path, &callbacks, error, sizeof(error)))
+		{
+			remove(path);
+			steam_log("steam fetch: item %llu: %s: %s", (unsigned long long)id, wanted[i].leaf, error);
+			pthread_mutex_lock(&steam.state_lock);
+			fetch_unavailable(generation, i, strcmp(error, "cancelled") ? error : NULL);
+			pthread_mutex_unlock(&steam.state_lock);
+			continue;
+		}
+		pthread_mutex_lock(&steam.state_lock);
+		if (!fetch_over(generation))
+			fetch.files[i].state = FETCH_CHECKING;
+		pthread_mutex_unlock(&steam.state_lock);
+		if (!host_sha256_file(path, digest, NULL) || memcmp(digest, wanted[i].sha256, 32))
+		{
+			remove(path);
+			steam_log("steam fetch: item %llu: %s is not the host's (SHA-256)", (unsigned long long)id,
+				wanted[i].leaf);
+			pthread_mutex_lock(&steam.state_lock);
+			fetch_unavailable(generation, i, "the Workshop's copy differs from the host's");
+			pthread_mutex_unlock(&steam.state_lock);
+			continue;
+		}
+		steam_log("steam fetch: item %llu: %s from the Workshop, the host's", (unsigned long long)id,
+			wanted[i].leaf);
+		pthread_mutex_lock(&steam.state_lock);
+		if (!fetch_over(generation))
+		{
+			fetch.files[i].state = FETCH_READY;
+			fetch.files[i].done = wanted[i].size;
+			snprintf(fetch.files[i].path, sizeof(fetch.files[i].path), "%s", path);
+		}
+		pthread_mutex_unlock(&steam.state_lock);
+	}
+	steam_depot_manifest_free(&files);
+}
+
+/* a whole Workshop item installed in mcc_maps, as the screen's DOWNLOAD
+installs it (download_item: its maps fingerprinted then too) */
+static void install_run(uint64_t id)
+{
+	char error[256];
+	struct steam_workshop_file item;
+	int found = 0, have, installed;
+
+	pthread_mutex_lock(&steam.session_lock);
+	have = steam.token[0] != 0;
+	error[0] = 0;
+	memset(&item, 0, sizeof(item));
+	if (have && session_ensure(error, sizeof(error)))
+		found = steam_cm_workshop_details(steam.cm, id, &item);
+	pthread_mutex_unlock(&steam.session_lock);
+	if (!have || !found || !item.manifest)
+	{
+		steam_log("steam install: item %llu: %s", (unsigned long long)id, !have ? "no Steam sign-in" :
+			error[0] ? error : "not found on the Workshop");
+		pthread_mutex_lock(&steam.state_lock);
+		fetch.install_state = -1;
+		pthread_mutex_unlock(&steam.state_lock);
+		return;
+	}
+	pthread_mutex_lock(&steam.state_lock);
+	steam.cancel_download = 0;
+	pthread_mutex_unlock(&steam.state_lock);
+	/* (by what download_item says, not item_installed: the screen's list of
+	packages, which that asks, is looked at again only by the files thread;
+	nor by the item's record alone, which a folder removed by hand leaves) */
+	installed = download_item(&item);
+	pthread_mutex_lock(&steam.state_lock);
+	fetch.install_state = installed ? 1 : -1;
+	steam.rescan = 1;
+	pthread_mutex_unlock(&steam.state_lock);
+	steam_log("steam install: item %llu (%s): %s", (unsigned long long)id, item.title,
+		installed ? "installed" : "not installed");
+}
+
+static void *fetch_thread(void *unused)
+{
+	(void)unused;
+	for (;;)
+	{
+		struct fetch_file wanted[FETCH_FILES];
+		unsigned generation;
+		uint64_t id;
+		int count, cleanup;
+
+		pthread_mutex_lock(&steam.state_lock);
+		while (!fetch.want && !fetch.cleanup && !fetch.install_want)
+			pthread_cond_wait(&fetch.wake, &steam.state_lock);
+		if (fetch.install_want)
+		{
+			uint64_t install_id = fetch.install_id;
+
+			fetch.install_want = 0;
+			pthread_mutex_unlock(&steam.state_lock);
+			install_run(install_id);
+			continue;
+		}
+		cleanup = fetch.cleanup && !fetch.want;
+		fetch.cleanup = 0;
+		generation = fetch.generation;
+		id = fetch.id;
+		count = fetch.count;
+		memcpy(wanted, fetch.files, sizeof(wanted));
+		fetch.want = 0;
+		pthread_mutex_unlock(&steam.state_lock);
+		if (cleanup)
+		{
+			char staging[1024];
+
+			data_path(staging, sizeof(staging), "mcc_staging/steam_fetch");
+			remove_tree(staging);
+			continue;
+		}
+		fetch_run(generation, id, count, wanted);
 	}
 	return NULL;
 }
@@ -1671,15 +2090,15 @@ static void view_open(enum view view)
 	wake();
 }
 
-void steam_downloads_open(char const *data_root)
+static void *fetch_thread(void *unused);
+
+/* the threads started and the saved sign-in read, once: by the screen's
+opening, or by a joiner's fetch of an MCC package's resources (below) */
+static void threads_start(char const *data_root)
 {
-	int start = 0;
+	int start;
 
 	pthread_mutex_lock(&steam.state_lock);
-	steam.open = 1;
-	steam.view = VIEW_HOME;
-	steam.confirm = -1;
-	steam.first = steam.chosen = steam.home_first = steam.home_chosen = 0;
 	start = !steam.threads_started;
 	steam.threads_started = 1;
 	pthread_mutex_unlock(&steam.state_lock);
@@ -1688,6 +2107,7 @@ void steam_downloads_open(char const *data_root)
 		pthread_t thread;
 		char root[1024];
 
+		steam_depot_set_notice(depot_notice);
 		/* (once, before the threads: the files read here are the threads' after) */
 		snprintf(steam.data_root, sizeof(steam.data_root), "%s", data_root);
 		mcc_root_find(root, sizeof(root));
@@ -1706,8 +2126,19 @@ void steam_downloads_open(char const *data_root)
 			pthread_detach(thread);
 		if (pthread_create(&thread, NULL, preview_thread, NULL) == 0)
 			pthread_detach(thread);
+		if (pthread_create(&thread, NULL, fetch_thread, NULL) == 0)
+			pthread_detach(thread);
 	}
+}
+
+void steam_downloads_open(char const *data_root)
+{
+	threads_start(data_root);
 	pthread_mutex_lock(&steam.state_lock);
+	steam.open = 1;
+	steam.view = VIEW_HOME;
+	steam.confirm = -1;
+	steam.first = steam.chosen = steam.home_first = steam.home_chosen = 0;
 	if (steam.state == SESSION_OUT && steam.token[0])
 		steam.want_resume = 1;
 	steam.want_refresh = 1;
@@ -1840,7 +2271,19 @@ static void progress_text(char *text, int size)
 	}
 	size_text(steam.done, done, sizeof(done));
 	size_text(steam.size, total, sizeof(total));
-	snprintf(text, (size_t)size, "%s of %s. A cancels.", done, total);
+	if (steam.speed)
+	{
+		char speed[32];
+
+		/* (to a tenth of a megabyte) */
+		if (steam.speed >= 1024 * 1024)
+			snprintf(speed, sizeof(speed), "%.1f MB", (double)steam.speed / (1024.0 * 1024));
+		else
+			snprintf(speed, sizeof(speed), "%.0f KB", (double)steam.speed / 1024.0);
+		snprintf(text, (size_t)size, "%s of %s (%s/s). A cancels.", done, total, speed);
+	}
+	else
+		snprintf(text, (size_t)size, "%s of %s. A cancels.", done, total);
 	if (steam.queue_count)
 	{
 		size_t used = strlen(text);
@@ -2161,6 +2604,18 @@ static void details_build(int place, char *title, int title_size, char *text, in
 		unsigned long now = steam_milliseconds();
 
 		text[0] = 0;
+		/* (a download's error goes once its time is up: from the message too,
+		if nothing has taken its place) */
+		if (steam.held_error[0] && (long)(steam.held_until - now) <= 0)
+		{
+			if (!strcmp(steam.message, steam.held_error))
+				steam.message[0] = 0;
+			steam.held_error[0] = 0;
+		}
+		/* (a download's error first while it is held, if another message
+		has taken its place) */
+		if (steam.held_error[0] && (long)(steam.held_until - now) > 0 && strcmp(steam.held_error, steam.message))
+			snprintf(text, (size_t)text_size, "%s\n", steam.held_error);
 		if (steam.message[0])
 		{
 			used = strlen(text);
@@ -2612,4 +3067,223 @@ void host_steam_text_caption(int kind, unsigned int text, int text_size)
 void host_steam_text_typed(int kind, unsigned int text, int saved)
 {
 	steam_downloads_text_typed(kind, GUEST_POINTER(text), saved);
+}
+
+/* a joiner's fetch (above): the guest's records, of fixed-size fields alone
+(its addresses are 32-bit, the host's 64) */
+struct host_steam_fetch_file
+{
+	char leaf[128];
+	uint32_t size;
+	unsigned char sha256[32];
+};
+
+struct host_steam_fetch_status
+{
+	int32_t state;
+	uint32_t done;
+	uint32_t size;
+	uint32_t speed;
+	char path[1024];
+	char reason[160];
+};
+
+/* the item (its id as two halves, low first) and the resource files wanted
+of it, in the host's order: 1 begun, 0 when there is no Steam sign-in to
+fetch with (the host sends them all) */
+int host_steam_fetch_start(unsigned int data_root, unsigned int id_low, unsigned int id_high, unsigned int files_address,
+	int count)
+{
+	struct host_steam_fetch_file const *files = GUEST_POINTER(files_address);
+	int have, i;
+
+	if (count < 1 || count > FETCH_FILES)
+		return 0;
+	threads_start((char const *)GUEST_POINTER(data_root));
+	pthread_mutex_lock(&steam.session_lock);
+	have = steam.token[0] != 0;
+	pthread_mutex_unlock(&steam.session_lock);
+	if (!have)
+		return 0;
+	pthread_mutex_lock(&steam.state_lock);
+	fetch.generation++;
+	fetch.id = (uint64_t)id_low | (uint64_t)id_high << 32;
+	fetch.count = count;
+	fetch.reason[0] = 0;
+	memset(fetch.files, 0, sizeof(fetch.files));
+	for (i = 0; i < count; i++)
+	{
+		memcpy(fetch.files[i].leaf, files[i].leaf, sizeof(fetch.files[i].leaf));
+		fetch.files[i].leaf[sizeof(fetch.files[i].leaf) - 1] = 0;
+		fetch.files[i].size = files[i].size;
+		memcpy(fetch.files[i].sha256, files[i].sha256, 32);
+		fetch.files[i].state = FETCH_WAITING;
+	}
+	fetch.want = 1;
+	fetch.cleanup = 0;
+	pthread_cond_signal(&fetch.wake);
+	pthread_mutex_unlock(&steam.state_lock);
+	steam_log("steam fetch: item %llu: %d resource maps asked of the Workshop", (unsigned long long)fetch.id, count);
+	return 1;
+}
+
+/* a wanted file's state (FETCH_*), and the record filled */
+int host_steam_fetch_status(int index, unsigned int status_address)
+{
+	struct host_steam_fetch_status *status = GUEST_POINTER(status_address);
+	int state;
+
+	memset(status, 0, sizeof(*status));
+	pthread_mutex_lock(&steam.state_lock);
+	if (index < 0 || index >= fetch.count)
+	{
+		pthread_mutex_unlock(&steam.state_lock);
+		status->state = FETCH_UNAVAILABLE;
+		return FETCH_UNAVAILABLE;
+	}
+	state = status->state = fetch.files[index].state;
+	status->done = (uint32_t)fetch.files[index].done;
+	status->size = fetch.files[index].size;
+	status->speed = (uint32_t)(fetch.files[index].speed > 0xFFFFFFFFu ? 0xFFFFFFFFu : fetch.files[index].speed);
+	if (state == FETCH_READY)
+		snprintf(status->path, sizeof(status->path), "%s", fetch.files[index].path);
+	snprintf(status->reason, sizeof(status->reason), "%s", fetch.reason);
+	pthread_mutex_unlock(&steam.state_lock);
+	return state;
+}
+
+/* the host sends this one: not fetched, or its download stopped */
+void host_steam_fetch_skip(int index)
+{
+	pthread_mutex_lock(&steam.state_lock);
+	if (index >= 0 && index < fetch.count)
+	{
+		fetch.files[index].skip = 1;
+		if (fetch.files[index].state != FETCH_READY)
+			fetch.files[index].state = FETCH_UNAVAILABLE;
+	}
+	pthread_mutex_unlock(&steam.state_lock);
+}
+
+/* the download over (installed, failed or cancelled): the job stopped and
+its files deleted */
+void host_steam_fetch_stop(void)
+{
+	pthread_mutex_lock(&steam.state_lock);
+	if (fetch.count)
+	{
+		fetch.generation++;
+		fetch.count = 0;
+		fetch.want = 0;
+		fetch.cleanup = 1;
+		pthread_cond_signal(&fetch.wake);
+	}
+	pthread_mutex_unlock(&steam.state_lock);
+}
+
+/* (state_lock held) whether a file of MCC's shared sets is missing from mcc_maps */
+static int shared_missing(void)
+{
+	int i;
+
+	for (i = 0; i < SHARED_FILES; i++)
+	{
+		char path[1200];
+		int directory = 0;
+
+		snprintf(path, sizeof(path), "%s/%s/%s", steam.root, shared_files[i].folder, shared_files[i].name);
+		if (!path_exists(path, &directory) || directory)
+			return 1;
+	}
+	return 0;
+}
+
+/* MCC's shared sets for a joiner's fetch (the base resources a host never
+sends): 0 here already, 1 downloading or queued (queued now when missing),
+-1 no Steam sign-in to fetch them with */
+int host_steam_shared_fetch(unsigned int data_root)
+{
+	int have, state;
+
+	threads_start((char const *)GUEST_POINTER(data_root));
+	pthread_mutex_lock(&steam.session_lock);
+	have = steam.token[0] != 0;
+	pthread_mutex_unlock(&steam.session_lock);
+	pthread_mutex_lock(&steam.state_lock);
+	if (!steam.threads_started)
+		state = -1;
+	else if (steam.downloading < 0 || queue_find(-1, 0) >= 0)
+		state = 1;
+	else if (!shared_missing())
+		state = 0;
+	else if (!have || steam.queue_count == DOWNLOAD_QUEUE)
+		state = -1;
+	else
+	{
+		download_ask(-1, NULL);
+		pthread_cond_signal(&steam.files_wake);
+		steam_log("steam fetch: MCC's shared files are missing: downloading them");
+		state = 1;
+	}
+	pthread_mutex_unlock(&steam.state_lock);
+	return state;
+}
+
+/* the same, without queueing: 0 here, 1 downloading or queued, -1 missing */
+int host_steam_shared_state(void)
+{
+	int state;
+
+	pthread_mutex_lock(&steam.state_lock);
+	state = !steam.threads_started ? -1 : steam.downloading < 0 || queue_find(-1, 0) >= 0 ? 1 :
+		shared_missing() ? -1 : 0;
+	pthread_mutex_unlock(&steam.state_lock);
+	return state;
+}
+
+/* a whole Workshop item installed in mcc_maps for a joiner (its id as two
+halves, low first): 1 begun, 0 when there is no Steam sign-in */
+int host_steam_install_start(unsigned int data_root, unsigned int id_low, unsigned int id_high)
+{
+	int have;
+
+	threads_start((char const *)GUEST_POINTER(data_root));
+	pthread_mutex_lock(&steam.session_lock);
+	have = steam.token[0] != 0;
+	pthread_mutex_unlock(&steam.session_lock);
+	if (!have)
+		return 0;
+	pthread_mutex_lock(&steam.state_lock);
+	fetch.install_id = (uint64_t)id_low | (uint64_t)id_high << 32;
+	fetch.install_state = 0;
+	fetch.install_want = 1;
+	pthread_cond_signal(&fetch.wake);
+	pthread_mutex_unlock(&steam.state_lock);
+	return 1;
+}
+
+/* 0 under way, 1 installed, -1 not */
+int host_steam_install_status(void)
+{
+	int state;
+
+	pthread_mutex_lock(&steam.state_lock);
+	state = fetch.install_state;
+	pthread_mutex_unlock(&steam.state_lock);
+	return state;
+}
+
+/* nonzero once when files were put in mcc_maps since the last ask (an
+install for a joiner, the shared sets, the screen's downloads): the guest
+rescans its MCC catalog, the Workshop screen open or not */
+int host_steam_take_rescan(void)
+{
+	int rescan;
+
+	if (pthread_mutex_trylock(&steam.state_lock) != 0)
+		return 0;
+	rescan = steam.rescan;
+	steam.rescan = 0;
+	pthread_mutex_unlock(&steam.state_lock);
+	return rescan;
 }
