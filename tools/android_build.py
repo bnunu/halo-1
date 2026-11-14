@@ -588,6 +588,9 @@ def generate_android_build(n: Writer, sln: Any) -> None:
         "-O2", "-g", "-fPIC", "-Wall", "-Wno-unused-function", "-D_GNU_SOURCE",
         f"-I{PORT_DIR}/include", f"-I{PORT_DIR}/host", f"-I{SDL_DIR}/include", f"-I{LINUX_DIR}/src",
         f"-I{TOML_DIR}", f"-I{ZLIB_DIR}", f"-I{MBEDTLS_DIR / 'include'}",
+        # (Mbed TLS's settings, as the library is built with them below: its
+        # contexts are bigger with threading, and steam_crypto.c makes them)
+        "-DMBEDTLS_THREADING_C", "-DMBEDTLS_THREADING_PTHREAD",
     ])
     host_sources = sorted((PORT_DIR / "host").glob("*.c")) + [
         LINUX_DIR / "src" / "posix_files.c", LINUX_DIR / "src" / "posix_net.c",
@@ -617,8 +620,7 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     # port/third_party/mbedtls), as the other posix_*.c in the host
     # (with its locks: internet play's thread and the server browser's master
     # servers' both use it, as on Linux)
-    mbedtls_cflags = " ".join([host_cflags, f"-I{MBEDTLS_DIR / 'include'}", f"-I{MBEDTLS_DIR / 'library'}",
-                               "-DMBEDTLS_THREADING_C", "-DMBEDTLS_THREADING_PTHREAD"])
+    mbedtls_cflags = " ".join([host_cflags, f"-I{MBEDTLS_DIR / 'library'}"])
     # (and the server browser's requests to the master servers: posix_update.c's,
     # host_https.c)
     for source in [LINUX_DIR / "src" / "posix_dtls.c", LINUX_DIR / "src" / "posix_update.c",

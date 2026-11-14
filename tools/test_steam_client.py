@@ -23,6 +23,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 ZLIB = ROOT / "port/third_party/zlib"
 MBEDTLS = ROOT / "port/third_party/mbedtls"
+# (as the Android host builds it, and everything that includes it: tools/android_build.py)
+MBEDTLS_DEFINES = ["-DMBEDTLS_THREADING_C", "-DMBEDTLS_THREADING_PTHREAD"]
 HOST = ROOT / "port/android/host"
 STEAM_SOURCES = ["steam_cm.c", "steam_crypto.c", "steam_depot.c", "steam_net.c", "steam_seal.c", "steam_unpack.c"]
 TOKEN = "eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiI3NjU2MTE5OTAwMDAwMDAwMSJ9.c2lnbmF0dXJl"
@@ -47,7 +49,7 @@ def client(tmp_path_factory):
     sources = sorted((MBEDTLS / "library").glob("*.c"))
     with concurrent.futures.ThreadPoolExecutor() as pool:
         list(pool.map(lambda source: subprocess.run(
-            [clang, "-std=c99", "-O1", "-w", "-I", str(MBEDTLS / "include"), "-I", str(MBEDTLS / "library"),
+            [clang, "-std=c99", "-O1", "-w", *MBEDTLS_DEFINES, "-I", str(MBEDTLS / "include"), "-I", str(MBEDTLS / "library"),
              "-c", str(source), "-o", str(work / ("mbedtls_" + source.name + ".o"))], check=True), sources))
     objects += [work / ("mbedtls_" + source.name + ".o") for source in sources]
     for source in [*(HOST / name for name in STEAM_SOURCES), ROOT / "tools/tests/steam_client_driver.c"]:
@@ -55,7 +57,7 @@ def client(tmp_path_factory):
         # (-Wall -Wextra -Werror, but for the unpacker's third-party decoders; the driver
         # includes steam_downloads.c, so that is held to it too)
         warnings = ["-w"] if source.name == "steam_unpack.c" else ["-Wall", "-Wextra", "-Werror"]
-        result = subprocess.run([clang, "-std=c11", "-D_GNU_SOURCE", "-DSTEAM_SEAL_TEST", *warnings,
+        result = subprocess.run([clang, "-std=c11", "-D_GNU_SOURCE", "-DSTEAM_SEAL_TEST", *MBEDTLS_DEFINES, *warnings,
                                  "-I", str(HOST), "-I", str(ROOT / "port/android/include"),
                                  "-I", str(ROOT / "port/linux/src"), "-I", str(ZLIB), "-I", str(MBEDTLS / "include"),
                                  "-c", str(source), "-o", str(objects[-1])], capture_output=True, text=True)
