@@ -15248,7 +15248,8 @@ HS_EVALUATE_RETURN_BOOLEAN_NO_ARGUMENTS(player_control_action_test_move_relative
 HS_EVALUATE_VOID_FROM_ARGUMENTS(player_add_equipment_evaluate, struct hs_arguments_long_word_boolean, (coop_scripts_player_add_equipment(arguments->value0, arguments->value1, arguments->value2)))
 HS_EVALUATE_VOID_FROM_ARGUMENTS(debug_player_teleport_evaluate, struct hs_arguments_short_word, (debug_player_teleport(arguments->value0, arguments->value1)))
 /* port: a campaign map's own script names its campaign's next level, which
-ends this one as game_won does (main_script_map_name); the console, any map */
+ends this one as game_won does (main_script_map_name); the console, any map.
+Global initializers run before the map is ready and may not change maps. */
 static void main_set_map_name_evaluate(
 	short function_index,
 	long thread_index,
@@ -15258,10 +15259,12 @@ static void main_set_map_name_evaluate(
 
 	if (arguments)
 	{
-		if (hs_runtime_port_executing_script_type() != NONE)
+		if (hs_runtime_port_executing_console_command())
+			main_set_map_name(arguments->value);
+		else if (hs_runtime_port_executing_script_type() != NONE)
 			main_script_map_name(arguments->value);
 		else
-			main_set_map_name(arguments->value);
+			error(_error_silent, "map_name requires a script or console command; a global initializer cannot change maps");
 		hs_return(thread_index, 0);
 	}
 	return;

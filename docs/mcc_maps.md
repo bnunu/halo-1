@@ -946,6 +946,8 @@ rotation's next entry, as after any won level. A name that is no campaign
 mission of the package does nothing (logged), and no map's script may load
 any other map. Before, the refused call disabled its whole script: the
 missions' endings (their last cutscene and level change) never ran.
+Global initializers may not change maps, even through a static script; the
+call is logged and ignored until made by a script thread or the console.
 
 MCC scenarios may call the zero-argument, void `ai_deselect` operation through
 the MCC registry in [`mcc_scripts.c`](../port/linux/game/mcc_scripts.c).

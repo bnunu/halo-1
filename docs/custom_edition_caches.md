@@ -115,6 +115,8 @@ co-op game (a dedicated server plays its rotation's next entry, as after
 any won level). A map's script may name no other map, and one that names no
 campaign map present does nothing (`debug.txt` says so); the console's
 `map_name` loads any map, as before (`main_script_map_name`, main.c).
+Global initializers may not change maps, including through a static script:
+the map is not ready yet. Such a call is logged and does nothing.
 
 ### From the console
 

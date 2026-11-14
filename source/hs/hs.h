@@ -190,6 +190,9 @@ long hs_runtime_evaluate(
 is a sleep_until's condition (hs_runtime.c) */
 boolean hs_runtime_waiting_on_call(
 	void);
+/* port: only an actual console thread may use unrestricted map_name. */
+boolean hs_runtime_port_executing_console_command(
+	void);
 /* port: the map's riding call counts only from a startup script (vehicle_riding.c) */
 short hs_runtime_port_executing_script_type(
 	void);
