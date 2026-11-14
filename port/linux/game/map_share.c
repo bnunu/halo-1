@@ -119,12 +119,16 @@ enum
 	/* reads of a connection a call at most, while it has more (64 input
 	buffers: 1.5 MB) */
 	MAXIMUM_READS_PER_CALL = 64,
-	/* pieces asked of one connection at once, and of all of them; pieces
-	another machine may ask of this one at once. A connection is asked as
-	many as every version sends at once (it refuses more): a piece comes a
-	round trip after it is asked for, about two frames, and two at a time
-	held a download from one machine to about 15 MB/s */
+	/* pieces asked of one connection at once (the host's; another
+	player's), and of all of them; pieces another machine may ask of this one
+	at once. The host's is asked as many as every version sends at once (it
+	refuses more): a piece comes a round trip after it is asked for, about
+	two frames, and two at a time held a download from it to about 15 MB/s.
+	Another player sends 10 MB/s at most, 256 KB/s unless set otherwise, so
+	it is asked two, which keep up with that, and holds few of the last
+	pieces (connection_requests) */
 	REQUESTS_PER_CONNECTION = 8,
+	PLAYER_REQUESTS_PER_CONNECTION = 2,
 	MAXIMUM_PIECES_IN_FLIGHT = 32,
 	SERVING_PER_CONNECTION = 8,
 	/* the pieces' hashes sent at once */
@@ -2137,6 +2141,18 @@ static boolean download_unasked_pieces(
 	return FALSE;
 }
 
+/* the pieces the connection may be asked for at once: the host's (this
+machine's connection to it, as hashes_source knows it) REQUESTS_PER_CONNECTION,
+another player's PLAYER_REQUESTS_PER_CONNECTION */
+static short connection_requests(
+	struct connection const *connection)
+{
+	struct download const *download = &map_share_globals.download;
+
+	return connection->outgoing && connection->source != NONE && connection->source < download->source_count &&
+		download->sources[connection->source].host ? REQUESTS_PER_CONNECTION : PLAYER_REQUESTS_PER_CONNECTION;
+}
+
 /* the connection asked for pieces, while it may */
 static void connection_ask(
 	struct connection *connection)
@@ -2149,7 +2165,7 @@ static void connection_ask(
 		return;
 	for (index = 0; index < MAXIMUM_CONNECTIONS; index++)
 		in_flight += map_share_globals.connections[index].used ? map_share_globals.connections[index].request_count : 0;
-	while (connection->request_count < REQUESTS_PER_CONNECTION && in_flight < MAXIMUM_PIECES_IN_FLIGHT &&
+	while (connection->request_count < connection_requests(connection) && in_flight < MAXIMUM_PIECES_IN_FLIGHT &&
 		frame_room(connection, 5))
 	{
 		struct request *request;
