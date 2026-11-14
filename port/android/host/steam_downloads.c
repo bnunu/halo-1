@@ -36,27 +36,6 @@ buffers on purpose, the way snprintf is made) */
 #include "steam_seal.h"
 #include "posix.h"
 
-/* (the QR encoder, a copy of its own under other names, so that no other
-copy linked beside it clashes) */
-#define qrcodegen_calcSegmentBufferSize steam_qrcodegen_calcSegmentBufferSize
-#define qrcodegen_encodeBinary steam_qrcodegen_encodeBinary
-#define qrcodegen_encodeSegments steam_qrcodegen_encodeSegments
-#define qrcodegen_encodeSegmentsAdvanced steam_qrcodegen_encodeSegmentsAdvanced
-#define qrcodegen_encodeText steam_qrcodegen_encodeText
-#define qrcodegen_getModule steam_qrcodegen_getModule
-#define qrcodegen_getSize steam_qrcodegen_getSize
-#define qrcodegen_isAlphanumeric steam_qrcodegen_isAlphanumeric
-#define qrcodegen_isNumeric steam_qrcodegen_isNumeric
-#define qrcodegen_makeAlphanumeric steam_qrcodegen_makeAlphanumeric
-#define qrcodegen_makeBytes steam_qrcodegen_makeBytes
-#define qrcodegen_makeEci steam_qrcodegen_makeEci
-#define qrcodegen_makeNumeric steam_qrcodegen_makeNumeric
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wsign-compare"
-#include "../../third_party/qrcodegen/qrcodegen.c"
-#pragma GCC diagnostic pop
-
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -73,7 +52,6 @@ enum
 	/* the preview pictures kept (each PREVIEW_SIDE square, 0xAARRGGBB) */
 	PREVIEWS = 12,
 	PREVIEW_SIDE = 256,
-	QR_VERSION = 10,
 	STEAM_HALO1_DEPOT = 976733,
 	TEXT_SIZE = 128,
 	/* the downloads waiting their turn behind the one under way */
@@ -87,8 +65,6 @@ enum session_state
 {
 	SESSION_OUT,
 	SESSION_CONNECTING,
-	/* a QR code shown */
-	SESSION_QR,
 	/* a sign-in by name and password waiting: for the Steam app's
 	approval, or a Steam Guard code */
 	SESSION_GUARD,
@@ -182,7 +158,6 @@ static struct
 
 	/* the session thread's work */
 	int want_resume;
-	int want_sign_in;
 	int want_password;
 	int want_sign_out;
 	int want_page;
@@ -215,10 +190,6 @@ static struct
 	char account[STEAM_ACCOUNT_SIZE];
 	uint64_t steam_id;
 	char message[256];
-	char qr_url[STEAM_URL_SIZE];
-	unsigned qr_serial;
-	uint8_t qr[qrcodegen_BUFFER_LEN_FOR_VERSION(QR_VERSION)];
-	int qr_ready;
 	int sort;
 	int type;
 	char search[TEXT_SIZE];
@@ -663,21 +634,6 @@ static void set_state(enum session_state state)
 	pthread_mutex_unlock(&steam.state_lock);
 }
 
-static void qr_set(char const *url)
-{
-	uint8_t scratch[qrcodegen_BUFFER_LEN_FOR_VERSION(QR_VERSION)];
-
-	pthread_mutex_lock(&steam.state_lock);
-	if (strcmp(steam.qr_url, url))
-	{
-		snprintf(steam.qr_url, sizeof(steam.qr_url), "%s", url);
-		steam.qr_ready = url[0] && qrcodegen_encodeText(url, scratch, steam.qr, qrcodegen_Ecc_MEDIUM,
-			qrcodegen_VERSION_MIN, QR_VERSION, qrcodegen_Mask_AUTO, true);
-		steam.qr_serial++;
-	}
-	pthread_mutex_unlock(&steam.state_lock);
-}
-
 /* what a thread is doing now ("" for nothing), shown on the screen */
 static void activity(int files, char const *what)
 {
@@ -776,17 +732,16 @@ static int session_ensure(char *error, int error_size)
 	return 1;
 }
 
-/* a sign-in: by QR code, or by the name and password typed (by_password);
-then Steam polled until it approves (the app's approval, or a code typed
-meanwhile) */
-static void do_sign_in(int by_password)
+/* a sign-in by the name and password typed, then Steam polled until it
+approves (the app's approval, or a code typed meanwhile) */
+static void do_sign_in(void)
 {
 	char error[256];
 	char token[STEAM_TOKEN_SIZE];
 	char account[STEAM_ACCOUNT_SIZE];
 	char typed_account[TEXT_SIZE];
 	char password[TEXT_SIZE];
-	struct steam_qr qr;
+	struct steam_auth auth;
 	struct steam_cm *cm;
 	uint64_t steam_id = 0;
 	unsigned confirmations = 0;
@@ -808,8 +763,7 @@ static void do_sign_in(int by_password)
 		say("%s", error);
 		return;
 	}
-	begun = by_password ? steam_cm_password_begin(cm, typed_account, password, DEVICE_NAME, &qr, &steam_id,
-		&confirmations) : steam_cm_qr_begin(cm, DEVICE_NAME, &qr);
+	begun = steam_cm_password_begin(cm, typed_account, password, DEVICE_NAME, &auth, &steam_id, &confirmations);
 	steam_wipe(password, sizeof(password));
 	if (!begun)
 	{
@@ -818,28 +772,19 @@ static void do_sign_in(int by_password)
 		steam_cm_close(cm);
 		return;
 	}
-	if (by_password)
-	{
-		steam_log("steam: signing in by name: confirmations 0x%x", confirmations);
-		pthread_mutex_lock(&steam.state_lock);
-		steam.state = SESSION_GUARD;
-		steam.confirmations = confirmations;
-		/* (a code is asked for at once when the app cannot approve it) */
-		if (!(confirmations & (STEAM_GUARD_DEVICE_CONFIRMATION | STEAM_GUARD_EMAIL_CONFIRMATION)) &&
-			(confirmations & (STEAM_GUARD_DEVICE_CODE | STEAM_GUARD_EMAIL_CODE)))
-			steam.want_text = TEXT_CODE;
-		steam.message[0] = 0;
-		pthread_mutex_unlock(&steam.state_lock);
-	}
-	else
-	{
-		qr_set(qr.url);
-		set_state(SESSION_QR);
-		say("%s", "");
-	}
+	steam_log("steam: signing in by name: confirmations 0x%x", confirmations);
+	pthread_mutex_lock(&steam.state_lock);
+	steam.state = SESSION_GUARD;
+	steam.confirmations = confirmations;
+	/* (a code is asked for at once when the app cannot approve it) */
+	if (!(confirmations & (STEAM_GUARD_DEVICE_CONFIRMATION | STEAM_GUARD_EMAIL_CONFIRMATION)) &&
+		(confirmations & (STEAM_GUARD_DEVICE_CODE | STEAM_GUARD_EMAIL_CODE)))
+		steam.want_text = TEXT_CODE;
+	steam.message[0] = 0;
+	pthread_mutex_unlock(&steam.state_lock);
 	for (;;)
 	{
-		unsigned long until = steam_milliseconds() + (unsigned long)(qr.interval * 1000.0f);
+		unsigned long until = steam_milliseconds() + (unsigned long)(auth.interval * 1000.0f);
 		int result;
 		int cancelled = 0;
 		int code = 0;
@@ -864,7 +809,6 @@ static void do_sign_in(int by_password)
 		if (cancelled)
 		{
 			steam_cm_close(cm);
-			qr_set("");
 			set_state(SESSION_OUT);
 			say("Signing in was cancelled.%s", NULL);
 			return;
@@ -873,7 +817,7 @@ static void do_sign_in(int by_password)
 		{
 			int email = !(confirmations & STEAM_GUARD_DEVICE_CODE) && (confirmations & STEAM_GUARD_EMAIL_CODE);
 
-			int accepted = steam_cm_guard_code(cm, &qr, steam_id, typed, email) == STEAM_RESULT_OK;
+			int accepted = steam_cm_guard_code(cm, &auth, steam_id, typed, email) == STEAM_RESULT_OK;
 
 			steam_wipe(typed, sizeof(typed));
 			if (!accepted)
@@ -885,22 +829,18 @@ static void do_sign_in(int by_password)
 				continue;
 			}
 		}
-		result = steam_cm_qr_poll(cm, &qr, token, sizeof(token), account, sizeof(account));
+		result = steam_cm_auth_poll(cm, &auth, token, sizeof(token), account, sizeof(account));
 		if (result < 0)
 		{
 			say("The sign-in ran out or was refused: try again. (%s)", steam_cm_error(cm));
 			steam_cm_close(cm);
-			qr_set("");
 			set_state(SESSION_OUT);
 			return;
 		}
-		if (!by_password)
-			qr_set(qr.url);
 		if (result > 0)
 			break;
 	}
 	steam_cm_close(cm);
-	qr_set("");
 	set_state(SESSION_SIGNING_IN);
 	pthread_mutex_lock(&steam.session_lock);
 	snprintf(steam.token, sizeof(steam.token), "%s", token);
@@ -1074,19 +1014,18 @@ static void *session_thread(void *unused)
 	(void)unused;
 	for (;;)
 	{
-		int resume, sign_in, password, sign_out, page, updates;
+		int resume, password, sign_out, page, updates;
 
 		pthread_mutex_lock(&steam.state_lock);
-		while (!steam.want_resume && !steam.want_sign_in && !steam.want_password && !steam.want_sign_out &&
+		while (!steam.want_resume && !steam.want_password && !steam.want_sign_out &&
 			!steam.want_page && !steam.want_updates)
 			pthread_cond_wait(&steam.session_wake, &steam.state_lock);
 		resume = steam.want_resume;
-		sign_in = steam.want_sign_in;
 		password = steam.want_password;
 		sign_out = steam.want_sign_out;
 		page = steam.want_page;
 		updates = steam.want_updates;
-		steam.want_resume = steam.want_sign_in = steam.want_password = steam.want_sign_out = 0;
+		steam.want_resume = steam.want_password = steam.want_sign_out = 0;
 		steam.want_page = steam.want_updates = 0;
 		steam.cancel_sign_in = 0;
 		pthread_mutex_unlock(&steam.state_lock);
@@ -1104,8 +1043,8 @@ static void *session_thread(void *unused)
 			activity(0, "");
 			continue;
 		}
-		if (sign_in || password)
-			do_sign_in(password);
+		if (password)
+			do_sign_in();
 		else if (resume)
 		{
 			activity(0, "signing in with the saved account");
@@ -1566,23 +1505,8 @@ static void *files_thread(void *unused)
 	return NULL;
 }
 
-/* ---------- previews (the Workshop's pictures, decoded by stb_image) */
-
-#define STB_IMAGE_STATIC
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_JPEG
-#define STBI_ONLY_PNG
-#define STBI_NO_STDIO
-#define STBI_NO_SIMD
-#define STBI_NO_HDR
-#define STBI_NO_THREAD_LOCALS
-/* (stb_image is not this port's to keep free of warnings) */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wsign-compare"
-#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
-#include "../../third_party/stb/stb_image.h"
-#pragma GCC diagnostic pop
+/* ---------- previews (the Workshop's pictures, decoded by Android:
+HaloActivity.steamPreview) */
 
 /* (state_lock held) the kept preview of an item, or NULL */
 static struct preview *preview_find(uint64_t id)
@@ -1598,52 +1522,21 @@ static struct preview *preview_find(uint64_t id)
 /* a picture's bytes, fitted to PREVIEW_SIDE square on black (malloc'd), or NULL */
 static uint32_t *preview_decode(unsigned char const *data, unsigned long size)
 {
-	int width, height, components;
-	unsigned char *rgba = stbi_load_from_memory(data, (int)size, &width, &height, &components, 4);
-	uint32_t *pixels;
-	long x, y, fitted_width, fitted_height, left, top;
+#if defined(__ANDROID__)
+	uint32_t *pixels = malloc(sizeof(*pixels) * PREVIEW_SIDE * PREVIEW_SIDE);
 
-	if (!rgba)
-		return NULL;
-	pixels = malloc(sizeof(*pixels) * PREVIEW_SIDE * PREVIEW_SIDE);
-	if (!pixels || width <= 0 || height <= 0)
+	if (pixels && steam_activity_bytes("steamPreview", data, size, (unsigned char *)pixels,
+		sizeof(*pixels) * PREVIEW_SIDE * PREVIEW_SIDE) == (long)(sizeof(*pixels) * PREVIEW_SIDE * PREVIEW_SIDE))
 	{
-		stbi_image_free(rgba);
-		free(pixels);
-		return NULL;
+		return pixels;
 	}
-	if (width >= height)
-	{
-		fitted_width = PREVIEW_SIDE;
-		fitted_height = (long)height * PREVIEW_SIDE / width;
-	}
-	else
-	{
-		fitted_height = PREVIEW_SIDE;
-		fitted_width = (long)width * PREVIEW_SIDE / height;
-	}
-	left = (PREVIEW_SIDE - fitted_width) / 2;
-	top = (PREVIEW_SIDE - fitted_height) / 2;
-	for (y = 0; y < PREVIEW_SIDE; y++)
-	{
-		for (x = 0; x < PREVIEW_SIDE; x++)
-		{
-			uint32_t pixel = 0xFF000000u;
-
-			if (x >= left && x < left + fitted_width && y >= top && y < top + fitted_height && fitted_width &&
-				fitted_height)
-			{
-				long source_x = (x - left) * width / fitted_width;
-				long source_y = (y - top) * height / fitted_height;
-				unsigned char const *texel = rgba + 4 * ((size_t)source_y * (size_t)width + (size_t)source_x);
-
-				pixel = 0xFF000000u | (uint32_t)texel[0] << 16 | (uint32_t)texel[1] << 8 | texel[2];
-			}
-			pixels[y * PREVIEW_SIDE + x] = pixel;
-		}
-	}
-	stbi_image_free(rgba);
-	return pixels;
+	free(pixels);
+	return NULL;
+#else
+	(void)data;
+	(void)size;
+	return NULL;
+#endif
 }
 
 static void *preview_thread(void *unused)
@@ -1842,7 +1735,6 @@ void steam_downloads_close(void)
 enum row_kind
 {
 	ROW_NONE,
-	ROW_SIGN_IN_QR,
 	ROW_SIGN_IN_ACCOUNT,
 	ROW_HOME_ACCOUNT,
 	ROW_HOME_FILES,
@@ -1859,18 +1751,6 @@ enum row_kind
 	ROW_NEXT
 };
 
-/* whether signing in by name comes first: a phone, which cannot scan its
-own screen (and whose Steam app opens a QR code's link only to its camera,
-to be scanned: it approves no sign-in from a link) */
-static int account_first(void)
-{
-#if defined(__ANDROID__)
-	return 1;
-#else
-	return 0;
-#endif
-}
-
 /* (state_lock held) the row at a place of the list shown; *index the
 package's or item's */
 static enum row_kind row_kind(int place, int *index)
@@ -1882,13 +1762,7 @@ static enum row_kind row_kind(int place, int *index)
 	{
 	case VIEW_HOME:
 		if (steam.state != SESSION_IN)
-		{
-			if (steam.state == SESSION_UNAVAILABLE)
-				return place == 0 ? ROW_SIGN_IN_QR : ROW_NONE;
-			if (place > 1)
-				return ROW_NONE;
-			return (place == 0) == !account_first() ? ROW_SIGN_IN_QR : ROW_SIGN_IN_ACCOUNT;
-		}
+			return place == 0 ? ROW_SIGN_IN_ACCOUNT : ROW_NONE;
 		return place == 0 ? ROW_HOME_ACCOUNT : place == 1 ? ROW_HOME_FILES : place == 2 ? ROW_HOME_BROWSE : ROW_NONE;
 	case VIEW_ACCOUNT:
 		return place == 0 ? ROW_ACCOUNT_NAME : place == 1 ? ROW_LOG_OUT : ROW_NONE;
@@ -1930,7 +1804,7 @@ static int rows_count(void)
 	switch (steam.view)
 	{
 	case VIEW_HOME:
-		return steam.state == SESSION_IN ? 3 : steam.state == SESSION_UNAVAILABLE ? 1 : 2;
+		return steam.state == SESSION_IN ? 3 : 1;
 	case VIEW_ACCOUNT: return 2;
 	case VIEW_FILES: return 1 + steam.package_count;
 	case VIEW_BROWSE:
@@ -2040,16 +1914,13 @@ static void row_build(int place, char *name, int name_size, char *state, int sta
 	name[0] = state[0] = 0;
 	switch (row_kind(place, &index))
 	{
-	case ROW_SIGN_IN_QR:
-		snprintf(name, (size_t)name_size, "SIGN IN WITH QR CODE");
-		snprintf(state, (size_t)state_size, "%s",
-			steam.state == SESSION_UNAVAILABLE ? "UNAVAILABLE" :
-			steam.state == SESSION_QR ? "SCAN THE CODE" :
-			steam.state == SESSION_CONNECTING ? "CONNECTING" : "");
-		break;
 	case ROW_SIGN_IN_ACCOUNT:
 		snprintf(name, (size_t)name_size, "SIGN IN WITH ACCOUNT");
-		if (steam.state == SESSION_GUARD)
+		if (steam.state == SESSION_UNAVAILABLE)
+			snprintf(state, (size_t)state_size, "UNAVAILABLE");
+		else if (steam.state == SESSION_CONNECTING)
+			snprintf(state, (size_t)state_size, "CONNECTING");
+		else if (steam.state == SESSION_GUARD)
 			snprintf(state, (size_t)state_size, "%s", steam.confirmations & STEAM_GUARD_DEVICE_CONFIRMATION ?
 				"APPROVE IN APP" : "ENTER CODE");
 		else if (steam.state == SESSION_SIGNING_IN)
@@ -2167,18 +2038,6 @@ static void details_build(int place, char *title, int title_size, char *text, in
 	title[0] = 0;
 	switch (row_kind(place, &index))
 	{
-	case ROW_SIGN_IN_QR:
-		snprintf(title, (size_t)title_size, "Sign in with a QR code");
-		if (steam.state == SESSION_UNAVAILABLE)
-			snprintf(body, sizeof(body), "This build cannot reach Steam. Use the launcher's MCC package import instead.");
-		else if (steam.state == SESSION_QR)
-			snprintf(body, sizeof(body), "In the Steam mobile app, open Steam Guard and scan this code. B cancels.");
-		else if (steam.state == SESSION_CONNECTING || steam.state == SESSION_SIGNING_IN)
-			snprintf(body, sizeof(body), "Reaching Steam...");
-		else
-			snprintf(body, sizeof(body), "A shows a code to scan with the Steam mobile app on another device. The "
-				"account must own Halo: The Master Chief Collection.");
-		break;
 	case ROW_SIGN_IN_ACCOUNT:
 		snprintf(title, (size_t)title_size, "Sign in with account");
 		if (steam.state == SESSION_GUARD)
@@ -2360,12 +2219,6 @@ void steam_downloads_choose(int place)
 	steam.confirm = -1;
 	switch (row_kind(place, &index))
 	{
-	case ROW_SIGN_IN_QR:
-		if (steam.state == SESSION_OUT)
-			steam.want_sign_in = 1;
-		else if (steam.state == SESSION_QR)
-			steam.cancel_sign_in = 1;
-		break;
 	case ROW_SIGN_IN_ACCOUNT:
 		if (steam.state == SESSION_OUT)
 			steam.want_text = TEXT_ACCOUNT;
@@ -2458,7 +2311,7 @@ int steam_downloads_back(void)
 	int taken = 0;
 
 	pthread_mutex_lock(&steam.state_lock);
-	if (steam.state == SESSION_QR || steam.state == SESSION_GUARD)
+	if (steam.state == SESSION_GUARD)
 	{
 		steam.cancel_sign_in = 1;
 		taken = 1;
@@ -2545,10 +2398,6 @@ static struct
 	char states[SNAPSHOT_ROWS][48];
 	char title[128];
 	char text[1600];
-	/* the QR code shown (its side 0: none) */
-	int qr_size;
-	unsigned qr_serial;
-	uint8_t qr[qrcodegen_BUFFER_LEN_FOR_VERSION(QR_VERSION)];
 	uint64_t picture_key;
 	uint32_t picture[PREVIEW_SIDE * PREVIEW_SIDE];
 	/* the text to type, taken from the model once */
@@ -2577,12 +2426,6 @@ int steam_downloads_poll(void)
 		row_build(snapshot.first_built + i, snapshot.names[i], (int)sizeof(snapshot.names[i]), snapshot.states[i],
 			(int)sizeof(snapshot.states[i]));
 	details_build(steam.chosen, snapshot.title, (int)sizeof(snapshot.title), snapshot.text, (int)sizeof(snapshot.text));
-	snapshot.qr_size = steam.state == SESSION_QR && steam.qr_ready ? qrcodegen_getSize(steam.qr) : 0;
-	if (snapshot.qr_serial != steam.qr_serial)
-	{
-		memcpy(snapshot.qr, steam.qr, sizeof(snapshot.qr));
-		snapshot.qr_serial = steam.qr_serial;
-	}
 	switch (row_kind(steam.chosen, &index))
 	{
 	case ROW_ITEM: file = &steam.items[index]; break;
@@ -2661,19 +2504,6 @@ char const *steam_downloads_text_caption(int kind)
 	case TEXT_CODE: return "Steam Guard code";
 	default: return "";
 	}
-}
-
-int steam_downloads_qr(unsigned char *modules, int capacity, unsigned *serial)
-{
-	int side = snapshot.qr_size, x, y;
-
-	*serial = snapshot.qr_serial;
-	if (!side || side * side > capacity)
-		return 0;
-	for (y = 0; y < side; y++)
-		for (x = 0; x < side; x++)
-			modules[y * side + x] = qrcodegen_getModule(snapshot.qr, x, y) ? 1 : 0;
-	return side;
 }
 
 int steam_downloads_picture(uint64_t *key, uint32_t *pixels)
@@ -2780,9 +2610,4 @@ void host_steam_text_caption(int kind, unsigned int text, int text_size)
 void host_steam_text_typed(int kind, unsigned int text, int saved)
 {
 	steam_downloads_text_typed(kind, GUEST_POINTER(text), saved);
-}
-
-int host_steam_qr(unsigned int modules, int capacity, unsigned int serial)
-{
-	return steam_downloads_qr(GUEST_POINTER(modules), capacity, GUEST_POINTER(serial));
 }

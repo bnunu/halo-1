@@ -2621,8 +2621,8 @@ CUSTOM_SCREENS = {"network_setup/steam_workshop": {"screen": "steam_workshop_scr
 # steam" functions; from Halo Content Evolved's): on the left the rows (the
 # sign-in, the hub, MCC's shared files, the Halo 1 Workshop's items), a row
 # each with its name and state; on the right, in the lobby's frame, the row
-# chosen's details and, while signing in, the QR code to scan, else the
-# item's preview (steam_picture: a text box, drawn over by menu_functions.c)
+# chosen's details and the item's preview (steam_picture: a text box, drawn
+# over by menu_functions.c)
 STEAM_WORKSHOP = f"{PE}/network_setup/steam_workshop"
 STEAM_ROWS = 11
 STEAM_PICTURE_BOUNDS = (448, 262, 128, 128)

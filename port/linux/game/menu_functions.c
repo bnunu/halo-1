@@ -6518,8 +6518,8 @@ the host's port/android/host/steam_downloads.c through steam_screen.c,
 tools/port_settings.py's _steam_workshop; from Halo Content Evolved's):
 rows op_steam_<n> of a name and a state (steam_name, steam_state), the
 chosen row's details (steam_details_name, steam_details_text, measured as
-the Mods screen's are) and, while signing in, the QR code to scan, else the
-chosen Workshop item's preview, over steam_picture (a text box: drawn by
+the Mods screen's are) and the chosen Workshop item's preview, over
+steam_picture (a text box: drawn by
 steam_picture_draw, from menu_functions_text_box_drawn) */
 
 #define STEAM_ROWS 11
@@ -6536,12 +6536,9 @@ static struct
 	short list_shown;
 	char shown[MOD_DETAILS_LENGTH];
 	char row_shown[STEAM_ROWS][2 * ROW_TEXT_LENGTH + 16];
-	/* the picture's texture (the QR code's, or a Workshop item's preview),
-	and what it shows */
+	/* the picture's texture (a Workshop item's preview), and which */
 	struct bitmap_data *picture;
-	unsigned qr_serial;
 	unsigned long long preview_key;
-	boolean showing_qr;
 	/* the kind of text being typed (the host's; 0: none), in a text field
 	on the row it was asked for on, and the field's caption */
 	int typing;
@@ -6854,20 +6851,13 @@ static boolean steam_back(struct widget_instance *widget, boolean *widget_delete
 	return TRUE;
 }
 
-/* the texture of what steam_picture shows: the QR code to scan while
-signing in, else the chosen Workshop item's preview; NULL for none */
+/* the texture of what steam_picture shows: the chosen Workshop item's
+preview, copied in once for each item chosen; NULL for none */
 static struct bitmap_data *steam_picture_texture(void)
 {
-	enum { MARGIN = 4 };
-	static unsigned char modules[STEAM_QR_MODULES];
-	unsigned serial = 0;
 	unsigned long long key = 0;
-	long side_modules = steam_screen_qr(modules, &serial);
-	long side = side_modules + 2 * MARGIN;
-	unsigned long *pixels;
-	long x, y;
 
-	if (!side_modules && !steam_screen_picture(&key, NULL))
+	if (!steam_screen_picture(&key, NULL))
 		return NULL;
 	if (!steam_screen.picture)
 	{
@@ -6880,40 +6870,14 @@ static struct bitmap_data *steam_picture_texture(void)
 		if (!steam_screen.picture)
 			return NULL;
 		steam_screen.preview_key = 0;
-		steam_screen.showing_qr = FALSE;
 	}
-	pixels = (unsigned long *)steam_screen.picture->base_address;
-	if (!side_modules)
+	if (steam_screen.preview_key != key)
 	{
-		/* (the preview, copied in once for each item chosen) */
-		if (steam_screen.showing_qr || steam_screen.preview_key != key)
-		{
-			if (steam_screen_picture(&key, (unsigned int *)pixels) != STEAM_PICTURE_SIDE)
-				return NULL;
-			rasterizer_bitmap_changed(steam_screen.picture);
-			steam_screen.preview_key = key;
-			steam_screen.showing_qr = FALSE;
-		}
-		return steam_screen.picture;
+		if (steam_screen_picture(&key, (unsigned int *)steam_screen.picture->base_address) != STEAM_PICTURE_SIDE)
+			return NULL;
+		rasterizer_bitmap_changed(steam_screen.picture);
+		steam_screen.preview_key = key;
 	}
-	if (steam_screen.showing_qr && steam_screen.qr_serial == serial)
-		return steam_screen.picture;
-	for (y = 0; y < STEAM_TEXTURE; y++)
-	{
-		for (x = 0; x < STEAM_TEXTURE; x++)
-		{
-			long module_x = x * side / STEAM_TEXTURE - MARGIN;
-			long module_y = y * side / STEAM_TEXTURE - MARGIN;
-			boolean dark = module_x >= 0 && module_y >= 0 && module_x < side_modules && module_y < side_modules &&
-				modules[module_y * side_modules + module_x];
-
-			pixels[y * STEAM_TEXTURE + x] = dark ? 0xFF000000UL : 0xFFFFFFFFUL;
-		}
-	}
-	rasterizer_bitmap_changed(steam_screen.picture);
-	steam_screen.qr_serial = serial;
-	steam_screen.showing_qr = TRUE;
-	steam_screen.preview_key = 0;
 	return steam_screen.picture;
 }
 

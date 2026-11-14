@@ -90,9 +90,8 @@ void steam_seal_folder(char const *root, char *folder, size_t size)
 	posix_make_directory(folder);
 }
 
-/* bytes through one of the activity's static byte[] (byte[]) methods: the
-answer's count into out, or -1 */
-static long activity_bytes(char const *name, unsigned char const *in, size_t in_size, unsigned char *out,
+/* (steam_seal.h) */
+long steam_activity_bytes(char const *name, unsigned char const *in, size_t in_size, unsigned char *out,
 	size_t capacity)
 {
 	JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
@@ -161,7 +160,7 @@ int steam_seal(char const *text, char *out, size_t out_size)
 	long count;
 
 	out[0] = 0;
-	count = activity_bytes("steamSeal", (unsigned char const *)text, strlen(text), sealed, sizeof(sealed));
+	count = steam_activity_bytes("steamSeal", (unsigned char const *)text, strlen(text), sealed, sizeof(sealed));
 	if (count <= 0 || out_size < sizeof("keystore:") + 2 * (size_t)count)
 		return 0;
 	snprintf(out, out_size, "keystore:");
@@ -178,7 +177,7 @@ int steam_unseal(char const *sealed, char *out, size_t out_size)
 	out[0] = 0;
 	if (strncmp(sealed, "keystore:", 9) || (size = hex_from(sealed + 9, bytes, sizeof(bytes))) <= 0)
 		return 0;
-	count = activity_bytes("steamUnseal", bytes, (size_t)size, plain, sizeof(plain));
+	count = steam_activity_bytes("steamUnseal", bytes, (size_t)size, plain, sizeof(plain));
 	if (count <= 0 || (size_t)count >= out_size)
 	{
 		steam_wipe(plain, sizeof(plain));
@@ -194,7 +193,7 @@ void steam_seal_forget(void)
 {
 	unsigned char none[1];
 
-	activity_bytes("steamForget", none, 0, none, sizeof(none));
+	steam_activity_bytes("steamForget", none, 0, none, sizeof(none));
 }
 
 #else

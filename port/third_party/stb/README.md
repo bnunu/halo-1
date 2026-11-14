@@ -11,10 +11,3 @@ unchanged.
 The game's text is drawn with fonts from `port/assets/fonts`, rasterized
 with it at the display's resolution (`port/linux/src/text_hires.c`); it
 builds into the Linux, Windows and Android platform layers.
-
-# stb_image
-
-`stb_image.h` v2.31, the same author and licence, from the same repository's
-master: the Steam Workshop screen decodes items' preview pictures (JPEG,
-PNG) with it (port/android/host/steam_downloads.c, in the Android app's host), built there with only those
-two formats.

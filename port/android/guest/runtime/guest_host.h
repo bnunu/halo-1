@@ -181,6 +181,5 @@ int host_steam_picture(unsigned int key, unsigned int pixels);
 int host_steam_text_wanted(unsigned int initial, int initial_size, unsigned int secret);
 void host_steam_text_caption(int kind, unsigned int text, int text_size);
 void host_steam_text_typed(int kind, unsigned int text, int saved);
-int host_steam_qr(unsigned int modules, int capacity, unsigned int serial);
 
 #endif

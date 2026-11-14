@@ -167,12 +167,9 @@ def main() -> int:
     shutil.copy2(ROOT / "port/third_party/bcdec/LICENSE", dist / "bcdec-LICENSE.txt")
     if args.platform == "android":
         # the Steam Workshop screen's Steam client (port/android/host/steam_*.c):
-        # Zstandard's decoder (BSD, which asks binaries to
-        # carry its notice), stb_image (MIT or public domain) and its QR code
-        # (qrcodegen, MIT); the LZMA SDK's decoder is public domain
+        # Zstandard's decoder, whose BSD license asks binaries to carry its
+        # notice (the LZMA SDK's decoder is public domain)
         shutil.copy2(ROOT / "port/third_party/zstd/LICENSE", dist / "zstd-LICENSE.txt")
-        shutil.copy2(ROOT / "port/third_party/stb/LICENSE", dist / "stb-LICENSE.txt")
-        shutil.copy2(ROOT / "port/third_party/qrcodegen/LICENSE", dist / "qrcodegen-LICENSE.txt")
     # voice chat's codec (port/third_party/opus), in every build, whose BSD
     # license asks binaries to carry its notice
     shutil.copy2(ROOT / "port/third_party/opus/COPYING", dist / "opus-COPYING.txt")

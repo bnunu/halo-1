@@ -5,8 +5,8 @@ The Steam Workshop screen's model, in the host (Settings > Network Setup >
 STEAM WORKSHOP: tools/port_settings.py's _steam_workshop, the guest's
 port/linux/src/steam_screen.c and menu_functions.c's "port steam"
 functions, which reach it through the host_steam_* imports). Signing in
-with Steam (a QR code the Steam mobile app scans, or the account's name and
-password; the refresh token kept sealed: steam_seal.h), then a hub of three
+with Steam (the account's name and password, approved in the Steam app or
+with a Steam Guard code; the refresh token kept sealed: steam_seal.h), then a hub of three
 lists: MANAGE ACCOUNT (the account, LOG OUT, which revokes the sign-in with
 Steam), MCC FILE STATUS (the shared sets, and the Workshop packages in
 mcc_maps: updated or removed) and BROWSE WORKSHOP (the Halo 1 Workshop by
@@ -20,8 +20,8 @@ Downloads go into mcc_maps, where the MCC loader reads them
   mcc_maps/_shared/multiplayer/;
 - an item, from MCC's Workshop depot, to mcc_maps/<item id>/: its .map files
   (of maps/ or halo1/maps/) at the folder's top, its JSON and PNG files at
-  their paths, lowercase, and workshop_id.txt (its id and title), as the
-  map lists' IMPORT lays a package out (host_mcc_import.c). It is made in
+  their paths, lowercase, and workshop_id.txt (its id and title), as an
+  MCC package in mcc_maps is laid out. It is made in
   mcc_staging/steam_<id> and moved into place whole, an older copy of the
   item replaced.
 
@@ -74,11 +74,6 @@ int steam_downloads_text_wanted(char *initial, int initial_size, int *secret);
 char const *steam_downloads_text_caption(int kind);
 void steam_downloads_text_typed(int kind, char const *text, int saved);
 
-/* the sign-in's QR code, while there is one to scan: its side in modules,
-each a byte (1 dark) of modules (side * side of them, at most capacity),
-with *serial changing with the code; 0 when there is none */
-int steam_downloads_qr(unsigned char *modules, int capacity, unsigned *serial);
-
 /* ---------- the guest's (port/android/host_imports.list; guest_host.h
 declares them, port/linux/src/steam_screen.c wraps them): its addresses */
 
@@ -99,6 +94,5 @@ int host_steam_picture(unsigned int key, unsigned int pixels);
 int host_steam_text_wanted(unsigned int initial, int initial_size, unsigned int secret);
 void host_steam_text_caption(int kind, unsigned int text, int text_size);
 void host_steam_text_typed(int kind, unsigned int text, int saved);
-int host_steam_qr(unsigned int modules, int capacity, unsigned int serial);
 
 #endif

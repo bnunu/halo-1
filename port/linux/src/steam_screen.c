@@ -31,7 +31,6 @@ int host_steam_picture(unsigned int key, unsigned int pixels);
 int host_steam_text_wanted(unsigned int initial, int initial_size, unsigned int secret);
 void host_steam_text_caption(int kind, unsigned int text, int text_size);
 void host_steam_text_typed(int kind, unsigned int text, int saved);
-int host_steam_qr(unsigned int modules, int capacity, unsigned int serial);
 #else
 /* (no host outside Android: the screen's row is Android's alone,
 tools/port_settings.py, and these keep the other builds linking) */
@@ -62,11 +61,6 @@ static int host_steam_text_wanted(unsigned int initial, int initial_size, unsign
 }
 static void host_steam_text_caption(int kind, unsigned int text, int text_size) { (void)kind; (void)text; (void)text_size; }
 static void host_steam_text_typed(int kind, unsigned int text, int saved) { (void)kind; (void)text; (void)saved; }
-static int host_steam_qr(unsigned int modules, int capacity, unsigned int serial)
-{
-	(void)modules; (void)capacity; (void)serial;
-	return 0;
-}
 #endif
 
 #define HOST_ADDRESS(pointer) ((unsigned int)(uintptr_t)(pointer))
@@ -165,9 +159,4 @@ void steam_screen_text_typed(int kind, char *text, int saved)
 	host_steam_text_typed(kind, HOST_ADDRESS(text), saved);
 	while (*at)
 		*at++ = 0;
-}
-
-int steam_screen_qr(unsigned char *modules, unsigned *serial)
-{
-	return host_steam_qr(HOST_ADDRESS(modules), STEAM_QR_MODULES, HOST_ADDRESS(serial));
 }

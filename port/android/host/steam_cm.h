@@ -5,9 +5,10 @@ A session with one of Steam's connection servers, as Steam's own client
 holds it, over TCP (the "netfilter" servers ISteamDirectory lists): the
 channel encrypted with a session key sent under the public universe's RSA
 key, then Steam's protocol-buffer messages, AES'd each with an HMAC'd
-vector (SteamKit's EnvelopeEncryptedConnection). On it: a QR sign-in the
-Steam mobile app approves, signing in with the token that gives (or
-anonymously), product information, depot keys, manifest request codes and
+vector (SteamKit's EnvelopeEncryptedConnection). On it: a sign-in by
+account name and password, approved in the Steam mobile app or with a Steam
+Guard code, signing in with the token that gives (or anonymously), product
+information, depot keys, manifest request codes and
 Workshop queries.
 
 Every call blocks until Steam answers or a timeout (a worker thread's:
@@ -51,28 +52,24 @@ int steam_cm_connected(struct steam_cm const *cm);
 
 /* ---------- signing in */
 
-/* a QR sign-in begun: the address the code shows (it changes: poll), the
-seconds between polls */
-struct steam_qr
+/* a sign-in under way: Steam's ids for it, and the seconds between polls */
+struct steam_auth
 {
 	uint64_t client_id;
 	unsigned char request_id[64];
 	size_t request_id_size;
 	float interval;
-	char url[STEAM_URL_SIZE];
 };
 
-int steam_cm_qr_begin(struct steam_cm *cm, char const *device_name, struct steam_qr *qr);
 /* 1 once approved (the refresh token and the account's name written),
-0 while waiting (the qr's url may have changed), -1 on failure */
-int steam_cm_qr_poll(struct steam_cm *cm, struct steam_qr *qr, char *token, size_t token_size, char *account,
+0 while waiting, -1 on failure */
+int steam_cm_auth_poll(struct steam_cm *cm, struct steam_auth *auth, char *token, size_t token_size, char *account,
 	size_t account_size);
 
-/* a sign-in by account name and password instead (for a device that is
-itself the phone with the Steam app): the session begun into qr (its url
-empty), Steam's id of the account, and the confirmations it allows (bits:
-STEAM_GUARD_*); then steam_cm_qr_poll as for a QR sign-in, after
-steam_cm_guard_code when a code is asked for. 1, or 0 with the error said */
+/* a sign-in by account name and password: the session begun into auth,
+Steam's id of the account, and the confirmations it allows (bits:
+STEAM_GUARD_*); then steam_cm_auth_poll, after steam_cm_guard_code when a
+code is asked for. 1, or 0 with the error said */
 enum
 {
 	STEAM_GUARD_NONE = 1 << 1,
@@ -82,9 +79,9 @@ enum
 	STEAM_GUARD_EMAIL_CONFIRMATION = 1 << 5
 };
 int steam_cm_password_begin(struct steam_cm *cm, char const *account, char const *password, char const *device_name,
-	struct steam_qr *qr, uint64_t *steam_id, unsigned *confirmations);
+	struct steam_auth *auth, uint64_t *steam_id, unsigned *confirmations);
 /* a Steam Guard code typed (the app's, or the email's: email nonzero): the EResult */
-int steam_cm_guard_code(struct steam_cm *cm, struct steam_qr const *qr, uint64_t steam_id, char const *code, int email);
+int steam_cm_guard_code(struct steam_cm *cm, struct steam_auth const *auth, uint64_t steam_id, char const *code, int email);
 
 /* signs in with a refresh token (machine_id: the bytes of this install's
 identity, steam_cm_machine_id's); the EResult (STEAM_RESULT_OK) */

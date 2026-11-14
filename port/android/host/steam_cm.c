@@ -830,61 +830,7 @@ uint64_t steam_cm_steam_id(struct steam_cm const *cm)
 
 /* ---------- signing in */
 
-static void device_details(struct steam_pb *pb, char const *name)
-{
-	struct steam_pb details;
-
-	memset(&details, 0, sizeof(details));
-	steam_pb_string(&details, 1, name);
-	steam_pb_varint(&details, 2, 1); /* EAuthTokenPlatformType_SteamClient */
-	steam_pb_varint(&details, 3, CLIENT_OS_TYPE);
-	steam_pb_varint(&details, 4, 1);
-	steam_pb_bytes(pb, 3, details.bytes, details.size);
-	steam_pb_free(&details);
-}
-
-int steam_cm_qr_begin(struct steam_cm *cm, char const *device_name, struct steam_qr *qr)
-{
-	struct steam_pb request;
-	struct cm_message *answer;
-	struct steam_pb_reader reader;
-	int field, wire;
-	uint64_t value;
-	unsigned char const *data;
-	size_t size;
-
-	memset(qr, 0, sizeof(*qr));
-	memset(&request, 0, sizeof(request));
-	steam_pb_string(&request, 1, device_name);
-	steam_pb_varint(&request, 2, 1);
-	device_details(&request, device_name);
-	steam_pb_string(&request, 4, "Client");
-	answer = cm_call(cm, "Authentication.BeginAuthSessionViaQR#1", &request);
-	steam_pb_free(&request);
-	if (!answer)
-		return 0;
-	reader.at = answer->body;
-	reader.end = answer->body + answer->body_size;
-	reader.failed = 0;
-	while (steam_pb_next(&reader, &field, &wire, &value, &data, &size))
-	{
-		if (field == 1) qr->client_id = value;
-		else if (field == 2) steam_pb_text(data, size, qr->url, sizeof(qr->url));
-		else if (field == 3 && size <= sizeof(qr->request_id)) { memcpy(qr->request_id, data, size); qr->request_id_size = size; }
-		else if (field == 4) { uint32_t bits = (uint32_t)value; memcpy(&qr->interval, &bits, 4); }
-	}
-	message_free(answer);
-	if (!(qr->interval >= 1.0f && qr->interval <= 10.0f))
-		qr->interval = 5.0f;
-	if (!qr->url[0] || !qr->request_id_size)
-	{
-		cm_fail(cm, "Steam gave no sign-in code%s", NULL);
-		return 0;
-	}
-	return 1;
-}
-
-int steam_cm_qr_poll(struct steam_cm *cm, struct steam_qr *qr, char *token, size_t token_size, char *account,
+int steam_cm_auth_poll(struct steam_cm *cm, struct steam_auth *auth, char *token, size_t token_size, char *account,
 	size_t account_size)
 {
 	struct steam_pb request;
@@ -898,8 +844,8 @@ int steam_cm_qr_poll(struct steam_cm *cm, struct steam_qr *qr, char *token, size
 	token[0] = 0;
 	account[0] = 0;
 	memset(&request, 0, sizeof(request));
-	steam_pb_varint(&request, 1, qr->client_id);
-	steam_pb_bytes(&request, 2, qr->request_id, qr->request_id_size);
+	steam_pb_varint(&request, 1, auth->client_id);
+	steam_pb_bytes(&request, 2, auth->request_id, auth->request_id_size);
 	answer = cm_call(cm, "Authentication.PollAuthSessionStatus#1", &request);
 	steam_pb_free(&request);
 	if (!answer)
@@ -909,8 +855,7 @@ int steam_cm_qr_poll(struct steam_cm *cm, struct steam_qr *qr, char *token, size
 	reader.failed = 0;
 	while (steam_pb_next(&reader, &field, &wire, &value, &data, &size))
 	{
-		if (field == 1 && value) qr->client_id = value;
-		else if (field == 2 && size) steam_pb_text(data, size, qr->url, sizeof(qr->url));
+		if (field == 1 && value) auth->client_id = value;
 		else if (field == 3) steam_pb_text(data, size, token, token_size);
 		else if (field == 6) steam_pb_text(data, size, account, account_size);
 	}
@@ -925,7 +870,7 @@ static int hex_value(char ch)
 }
 
 int steam_cm_password_begin(struct steam_cm *cm, char const *account, char const *password, char const *device_name,
-	struct steam_qr *qr, uint64_t *steam_id, unsigned *confirmations)
+	struct steam_auth *auth, uint64_t *steam_id, unsigned *confirmations)
 {
 	struct steam_pb request;
 	struct cm_message *answer;
@@ -945,7 +890,7 @@ int steam_cm_password_begin(struct steam_cm *cm, char const *account, char const
 	static char const alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 	size_t out = 0;
 
-	memset(qr, 0, sizeof(*qr));
+	memset(auth, 0, sizeof(*auth));
 	*steam_id = 0;
 	*confirmations = 0;
 	modulus_hex[0] = exponent_hex[0] = 0;
@@ -1030,9 +975,9 @@ int steam_cm_password_begin(struct steam_cm *cm, char const *account, char const
 	reader.failed = 0;
 	while (steam_pb_next(&reader, &field, &wire, &value, &data, &size))
 	{
-		if (field == 1) qr->client_id = value;
-		else if (field == 2 && size <= sizeof(qr->request_id)) { memcpy(qr->request_id, data, size); qr->request_id_size = size; }
-		else if (field == 3) { uint32_t bits = (uint32_t)value; memcpy(&qr->interval, &bits, 4); }
+		if (field == 1) auth->client_id = value;
+		else if (field == 2 && size <= sizeof(auth->request_id)) { memcpy(auth->request_id, data, size); auth->request_id_size = size; }
+		else if (field == 3) { uint32_t bits = (uint32_t)value; memcpy(&auth->interval, &bits, 4); }
 		else if (field == 5) *steam_id = value;
 		else if (field == 4 && data)
 		{
@@ -1051,9 +996,9 @@ int steam_cm_password_begin(struct steam_cm *cm, char const *account, char const
 		}
 	}
 	message_free(answer);
-	if (!(qr->interval >= 1.0f && qr->interval <= 10.0f))
-		qr->interval = 5.0f;
-	if (!qr->request_id_size)
+	if (!(auth->interval >= 1.0f && auth->interval <= 10.0f))
+		auth->interval = 5.0f;
+	if (!auth->request_id_size)
 	{
 		cm_fail(cm, "Steam did not begin the sign-in%s", NULL);
 		return 0;
@@ -1061,13 +1006,13 @@ int steam_cm_password_begin(struct steam_cm *cm, char const *account, char const
 	return 1;
 }
 
-int steam_cm_guard_code(struct steam_cm *cm, struct steam_qr const *qr, uint64_t steam_id, char const *code, int email)
+int steam_cm_guard_code(struct steam_cm *cm, struct steam_auth const *auth, uint64_t steam_id, char const *code, int email)
 {
 	struct steam_pb request;
 	struct cm_message *answer;
 
 	memset(&request, 0, sizeof(request));
-	steam_pb_varint(&request, 1, qr->client_id);
+	steam_pb_varint(&request, 1, auth->client_id);
 	steam_pb_fixed64(&request, 2, steam_id);
 	steam_pb_string(&request, 3, code);
 	steam_pb_varint(&request, 4, email ? 2 : 3);

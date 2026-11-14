@@ -115,6 +115,60 @@ public class HaloActivity extends SDLActivity {
         return null;
     }
 
+    /** the side of a Workshop preview (steam_downloads.c's PREVIEW_SIDE) */
+    private static final int STEAM_PREVIEW_SIDE = 256;
+
+    /** a Workshop item's preview picture (port/android/host/steam_downloads.c's preview_decode) fitted to
+     * STEAM_PREVIEW_SIDE square on black: its 0xAARRGGBB pixels, least significant byte first; null if it
+     * cannot be decoded */
+    public static byte[] steamPreview(byte[] data) {
+        final int side = STEAM_PREVIEW_SIDE;
+        try {
+            android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            android.graphics.BitmapFactory.decodeByteArray(data, 0, data.length, options);
+            if (options.outWidth <= 0 || options.outHeight <= 0)
+                return null;
+            // (a large picture decoded at a fraction of its size, still at least the side)
+            int sample = 1;
+            while (options.outWidth / (sample * 2) >= side && options.outHeight / (sample * 2) >= side)
+                sample *= 2;
+            options = new android.graphics.BitmapFactory.Options();
+            options.inSampleSize = sample;
+            options.inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888;
+            android.graphics.Bitmap picture = android.graphics.BitmapFactory.decodeByteArray(data, 0, data.length,
+                    options);
+            if (picture == null)
+                return null;
+            android.graphics.Bitmap fitted = android.graphics.Bitmap.createBitmap(side, side,
+                    android.graphics.Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas canvas = new android.graphics.Canvas(fitted);
+            canvas.drawColor(android.graphics.Color.BLACK);
+            float scale = Math.min((float) side / picture.getWidth(), (float) side / picture.getHeight());
+            int width = Math.max(1, Math.round(picture.getWidth() * scale));
+            int height = Math.max(1, Math.round(picture.getHeight() * scale));
+            int left = (side - width) / 2, top = (side - height) / 2;
+            canvas.drawBitmap(picture, null, new android.graphics.Rect(left, top, left + width, top + height),
+                    new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG));
+            int[] pixels = new int[side * side];
+            fitted.getPixels(pixels, 0, side, 0, 0, side, side);
+            picture.recycle();
+            fitted.recycle();
+            byte[] out = new byte[side * side * 4];
+            for (int i = 0; i < pixels.length; i++) {
+                int pixel = pixels[i] | 0xFF000000;
+                out[4 * i] = (byte) pixel;
+                out[4 * i + 1] = (byte) (pixel >> 8);
+                out[4 * i + 2] = (byte) (pixel >> 16);
+                out[4 * i + 3] = (byte) (pixel >> 24);
+            }
+            return out;
+        } catch (Exception | OutOfMemoryError e) {
+            android.util.Log.w("Halo", "steam: a preview could not be decoded: " + e);
+            return null;
+        }
+    }
+
 
     @Override
     protected String[] getLibraries() {

@@ -37,6 +37,14 @@ int steam_unseal(char const *sealed, char *out, size_t out_size);
 Keystore entry), after a log out */
 void steam_seal_forget(void);
 
+#if defined(__ANDROID__)
+/* bytes through one of HaloActivity's static byte[] (byte[]) methods, from
+any thread: the answer's count into out (at most capacity), or -1 (the
+Keystore's seal here; steam_downloads.c's previews) */
+long steam_activity_bytes(char const *name, unsigned char const *in, size_t in_size, unsigned char *out,
+	size_t capacity);
+#endif
+
 /* a file of the owner's alone, made anew (0600 where there are modes),
 for writing: NULL on a failure */
 FILE *steam_seal_create(char const *path);
