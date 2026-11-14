@@ -6547,6 +6547,10 @@ static struct
 	int typing;
 	struct widget_instance *typing_row;
 	char caption[64];
+	/* the password's field opened as the account was passed on, before the
+	host asked for it (steam_choose): its asking, when it comes, let go */
+	boolean password_early;
+	unsigned long password_early_at;
 } steam_screen;
 
 static struct widget_instance *steam_row(struct widget_instance *widget)
@@ -6630,9 +6634,22 @@ static void steam_text_update(struct widget_instance *focused)
 
 	if (steam_screen.typing && (!text_field_editing(steam_screen.typing_row) || !steam_screen.typing_row->visible))
 		steam_text_cancel();
+	kind = 0;
+	/* (the host's asking comes a frame or more after the account, and is
+	the first it asks for then; given up on after a few seconds) */
+	if (steam_screen.password_early)
+	{
+		kind = steam_screen_text_wanted(initial, (int)sizeof(initial), &secret);
+		csmemset(initial, 0, sizeof(initial));
+		if (kind || system_milliseconds() - steam_screen.password_early_at > 5000)
+			steam_screen.password_early = FALSE;
+		if (kind == STEAM_TEXT_PASSWORD)
+			kind = 0;
+	}
 	if (steam_screen.typing || text_field_editing(NULL) || !focused)
 		return;
-	kind = steam_screen_text_wanted(initial, (int)sizeof(initial), &secret);
+	if (!kind)
+		kind = steam_screen_text_wanted(initial, (int)sizeof(initial), &secret);
 	if (!kind)
 		return;
 	steam_screen_text_caption(kind, steam_screen.caption, (int)sizeof(steam_screen.caption));
@@ -6776,10 +6793,35 @@ static boolean steam_choose(struct widget_instance *widget)
 
 	if (steam_screen.typing)
 	{
-		/* (A on the field: what was typed passed on) */
+		struct widget_instance *row = steam_screen.typing_row;
+
 		ui_play_audio_feedback_sound(SOUND_FORWARD);
-		if (text_field_editing(NULL))
+		if (!text_field_editing(NULL))
+			return TRUE;
+		/* (an empty account, password or code: Android's keyboard brought
+		back, which a tap on the row asks for once it has been closed;
+		passed on, it would be ignored and the sign-in left) */
+		if (!text_field.text[0] && steam_screen.typing != STEAM_TEXT_SEARCH)
+		{
+			platform_text_field(TRUE, text_field.masked);
+			return TRUE;
+		}
+		/* (A on the field: what was typed passed on; after the account, the
+		password's field opened in the same frame, which the host asks for
+		next: a keyboard hidden and asked for again a frame or two later is
+		not shown by Android) */
+		if (steam_screen.typing == STEAM_TEXT_ACCOUNT)
+		{
 			text_field_end(TRUE);
+			steam_screen_text_caption(STEAM_TEXT_PASSWORD, steam_screen.caption, (int)sizeof(steam_screen.caption));
+			steam_screen.typing = STEAM_TEXT_PASSWORD;
+			steam_screen.typing_row = row;
+			steam_screen.password_early = TRUE;
+			steam_screen.password_early_at = system_milliseconds();
+			text_field_open(row, "", 63, steam_text_done, TRUE);
+			return TRUE;
+		}
+		text_field_end(TRUE);
 		return TRUE;
 	}
 	if (place == NONE)
