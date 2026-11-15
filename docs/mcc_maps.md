@@ -1500,11 +1500,15 @@ Several data corrections are confined to MCC conversion:
   Duplicate names, size mismatches, and invalid ranges are refused. This is
   structural validation, not a content hash: supply the correct package's
   resources. Mercury Falling needs this for a relocated footstep sample.
-- A reference with neither its own nor its group's name in the resource file
-  is found at its offset when it spans exactly one whole member, as MCC reads
-  it: a map whose resources were built with a tag since renamed or moved keeps
-  its sounds and bitmaps. Part of a member, or a slice across members, is
-  still refused.
+- A reference with neither its own nor its group's name in the package's own
+  resource file is found at its offset when it spans exactly one whole member,
+  as MCC reads it: a map whose resources were built with a tag since renamed or
+  moved keeps its sounds and bitmaps. Part of a member, or a slice across
+  members, is still refused; a bitmap's decoding then reads from the member's
+  start within it (its pixels may be fewer than the member's bytes). A shared
+  resource file is never matched this way: the same offset and size in another
+  file says nothing of which file the map was built with, so choosing among
+  shared files still goes by names alone.
 - Non-power-of-two 2D bitmaps retain their dimensions in a linear ARGB texture.
   Their declared source mip chain is validated, but only the base level is
   retained because the native linear texture path has no mipmaps. This handles
