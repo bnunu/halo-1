@@ -56,7 +56,9 @@ static int overshield_setting = 1;
 static boolean overshield_effect_enabled(void) { return overshield_setting; }
 static struct overshield_effect *overshield_effect_get(long unit_index) { return overshield_unit[unit_index]; }
 static short overshield_effect_intensity_source(long unit_index) { (void)unit_index; return 1; }
-static real_rgb_color const *shield_color_colors(long index, real_rgb_color const *colors) { return colors; }
+static int color_setting;
+static real_rgb_color chosen_colors[4];
+static real_rgb_color const *shield_color_colors(long index, real_rgb_color const *colors) { return color_setting ? chosen_colors : colors; }
 #include "under_test.inc"
 
 static struct model_node hand_nodes[3] = {{NONE}, {0}, {1}};
@@ -82,6 +84,15 @@ int main(int argc, char **argv)
 {
 	char const *case_name = argc > 1 ? argv[1] : "";
 	real const half_tan_60 = 0.57735027f; /* tan(30 degrees) */
+	if (!strcmp(case_name, "color"))
+	{
+		struct render_model_effect effect;
+		setting = color_setting = 1; arms_at(.5f); effect = drawn(0, 0);
+		CHECK(effect.modifier_animation.colors == chosen_colors, "selected shield color reaches arms");
+		color_setting = 0; effect = drawn(0, 0);
+		CHECK(effect.modifier_animation.colors == units[0].object.outgoing_change_colors, "authored color remains default");
+		return 0;
+	}
 	units[0].object.outgoing_function_values[1] = 0.5f;
 	global_window_parameters.camera.vertical_field_of_view = 1.0471976f; /* 60 degrees */
 	arms_at(0.2f);

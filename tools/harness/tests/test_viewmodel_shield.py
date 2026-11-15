@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from harness import CHECK_FAILED, build, enum_with, function, mutated, read, run, structure
 
 CASES = ["off", "on", "others", "limit", "distance", "split", "overshield",
-         "rasterizer-limit", "rasterizer-stock", "toggle", "replace-player"]
+         "rasterizer-limit", "rasterizer-stock", "toggle", "replace-player", "color"]
 CONTROLS = {
     # the setting ignored: the hands always get the shield
     "always-on": (("if (!viewmodel_shield_enabled() || local_player_index", "if (local_player_index"), "off"),
@@ -84,7 +84,8 @@ def generated(control=None):
                                                              "OVERSHIELD_EFFECT_ARMS_LENGTH"]] +
                       [structure(overshield, "overshield_effect")])
     code = "\n".join([define(shield, "VIEWMODEL_SHIELD_STAND_OFF"), per_player_state(shield)] +
-                     [function(overshield, name) for name in ["overshield_effect_arms_values", "overshield_effect_draw"]] +
+                     [function(overshield, name) for name in ["overshield_effect_arms_values",
+                                                           "overshield_effect_find_values", "overshield_effect_draw"]] +
                      [function(shield, name) for name in ["viewmodel_shield_enabled", "viewmodel_shield_arms_distance",
                                                           "viewmodel_shield_maximum_offset", "viewmodel_shield_apply",
                                                           "viewmodel_shield_offset_amount"]] +

@@ -127,6 +127,7 @@ symbols in this file:
 #include "units/units.h"
 #include "view_fov.h" /* port: port/linux/game/view_fov.c */
 #include "viewmodel_shield.h" /* port: port/linux/game/viewmodel_shield.c */
+
 /* ---------- constants */
 
 enum

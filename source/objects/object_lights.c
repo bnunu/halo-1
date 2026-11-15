@@ -189,6 +189,8 @@ void shield_glow_update(void); /* port: port/linux/game/shield_glow.c */
 /* port: port/linux/src (halo.log) */
 void platform_log(const char *format, ...);
 
+#include "overshield_effect.h" /* port: port/linux/game/overshield_effect.c */
+
 /* ---------- constants */
 
 enum
@@ -712,6 +714,7 @@ void lights_initialize(
 void lights_dispose(
 	void)
 {
+	overshield_effect_reset(); /* port: queued identities and model heights belong to this map. */
 	cluster_partition_delete(&light_cluster_partition);
 
 	return;
@@ -780,6 +783,7 @@ boolean light_port_glow_set(
 void lights_initialize_for_new_map(
 	void)
 {
+	overshield_effect_reset(); /* port: queued identities and model heights belong to this map. */
 	light_port_glow_definition = NONE - 1; /* port: (looked for again) */
 	data_make_valid(light_data);
 	lights_game_globals->render_lights = TRUE;
@@ -791,6 +795,7 @@ void lights_initialize_for_new_map(
 void lights_dispose_from_old_map(
 	void)
 {
+	overshield_effect_reset(); /* port: queued identities and model heights belong to this map. */
 	data_make_invalid(light_data);
 	cluster_partition_make_invalid(&light_cluster_partition);
 
