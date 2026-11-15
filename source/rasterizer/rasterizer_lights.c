@@ -650,6 +650,22 @@ void rasterizer_lights_reset_for_new_map(
 	return;
 }
 
+/* port: a structure bsp switched to. Its lens flare markers keep their
+visibility by their index in the bsp, which the old bsp's markers at those
+indices had left (a10's switch to the bridge carried 15 lit ones over): a
+marker at an index the old bsp had seen lit could be drawn, behind a wall of
+the new bsp, until its own occlusion test was read, which right after a
+loading screen takes the GPU some frames. They are seen again from none, as
+on a new map, and their slots taken anew (lens_flare_occlusion_test_index). */
+void rasterizer_lights_reset_for_new_structure_bsp(
+	void)
+{
+	memset(local_lens_flare_occlusion_test_results2, 0, sizeof(local_lens_flare_occlusion_test_results2));
+	memset(lens_flare_occlusion_slots, 0, sizeof(lens_flare_occlusion_slots));
+
+	return;
+}
+
 void rasterizer_lens_flare_submit(
 	struct rasterizer_lens_flare_submit_parameters const *parameters)
 {
