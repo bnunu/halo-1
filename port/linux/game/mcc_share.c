@@ -1090,13 +1090,13 @@ void mcc_share_game_render(
 		if (progress[0] > progress[1])
 			progress[0] = progress[1];
 		if (!progress[1])
-			snprintf(mcc_share_text, sizeof(mcc_share_text), "Downloading %s...", name);
+			snprintf(mcc_share_text, sizeof(mcc_share_text), "Downloading %s from the Workshop...", name);
 		/* (in MB past 150 MB, where kilobytes are too many digits to read) */
 		else if (progress[1] > 150 * 1024)
-			snprintf(mcc_share_text, sizeof(mcc_share_text), "Downloading %s %lu/%lu MB%s", name,
+			snprintf(mcc_share_text, sizeof(mcc_share_text), "Downloading %s from the Workshop %lu/%lu MB%s", name,
 				(unsigned long)(progress[0] / 1024), (unsigned long)(progress[1] / 1024), speed);
 		else
-			snprintf(mcc_share_text, sizeof(mcc_share_text), "Downloading %s %lu/%lu KB%s", name,
+			snprintf(mcc_share_text, sizeof(mcc_share_text), "Downloading %s from the Workshop %lu/%lu KB%s", name,
 				(unsigned long)progress[0], (unsigned long)progress[1], speed);
 	}
 	else if (mcc_share_globals.state==MCC_SHARE_CLIENT_VERIFYING)
