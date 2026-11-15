@@ -2598,9 +2598,13 @@ void network_game_server_client_machine_game_loading_complete(
 		struct network_game_server_client_machine *client_machine =
 			&server->client_machines[client_machine_index];
 
-		/* (the machines in the game: not a connection that has not joined) */
+		/* (the machines in the game: not a connection that has not joined;
+		port: nor one left out of the start for a map download, which was
+		not told to load, and joins in progress once the game has begun,
+		network_game_server_release_map_fetchers) */
 		if (network_game_server_client_machine_is_joined_to_game(server, client_machine) &&
 			!map_share_machine_needs_map(client_machine->machine_index) &&
+			!network_game_server_map_pending[client_machine_index] &&
 			!TEST_FLAG(client_machine->flags, _network_client_machine_level_loaded_bit))
 		{
 			loading_machine_count++;
@@ -2641,8 +2645,10 @@ static void network_game_server_check_loading_complete(
 		struct network_game_server_client_machine *client_machine =
 			&server->client_machines[client_machine_index];
 
+		/* (port: not one left out of the start for a map download) */
 		if (network_game_server_client_machine_is_joined_to_game(server, client_machine) &&
 			!map_share_machine_needs_map(client_machine->machine_index) &&
+			!network_game_server_map_pending[client_machine_index] &&
 			!TEST_FLAG(client_machine->flags, _network_client_machine_level_loaded_bit))
 		{
 			return;
@@ -5546,13 +5552,18 @@ static boolean network_game_server_idle_pregame_tasks(
 
 			for (i = 0; i < MAXIMUM_NETWORK_MACHINE_COUNT; i++)
 			{
+				/* port: a machine left out of the start for a map download was
+				not told to load: it has not timed out loading, and joins in
+				progress once the game has begun
+				(network_game_server_release_map_fetchers) */
 				if (TEST_FLAG(
 					server->client_machines[i].flags,
 					_network_client_machine_connected_bit) &&
 					!TEST_FLAG(
 						server->client_machines[i].flags,
 						_network_client_machine_level_loaded_bit) &&
-					!map_share_machine_needs_map(server->client_machines[i].machine_index))
+					!map_share_machine_needs_map(server->client_machines[i].machine_index) &&
+					!network_game_server_map_pending[i])
 				{
 					char ascii_name[MAXIMUM_MACHINE_NAME_LENGTH];
 					boolean removed;
