@@ -279,9 +279,12 @@ The decompilation's upstream, punpckhdq/halo, is AGPL 3.0 from 17 October
 - Code follows [CODINGSTANDARDS.md](CODINGSTANDARDS.md): comments, tests
   and how the work is done.
 - Release notes, pull request titles and descriptions, and the READMEs are
-  written for players and reviewers, in this style:
-  - Only what shipped. Never list what was left out (no "Not in this PR" or
-    "for now" lines).
+  written for their readers. Use the player-facing style below for release
+  notes and feature summaries; keep the technical detail needed to review,
+  use, build or troubleshoot the change in PRs and documentation:
+  - Describe what shipped without a list of unrelated omissions. Include
+    material limitations, compatibility constraints and untested cases
+    wherever leaving them out would mislead the reader.
   - Lead with what a player sees ("Players can stand on & ride moving
     vehicles"), not a feature name ("Vehicle riding support") or how it
     works ("Grow a device's render sphere to hold its model wherever its
@@ -322,12 +325,16 @@ The decompilation's upstream, punpckhdq/halo, is AGPL 3.0 from 17 October
     `weapon_magazine_finish_reload` and `MIN(rounds_total, ...)`);
   - has no file-by-file lists ("`gpu_profile.c` / `.h`: resolves...");
   - covers one feature (not "Forge Mode, Tag Vault, 3D Tag Previewer and a
-    map builder" in one).
+    map builder" in one);
+  - states what was checked, the results, and relevant risks, limitations
+    or skipped checks. Keep these even when shortening the description.
 - A README has no "today", no hidden or experimental modes in its features
-  list, no implementation lines ("sends the rider's deck") and no usage
-  hints in its steps (console commands, debug settings).
-- Draft in this style, then run the
-  [humanizer](https://github.com/blader/humanizer) skill on the final text.
+  list and no unnecessary implementation detail. Include commands, settings
+  and technical explanations where readers need them to use, build or
+  troubleshoot the game; label experimental or diagnostic instructions.
+- Review the final text for clarity and accuracy. A writing skill such as
+  [humanizer](https://github.com/blader/humanizer) is optional; an equivalent
+  manual review is sufficient. Preserve technical meaning and caveats.
 - A pull request is small enough to review in 15 minutes where it can be
   ("Gameplay preservation, tags and map compatibility", above). One that
   cannot, of more than 3,000 changed lines, gets a reviewer's guide, posted
