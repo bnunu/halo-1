@@ -819,8 +819,7 @@ static void do_sign_in(void)
 			if (!accepted)
 			{
 				pthread_mutex_lock(&steam.state_lock);
-				snprintf(steam.message, sizeof(steam.message), "Steam did not accept that code: choose the row to "
-					"type it again.");
+				snprintf(steam.message, sizeof(steam.message), "Wrong code: A types it again.");
 				pthread_mutex_unlock(&steam.state_lock);
 				continue;
 			}
@@ -828,7 +827,7 @@ static void do_sign_in(void)
 		result = steam_cm_auth_poll(cm, &auth, token, sizeof(token), account, sizeof(account));
 		if (result < 0)
 		{
-			say("The sign-in ran out or was refused: try again. (%s)", steam_cm_error(cm));
+			say("Sign-in refused or timed out (%s).", steam_cm_error(cm));
 			steam_cm_close(cm);
 			set_state(SESSION_OUT);
 			return;
@@ -905,9 +904,8 @@ static void do_sign_out(void)
 	steam.item_count = 0;
 	steam.total = 0;
 	steam.state = SESSION_OUT;
-	snprintf(steam.message, sizeof(steam.message), "%s", revoked ? "Logged out: this sign-in is revoked with Steam." :
-		"Logged out here, but Steam could not be reached to revoke the sign-in: Steam's settings (Manage Steam "
-		"Guard, deauthorize all devices) can.");
+	snprintf(steam.message, sizeof(steam.message), "%s", revoked ? "Logged out, and revoked with Steam." :
+		"Logged out here; Steam was out of reach to revoke it (Manage Steam Guard can).");
 	pthread_mutex_unlock(&steam.state_lock);
 	pthread_mutex_unlock(&steam.session_lock);
 	steam_log("steam: logged out");
@@ -1837,17 +1835,17 @@ static void progress_text(char *text, int size)
 
 	if (!steam.size)
 	{
-		snprintf(text, (size_t)size, "Asking Steam for the files... A cancels.");
+		snprintf(text, (size_t)size, "Asking Steam... A cancels.");
 		return;
 	}
 	size_text(steam.done, done, sizeof(done));
 	size_text(steam.size, total, sizeof(total));
-	snprintf(text, (size_t)size, "Downloading %s: %s of %s. A cancels.", steam.downloading_name, done, total);
+	snprintf(text, (size_t)size, "%s of %s. A cancels.", done, total);
 	if (steam.queue_count)
 	{
 		size_t used = strlen(text);
 
-		snprintf(text + used, (size_t)size - used, " %d more queued.", steam.queue_count);
+		snprintf(text + used, (size_t)size - used, " %d queued.", steam.queue_count);
 	}
 }
 
@@ -1875,8 +1873,7 @@ static void queue_remove(int place)
 /* (state_lock held) the body of a queued download's details */
 static void queued_text(int place, char *text, int size)
 {
-	snprintf(text, (size_t)size, "In the download queue: %d of %d, after the download under way. A takes it out.",
-		place + 1, steam.queue_count);
+	snprintf(text, (size_t)size, "Queued, %d of %d. A takes it out.", place + 1, steam.queue_count);
 }
 
 /* (state_lock held) the state shown of an item */
@@ -1900,6 +1897,16 @@ static void item_state(struct steam_workshop_file const *file, char *state, int 
 static int package_outdated(struct package const *package)
 {
 	return package->file.id && item_installed(package->id, package->file.manifest) == 2;
+}
+
+/* a state of the user's (an account's name, a search) as the row's state box
+holds it: 15 characters, a longer one cut to 12 and "..." */
+static void state_text(char *state, int state_size, char const *text)
+{
+	if (strlen(text) > 15)
+		snprintf(state, (size_t)state_size, "%.12s...", text);
+	else
+		snprintf(state, (size_t)state_size, "%s", text);
 }
 
 /* (state_lock held) */
@@ -1945,12 +1952,12 @@ static void row_build(int place, char *name, int name_size, char *state, int sta
 		break;
 	case ROW_ACCOUNT_NAME:
 		snprintf(name, (size_t)name_size, "STEAM ACCOUNT");
-		snprintf(state, (size_t)state_size, "%s", steam.account[0] ? steam.account : "SIGNED IN");
+		state_text(state, state_size, steam.account[0] ? steam.account : "SIGNED IN");
 		break;
 	case ROW_LOG_OUT:
 		snprintf(name, (size_t)name_size, "LOG OUT");
 		if (steam.confirm == place)
-			snprintf(state, (size_t)state_size, "A AGAIN TO LOG OUT");
+			snprintf(state, (size_t)state_size, "LOG OUT?");
 		break;
 	case ROW_SHARED:
 		snprintf(name, (size_t)name_size, "MCC SHARED FILES");
@@ -1974,14 +1981,14 @@ static void row_build(int place, char *name, int name_size, char *state, int sta
 		else if (queue_find(1, package->id) >= 0)
 			snprintf(state, (size_t)state_size, "QUEUED");
 		else if (steam.confirm == place)
-			snprintf(state, (size_t)state_size, "A AGAIN TO REMOVE");
+			snprintf(state, (size_t)state_size, "REMOVE?");
 		else
 			snprintf(state, (size_t)state_size, "%s", package_outdated(package) ? "UPDATE" : "INSTALLED");
 		break;
 	}
 	case ROW_SEARCH:
 		snprintf(name, (size_t)name_size, "SEARCH");
-		snprintf(state, (size_t)state_size, "%s", steam.search[0] ? steam.search : "ANY");
+		state_text(state, state_size, steam.search[0] ? steam.search : "ANY");
 		break;
 	case ROW_SORT:
 		snprintf(name, (size_t)name_size, "SORT");
@@ -2015,11 +2022,13 @@ static void shared_text(char *text, int size)
 	int i;
 	size_t used;
 
-	snprintf(text, (size_t)size, "The resources many Workshop maps need, from your MCC's Halo: CE Anniversary:");
+	snprintf(text, (size_t)size, "Resources many maps need:");
 	for (i = 0; i < SHARED_FILES; i++)
 	{
 		used = strlen(text);
-		snprintf(text + used, (size_t)size - used, "\n%s/%s: %s", shared_files[i].folder + 1, shared_files[i].name,
+		snprintf(text + used, (size_t)size - used, "\n%s %.*s: %s",
+			strstr(shared_files[i].folder, "singleplayer") ? "Campaign" : "MP",
+			(int)(strchr(shared_files[i].name, '.') - shared_files[i].name), shared_files[i].name,
 			!steam.files_known ? "..." : steam.shared_present[i] ? "here" : "MISSING");
 	}
 }
@@ -2039,40 +2048,38 @@ static void details_build(int place, char *title, int title_size, char *text, in
 		if (steam.state == SESSION_GUARD)
 			snprintf(body, sizeof(body), "%s%s B cancels.",
 				steam.confirmations & STEAM_GUARD_DEVICE_CONFIRMATION ?
-				"Open the Steam app (on this device too) and approve the sign-in. " : "",
-				steam.confirmations & STEAM_GUARD_DEVICE_CODE ? "Or A types the Steam Guard code from the app." :
-				steam.confirmations & STEAM_GUARD_EMAIL_CODE ? "A types the code Steam emailed you." :
-				steam.confirmations & STEAM_GUARD_EMAIL_CONFIRMATION ? "Approve it from the email Steam sent." : "");
+				"Approve it in the Steam app. " : "",
+				steam.confirmations & STEAM_GUARD_DEVICE_CODE ? "Or A types its Steam Guard code." :
+				steam.confirmations & STEAM_GUARD_EMAIL_CODE ? "A types the code Steam emailed." :
+				steam.confirmations & STEAM_GUARD_EMAIL_CONFIRMATION ? "Approve it from Steam's email." : "");
 		else if (steam.state == SESSION_CONNECTING || steam.state == SESSION_SIGNING_IN)
 			snprintf(body, sizeof(body), "Reaching Steam...");
 		else
-			snprintf(body, sizeof(body), "A types your Steam account name, then its password. Steam then asks you to "
-				"approve the sign-in in the Steam app (this device's too), or for a Steam Guard code. The password is "
-				"not kept.");
+			snprintf(body, sizeof(body), "A asks for your account name and password, then Steam Guard. The password "
+				"is not kept.");
 		break;
 	case ROW_HOME_ACCOUNT:
 		snprintf(title, (size_t)title_size, "Manage account");
-		snprintf(body, sizeof(body), "The Steam account this game downloads with, and logging out.");
+		snprintf(body, sizeof(body), "The account downloads use, and logging out.");
 		break;
 	case ROW_HOME_FILES:
 		snprintf(title, (size_t)title_size, "MCC file status");
 		shared_text(body, sizeof(body));
-		snprintf(body + strlen(body), sizeof(body) - strlen(body), "\n\n%d Workshop items installed in mcc_maps.",
+		snprintf(body + strlen(body), sizeof(body) - strlen(body), "\n%d Workshop items installed.",
 			steam.package_count);
 		break;
 	case ROW_HOME_BROWSE:
 		snprintf(title, (size_t)title_size, "Browse Workshop");
-		snprintf(body, sizeof(body), "The Halo 1 maps and campaigns of MCC's Steam Workshop, by search, sort and "
-			"type. A on one installs it in mcc_maps.");
+		snprintf(body, sizeof(body), "MCC's Halo 1 maps and campaigns. A on one installs it.");
 		break;
 	case ROW_ACCOUNT_NAME:
 		snprintf(title, (size_t)title_size, "%s", steam.account[0] ? steam.account : "Steam account");
-		snprintf(body, sizeof(body), "Signed in with Steam (SteamID %llu). The sign-in is kept on this device until "
-			"you log out.", (unsigned long long)steam.steam_id);
+		snprintf(body, sizeof(body), "Signed in. It is kept on this device until you log out.");
 		break;
 	case ROW_LOG_OUT:
 		snprintf(title, (size_t)title_size, "Log out");
-		snprintf(body, sizeof(body), "Forget this device's Steam sign-in. What was downloaded stays in mcc_maps.");
+		snprintf(body, sizeof(body), "%s Downloads stay in mcc_maps.", steam.confirm == place ? "A again logs out." :
+			"Forgets this device's sign-in.");
 		break;
 	case ROW_SHARED:
 		snprintf(title, (size_t)title_size, "MCC shared files");
@@ -2083,9 +2090,9 @@ static void details_build(int place, char *title, int title_size, char *text, in
 		else
 		{
 			shared_text(body, sizeof(body));
-			snprintf(body + strlen(body), sizeof(body) - strlen(body), "\n\n%s",
+			snprintf(body + strlen(body), sizeof(body) - strlen(body), "\n%s",
 				!shared_installed() ? "A downloads them." : steam.confirm == place ?
-				"They are installed: A again downloads them anew." : "A downloads them again (press it twice).");
+				"A again downloads them anew." : "A twice downloads them again.");
 		}
 		break;
 	case ROW_PACKAGE:
@@ -2102,12 +2109,11 @@ static void details_build(int place, char *title, int title_size, char *text, in
 			char size[32];
 
 			size_text(package->file.size, size, sizeof(size));
-			snprintf(body, sizeof(body), "In mcc_maps/%s. A newer version is on the Workshop (%s): A downloads it.",
-				package->folder, size);
+			snprintf(body, sizeof(body), "An update is out (%s): A downloads it.", size);
 		}
 		else
-			snprintf(body, sizeof(body), "In mcc_maps/%s.%s A removes it (press it twice).", package->folder,
-				package->file.id ? " Up to date." : "");
+			snprintf(body, sizeof(body), "%s%s", package->file.id ? "Up to date. " : "",
+				steam.confirm == place ? "A again removes it." : "A twice removes it.");
 		if (package->file.id)
 			preview_want(&package->file);
 		break;
@@ -2116,9 +2122,7 @@ static void details_build(int place, char *title, int title_size, char *text, in
 	case ROW_SORT:
 	case ROW_TYPE:
 		snprintf(title, (size_t)title_size, "Filters");
-		snprintf(body, sizeof(body), "Search: %s. Sort: %s. Type: %s. A on a row changes it (search: type words; "
-			"nothing typed clears it). %u items.%s", steam.search[0] ? steam.search : "any",
-			steam.search[0] ? "relevance" : sort_names[steam.sort], type_names[steam.type], (unsigned)steam.total,
+		snprintf(body, sizeof(body), "A changes it; an empty search clears it. %u items.%s", (unsigned)steam.total,
 			steam.loading ? " Loading..." : "");
 		break;
 	case ROW_ITEM:
@@ -2134,9 +2138,9 @@ static void details_build(int place, char *title, int title_size, char *text, in
 		else if (queue_find(1, file->id) >= 0)
 			queued_text(queue_find(1, file->id), body, sizeof(body));
 		else
-			snprintf(body, sizeof(body), "%s, %u subscribers. %s %.300s", size, (unsigned)file->subscriptions,
-				installed == 1 ? "Installed (A downloads it again)." :
-				installed == 2 ? "An update is out: A downloads it." : "A installs it in mcc_maps.",
+			snprintf(body, sizeof(body), "%s, %u subscribers. %s\n%.300s", size, (unsigned)file->subscriptions,
+				installed == 1 ? "Installed: A again downloads it." :
+				installed == 2 ? "Update: A downloads it." : "A installs it.",
 				file->description);
 		preview_want(file);
 		break;
@@ -2150,26 +2154,30 @@ static void details_build(int place, char *title, int title_size, char *text, in
 		break;
 	}
 	{
-		/* (and what the threads are about, with how long they have been) */
+		/* (what the threads are about, with how long they have been, after the
+		row's text; a download's error and the latest message before it, that
+		the details' few lines never cut them off) */
 		size_t used;
 		unsigned long now = steam_milliseconds();
 
-		snprintf(text, (size_t)text_size, "%s", body);
+		text[0] = 0;
 		if (steam.message[0])
 		{
 			used = strlen(text);
-			snprintf(text + used, (size_t)text_size - used, "\n\n%s", steam.message);
+			snprintf(text + used, (size_t)text_size - used, "%s\n", steam.message);
 		}
+		used = strlen(text);
+		snprintf(text + used, (size_t)text_size - used, "%s", body);
 		if (steam.session_activity[0])
 		{
 			used = strlen(text);
-			snprintf(text + used, (size_t)text_size - used, "\n\nSteam: %s (%lus)", steam.session_activity,
+			snprintf(text + used, (size_t)text_size - used, "\nSteam: %s (%lus)", steam.session_activity,
 				(now - steam.session_since) / 1000);
 		}
 		if (steam.files_activity[0])
 		{
 			used = strlen(text);
-			snprintf(text + used, (size_t)text_size - used, "\n\nFiles: %s (%lus)", steam.files_activity,
+			snprintf(text + used, (size_t)text_size - used, "\nFiles: %s (%lus)", steam.files_activity,
 				(now - steam.files_since) / 1000);
 		}
 	}
@@ -2195,8 +2203,7 @@ static void download_ask(int what, struct steam_workshop_file const *item)
 	/* (QUEUED a moment, till the files thread takes it: it then shows as the
 	download under way) */
 	if (steam.downloading)
-		snprintf(steam.message, sizeof(steam.message), "Queued (%d waiting): it downloads after the one under way.",
-			steam.queue_count);
+		snprintf(steam.message, sizeof(steam.message), "Queued (%d waiting).", steam.queue_count);
 }
 
 /* (state_lock held) whether a download is under way or waiting */
@@ -2321,10 +2328,9 @@ int steam_downloads_back(void)
 	{
 		/* (the screen is not left while maps are coming: the queue would
 		go on with no screen to show it, and a map half here is no use) */
-		snprintf(steam.message, sizeof(steam.message), "%d download%s under way or queued: wait for %s, or cancel "
-			"%s in MCC FILE STATUS or BROWSE WORKSHOP, before leaving.", (steam.downloading ? 1 : 0) + steam.queue_count,
-			(steam.downloading ? 1 : 0) + steam.queue_count == 1 ? " is" : "s are",
-			(steam.downloading ? 1 : 0) + steam.queue_count == 1 ? "it" : "them",
+		snprintf(steam.message, sizeof(steam.message), "%d download%s going: wait, or cancel %s, to leave.",
+			(steam.downloading ? 1 : 0) + steam.queue_count,
+			(steam.downloading ? 1 : 0) + steam.queue_count == 1 ? "" : "s",
 			(steam.downloading ? 1 : 0) + steam.queue_count == 1 ? "it" : "them");
 		taken = 1;
 	}
