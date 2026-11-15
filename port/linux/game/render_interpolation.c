@@ -168,6 +168,9 @@ struct interpolated_first_person
 	long animation_graph_index;
 	short node_count;
 	boolean has_previous;
+	/* the game cut to an animation since the latest pose was taken
+	(render_interpolation_first_person_cut) */
+	boolean cut;
 	real_matrix4x3 previous[MAXIMUM_INTERPOLATED_NODES];
 	real_matrix4x3 latest[MAXIMUM_INTERPOLATED_NODES];
 };
@@ -609,6 +612,7 @@ void render_interpolation_reset(void)
 	{
 		interpolated_first_person[index].node_count = 0;
 		interpolated_first_person[index].has_previous = FALSE;
+		interpolated_first_person[index].cut = FALSE;
 	}
 	interpolation_cut_pending = FALSE;
 	interpolation_cut_tick = NONE;
@@ -1018,6 +1022,17 @@ static struct observer_result const *render_interpolation_blended_camera(
 
 /* ---------- first-person weapon */
 
+/* the game started a local player's first-person animation without blending
+into it, in the tick being simulated (first_person_weapon_set_state: a melee,
+the weapon readied or overheated): the pose cuts to the animation's first
+frame, as on the Xbox. Blended, the shotgun's melee swept the gun and the arm
+across the view, from where they were held to where the swing begins. */
+void render_interpolation_first_person_cut(short local_player_index)
+{
+	if (local_player_index >= 0 && local_player_index < MAXIMUM_LOCAL_PLAYERS)
+		interpolated_first_person[local_player_index].cut = TRUE;
+}
+
 /* The first-person weapon and hands are posed in world space from the drawn
 camera each frame, from animation state that changes once a tick: blend the
 pose relative to the camera. */
@@ -1047,16 +1062,20 @@ void render_interpolation_first_person(
 	matrix4x3_inverse(&camera_matrix, &inverse_camera);
 	if (first_person->tick != interpolation_tick ||
 		first_person->weapon_index != weapon_index ||
-		first_person->animation_graph_index != animation_graph_index)
+		first_person->animation_graph_index != animation_graph_index ||
+		first_person->cut)
 	{
 		/* the pose drawn last, if that was at the end of the tick just
 		before: not one left from before the view was last away from first
-		person (zoomed, in a vehicle, dead, in a cinematic), seconds old, and
-		not another weapon's or skeleton's (of as many nodes) */
+		person (zoomed, in a vehicle, dead, in a cinematic), seconds old, not
+		another weapon's or skeleton's (of as many nodes), and not one the
+		game cut from */
 		first_person->has_previous = first_person->tick == interpolation_tick - 1 &&
 			first_person->node_count == node_count &&
 			first_person->weapon_index == weapon_index &&
-			first_person->animation_graph_index == animation_graph_index;
+			first_person->animation_graph_index == animation_graph_index &&
+			!first_person->cut;
+		first_person->cut = FALSE;
 		memcpy(first_person->previous, first_person->latest, sizeof(first_person->previous));
 		first_person->tick = interpolation_tick;
 		first_person->weapon_index = weapon_index;

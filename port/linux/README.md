@@ -821,6 +821,10 @@ Each frame shows the world between the last two ticks
   one shot to the next when they were too close to tell for a cut (the
   Captain's bridge in a10's opening), and what the script moved for the new
   shot slid there (Sergeant Johnson's next walk).
+- The first-person weapon's animations the game starts without blending
+  into them (a melee, the weapon readied or overheated) are not mixed into
+  either: the pose cuts, as on the Xbox. Mixed, the shotgun's melee swept
+  the gun and the arm across the view.
 - After a long frame (several ticks in one frame), the camera mixes the
   last tick only, as the objects do.
 - In cinematics, a camera that moves with an object (the lifepod in a30,
@@ -2023,7 +2027,7 @@ Other changes:
 | `objects/widgets/lightning.c` | A lightning's bolt keeps its shape through the frames of a tick and takes a new one with the next, as on the Xbox, which drew a frame a tick: its random offsets (its markers', its points' jitter, its texture's) were drawn each frame, so at high frame rates it took a new shape every frame and flickered several times as fast (the light bridges' lightning in Assault on the Control Room, 343 Guilty Spark's tendrils). The later frames of a tick draw it from the local random seed the tick's first started from, in each window of a split screen, and leave the seed as they found it. |
 | `objects/widgets/flags.c` | A flag's cloth steps a tick at a time, as on the Xbox, not every frame (eight steps a tick at 240 frames a second held it eight times as stiff), and is drawn as far from where the frame that stepped it hung it as its first attachment marker has moved since, so that it stays on a running carrier's pole. |
 | `rasterizer/rasterizer_text.c`, `text/draw_string.c` | Text is drawn from an atlas of the fonts' glyphs, rasterized at the resolution the game draws at (`src/text_hires.c`), when the font has every character of the string. Text can be drawn scaled about a point (`rasterizer_text_set_scale`), as the players' names are. Each glyph's advance is centred on the font tag character's, so the layout is the same, and a glyph is cut at a text box only where the font tag's character visibly was. |
-| `interface/first_person_weapons.c` | The first-person hands are drawn with the unit's shield modifier shader, as its body is (`display.viewmodel_shield`). |
+| `interface/first_person_weapons.c` | The first-person hands are drawn with the unit's shield modifier shader, as its body is (`display.viewmodel_shield`). A first-person animation started without blending into it (a melee, the weapon readied or overheated) tells the frames' interpolation (`render_interpolation_first_person_cut`), which draws that tick's pose as it is, not mixed from the pose before (`display.interpolation`). |
 | `render/render_objects.c`, `objects/objects.c` | In first person, your own body is drawn from the waist down with the pose `first_person_legs.c` makes (`display.first_person_legs`); the waist it found and the mesh `object_mesh.c` read are forgotten on a new map. |
 | `render/render_objects.c` | An object's shadow map is centered where the frame draws the object between the ticks (`display.interpolation`, `render_interpolation_object_point`), as its model is drawn into the map, not where the tick left it: a fast vehicle (a Ghost) stood up to a tick's travel off its map's center, and the map's edge and corner fade cut its shadow's trailing side, flickering. |
 | `objects/object_lights.c` | Glows the port lights itself (`shield_glow.c`): dynamic lights attached to an object's node, colored and sized each frame by their maker, drawn with a light definition the map has. |
