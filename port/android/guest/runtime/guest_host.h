@@ -162,4 +162,44 @@ the body (its size in body_size), else 0 and why in error */
 int host_https_get(const char *url, int *status, char *headers, int headers_size, char *body, int body_capacity,
 	int *body_size, char *error, int error_size);
 
+/* an MCC package's fingerprint (SHA-256 and CRC32) on the host's threads, with the CPU's
+instructions, and kept on the card (port/android/host/host_mcc_hash.c, which says what each
+does; the guest's side is port/linux/game/mcc_resource_check.inl's) */
+int host_mcc_hash_start(unsigned int request);
+int host_mcc_hash_wait(int id, int milliseconds, unsigned int result);
+void host_mcc_hash_cancel(int id);
+/* a file's plain SHA-256 and size, on the host's threads (an MCC package a host offers) */
+int host_sha256_start(unsigned int path);
+int host_sha256_poll(int id, unsigned int digest, unsigned int size);
+void host_sha256_cancel(int id);
+/* the Steam Workshop screen, whose Steam client is the host's (port/android/host/steam_downloads.c, which
+says what each does; the guest's wrappers are port/linux/src/steam_screen.c's) */
+void host_steam_open(unsigned int data_root);
+void host_steam_close(void);
+int host_steam_poll(void);
+int host_steam_count(void);
+int host_steam_view(void);
+int host_steam_first(void);
+void host_steam_set_first(int first);
+int host_steam_chosen(void);
+void host_steam_set_chosen(int chosen);
+void host_steam_row(int place, unsigned int name, int name_size, unsigned int state, int state_size);
+void host_steam_details(int place, unsigned int title, int title_size, unsigned int text, int text_size);
+void host_steam_choose(int place);
+int host_steam_back(void);
+int host_steam_picture(unsigned int key, unsigned int pixels);
+int host_steam_text_wanted(unsigned int initial, int initial_size, unsigned int secret);
+void host_steam_text_caption(int kind, unsigned int text, int text_size);
+void host_steam_text_typed(int kind, unsigned int text, int saved);
+/* MCC's shared sets (the base resources no host sends): queued when missing */
+int host_steam_shared_fetch(unsigned int data_root);
+int host_steam_shared_state(void);
+/* a whole Workshop item installed in mcc_maps for a joiner (a package with no resource maps of its own) */
+int host_steam_install_start(unsigned int data_root, unsigned int id_low, unsigned int id_high);
+int host_steam_install_status(void);
+/* its progress, in KB: done, of all (0 not yet known), and a second */
+void host_steam_install_progress(unsigned int progress);
+/* files put in mcc_maps by the Steam downloader since the last ask (once) */
+int host_steam_take_rescan(void);
+
 #endif

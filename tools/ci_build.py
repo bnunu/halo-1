@@ -165,6 +165,11 @@ def main() -> int:
     shutil.copy2(ROOT / "port/third_party/expat/COPYING", dist / "expat-COPYING.txt")
     # MCC's texture decoder is distributed under bcdec's MIT option.
     shutil.copy2(ROOT / "port/third_party/bcdec/LICENSE", dist / "bcdec-LICENSE.txt")
+    if args.platform == "android":
+        # the Steam Workshop screen's Steam client (port/android/host/steam_*.c):
+        # Zstandard's decoder, whose BSD license asks binaries to carry its
+        # notice (the LZMA SDK's decoder is public domain)
+        shutil.copy2(ROOT / "port/third_party/zstd/LICENSE", dist / "zstd-LICENSE.txt")
     # voice chat's codec (port/third_party/opus), in every build, whose BSD
     # license asks binaries to carry its notice
     shutil.copy2(ROOT / "port/third_party/opus/COPYING", dist / "opus-COPYING.txt")

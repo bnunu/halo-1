@@ -28,11 +28,16 @@ enum mcc_workshop_refusal {
 /* A sidecar's text: line 1 the item id (1 to 20 digits), optional line 2 its
  * title. 1 when it holds a valid id. */
 int mcc_workshop_parse_sidecar(char const *text, struct mcc_workshop_item *item);
+/* A Halo 1 ModInfo.json's text (length bytes): its
+ * ModIdentifier.HostedModIds.SteamWorkshopId (a number or a string, not 0)
+ * and Title.Neutral. 1 when it holds a valid id. */
+int mcc_workshop_parse_modinfo(char const *text, int length, struct mcc_workshop_item *item);
 /* The package folder of a canonical name, mcc_maps\<folder>\<level>: 1 and the
  * folder, or 0 for a loose map. */
 int mcc_workshop_package_folder(char const *name, char folder[64]);
-/* The item a local package belongs to: its folder named by the item id (as
- * Steam names it), or MCC_WORKSHOP_SIDECAR in the folder. 1 when known. */
+/* The item a local package belongs to: MCC_WORKSHOP_SIDECAR in the folder,
+ * its folder named by the item id (as Steam names it), or the id in its
+ * ModInfo.json (mcc_workshop_parse_modinfo). 1 when known. */
 int mcc_workshop_local_item(char const *name, struct mcc_workshop_item *item);
 /* A level's name made readable: "pat_beavercreek" to "Pat Beavercreek". */
 void mcc_workshop_title_from_level(char const *name, char title[MCC_WORKSHOP_TITLE_SIZE]);

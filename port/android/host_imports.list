@@ -71,3 +71,36 @@ host_touch_devices
 host_https_get
 
 host_errno
+# an MCC package's fingerprint on the host's threads (port/android/host/host_mcc_hash.c)
+host_mcc_hash_start
+host_mcc_hash_wait
+host_mcc_hash_cancel
+# a file's plain SHA-256 on the host's threads (host_mcc_hash.c: an MCC package a host offers)
+host_sha256_start
+host_sha256_poll
+host_sha256_cancel
+# the Steam Workshop screen (port/android/host/steam_downloads.c)
+host_steam_open
+host_steam_close
+host_steam_poll
+host_steam_count
+host_steam_view
+host_steam_first
+host_steam_set_first
+host_steam_chosen
+host_steam_set_chosen
+host_steam_row
+host_steam_details
+host_steam_choose
+host_steam_back
+host_steam_picture
+host_steam_text_wanted
+host_steam_text_caption
+host_steam_text_typed
+# a joiner's MCC package from the Workshop (steam_downloads.c)
+host_steam_shared_fetch
+host_steam_shared_state
+host_steam_install_start
+host_steam_install_status
+host_steam_install_progress
+host_steam_take_rescan

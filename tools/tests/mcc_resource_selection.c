@@ -53,6 +53,17 @@ static FILE *mcc_open_explain(char const *name,struct mcc_cache_source *source,
 }
 #include "mcc_validation.inl"
 /* PLANNER */
+#if defined(HALO_ANDROID)
+/* (the host's calls, in the Android build of this driver: no hash job is
+the host's, and a cancel of job 0 is recorded) */
+static int host_cancelled_zero;
+const char *platform_data_root(void) {return ".";}
+void platform_translate_path(const char *xbox_path,char *host_path,unsigned long size) {snprintf(host_path,size,"%s",xbox_path);}
+int host_mcc_hash_start(unsigned int request) {(void)request;return -1;}
+int host_mcc_hash_wait(int id,int milliseconds,unsigned int result) {(void)id;(void)milliseconds;(void)result;return -1;}
+void host_mcc_hash_cancel(int id) {if(!id)host_cancelled_zero=1;}
+static int failing_read(void *p,uint32_t at,uint32_t bytes,void *out) {(void)p;(void)at;(void)bytes;(void)out;return 0;}
+#endif
 static void write_bytes(char const *path,char const *bytes) {
     FILE *f=fopen(path,"wb");assert(f);assert(fwrite(bytes,1,strlen(bytes),f)==strlen(bytes));assert(!fclose(f));
 }
@@ -64,6 +75,15 @@ int main(int argc,char **argv) {
     struct mcc_runtime runtime;FILE *f;int status,i,before,mismatch,owned,all;
     struct mcc_resource_candidates candidates;
     assert(argc==2);
+#if defined(HALO_ANDROID)
+    /* a check that fails before it has a host job of its own cancels none */
+    if(!strcmp(argv[1],"early_failure")) {
+        memset(&source,0,sizeof(source));source.read=failing_read;source.size=2048;
+        check=mcc_resources_check_begin_candidate(name,&source,NULL,reason,sizeof(reason));
+        printf("%s %d\n",check?"check":"none",host_cancelled_zero);
+        return 0;
+    }
+#endif
     if(!strcmp(argv[1],"cache")) {
         memset(paths,0,sizeof(paths));strcpy(paths[1],"mcc_maps/p/sounds.map");
         write_bytes(paths[1],"base");write_bytes("mcc_maps/sounds.map","base");

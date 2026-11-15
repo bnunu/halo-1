@@ -40,6 +40,135 @@ public class HaloActivity extends SDLActivity {
     private TouchControls touchControls;
     private static final int EXPORT_LAYOUT = 401, IMPORT_LAYOUT = 402;
     private String pendingLayoutExport;
+    // ---------- the Steam sign-in's seal (port/android/host/steam_seal.c, from the Steam client's threads):
+    // an AES-GCM key of the Android Keystore, which never leaves it, seals the refresh token the host keeps in
+    // the app's private storage. A copy of the file opens on no other phone, nor here once the key is gone
+    // (steamForget, at a log out; an uninstall)
+
+    private static final String STEAM_KEY_ALIAS = "steam_session";
+    private static final int STEAM_TAG_BITS = 128;
+
+    private static javax.crypto.SecretKey steamKey(boolean create) throws Exception {
+        java.security.KeyStore store = java.security.KeyStore.getInstance("AndroidKeyStore");
+        store.load(null);
+        java.security.Key key = store.getKey(STEAM_KEY_ALIAS, null);
+        if (key instanceof javax.crypto.SecretKey)
+            return (javax.crypto.SecretKey) key;
+        if (!create)
+            return null;
+        javax.crypto.KeyGenerator generator = javax.crypto.KeyGenerator.getInstance(
+                android.security.keystore.KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
+        generator.init(new android.security.keystore.KeyGenParameterSpec.Builder(STEAM_KEY_ALIAS,
+                android.security.keystore.KeyProperties.PURPOSE_ENCRYPT
+                        | android.security.keystore.KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build());
+        return generator.generateKey();
+    }
+
+    /** plain sealed: its vector's length (a byte), the vector, then the cipher text and its tag; null on a failure */
+    public static byte[] steamSeal(byte[] plain) {
+        try {
+            javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, steamKey(true));
+            byte[] vector = cipher.getIV();
+            byte[] sealed = cipher.doFinal(plain);
+            byte[] out = new byte[1 + vector.length + sealed.length];
+            out[0] = (byte) vector.length;
+            System.arraycopy(vector, 0, out, 1, vector.length);
+            System.arraycopy(sealed, 0, out, 1 + vector.length, sealed.length);
+            return out;
+        } catch (Exception e) {
+            android.util.Log.w("Halo", "steam: the Keystore could not seal the sign-in: " + e);
+            return null;
+        }
+    }
+
+    /** steamSeal's undone: the plain bytes, or null (another key's, damaged, or the key gone) */
+    public static byte[] steamUnseal(byte[] sealed) {
+        try {
+            javax.crypto.SecretKey key = steamKey(false);
+            int vector = sealed.length > 0 ? sealed[0] & 255 : 0;
+            if (key == null || vector < 12 || sealed.length < 1 + vector + STEAM_TAG_BITS / 8)
+                return null;
+            javax.crypto.Cipher cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(javax.crypto.Cipher.DECRYPT_MODE, key,
+                    new javax.crypto.spec.GCMParameterSpec(STEAM_TAG_BITS, sealed, 1, vector));
+            return cipher.doFinal(sealed, 1 + vector, sealed.length - 1 - vector);
+        } catch (Exception e) {
+            android.util.Log.w("Halo", "steam: the Keystore could not open the sign-in: " + e);
+            return null;
+        }
+    }
+
+    /** the key deleted (after a log out): what it sealed opens no more */
+    public static byte[] steamForget(byte[] unused) {
+        try {
+            java.security.KeyStore store = java.security.KeyStore.getInstance("AndroidKeyStore");
+            store.load(null);
+            store.deleteEntry(STEAM_KEY_ALIAS);
+        } catch (Exception e) {
+            android.util.Log.w("Halo", "steam: the Keystore's key could not be deleted: " + e);
+        }
+        return null;
+    }
+
+    /** the side of a Workshop preview (steam_downloads.c's PREVIEW_SIDE) */
+    private static final int STEAM_PREVIEW_SIDE = 256;
+
+    /** a Workshop item's preview picture (port/android/host/steam_downloads.c's preview_decode) fitted to
+     * STEAM_PREVIEW_SIDE square on black: its 0xAARRGGBB pixels, least significant byte first; null if it
+     * cannot be decoded */
+    public static byte[] steamPreview(byte[] data) {
+        final int side = STEAM_PREVIEW_SIDE;
+        try {
+            android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            android.graphics.BitmapFactory.decodeByteArray(data, 0, data.length, options);
+            if (options.outWidth <= 0 || options.outHeight <= 0)
+                return null;
+            // (a large picture decoded at a fraction of its size, still at least the side)
+            int sample = 1;
+            while (options.outWidth / (sample * 2) >= side && options.outHeight / (sample * 2) >= side)
+                sample *= 2;
+            options = new android.graphics.BitmapFactory.Options();
+            options.inSampleSize = sample;
+            options.inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888;
+            android.graphics.Bitmap picture = android.graphics.BitmapFactory.decodeByteArray(data, 0, data.length,
+                    options);
+            if (picture == null)
+                return null;
+            android.graphics.Bitmap fitted = android.graphics.Bitmap.createBitmap(side, side,
+                    android.graphics.Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas canvas = new android.graphics.Canvas(fitted);
+            canvas.drawColor(android.graphics.Color.BLACK);
+            float scale = Math.min((float) side / picture.getWidth(), (float) side / picture.getHeight());
+            int width = Math.max(1, Math.round(picture.getWidth() * scale));
+            int height = Math.max(1, Math.round(picture.getHeight() * scale));
+            int left = (side - width) / 2, top = (side - height) / 2;
+            canvas.drawBitmap(picture, null, new android.graphics.Rect(left, top, left + width, top + height),
+                    new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG));
+            int[] pixels = new int[side * side];
+            fitted.getPixels(pixels, 0, side, 0, 0, side, side);
+            picture.recycle();
+            fitted.recycle();
+            byte[] out = new byte[side * side * 4];
+            for (int i = 0; i < pixels.length; i++) {
+                int pixel = pixels[i] | 0xFF000000;
+                out[4 * i] = (byte) pixel;
+                out[4 * i + 1] = (byte) (pixel >> 8);
+                out[4 * i + 2] = (byte) (pixel >> 16);
+                out[4 * i + 3] = (byte) (pixel >> 24);
+            }
+            return out;
+        } catch (Exception | OutOfMemoryError e) {
+            android.util.Log.w("Halo", "steam: a preview could not be decoded: " + e);
+            return null;
+        }
+    }
+
 
     @Override
     protected String[] getLibraries() {

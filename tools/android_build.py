@@ -587,7 +587,10 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     host_cflags = " ".join([
         "-O2", "-g", "-fPIC", "-Wall", "-Wno-unused-function", "-D_GNU_SOURCE",
         f"-I{PORT_DIR}/include", f"-I{PORT_DIR}/host", f"-I{SDL_DIR}/include", f"-I{LINUX_DIR}/src",
-        f"-I{TOML_DIR}",
+        f"-I{TOML_DIR}", f"-I{ZLIB_DIR}", f"-I{MBEDTLS_DIR / 'include'}",
+        # (Mbed TLS's settings, as the library is built with them below: its
+        # contexts are bigger with threading, and steam_crypto.c makes them)
+        "-DMBEDTLS_THREADING_C", "-DMBEDTLS_THREADING_PTHREAD",
     ])
     host_sources = sorted((PORT_DIR / "host").glob("*.c")) + [
         LINUX_DIR / "src" / "posix_files.c", LINUX_DIR / "src" / "posix_net.c",
@@ -598,7 +601,10 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     ]
     for source in host_sources:
         obj = host_obj_dir / (source.name + ".o")
-        n.build(outputs=obj, rule="android_host_cc", inputs=source, variables={"cflags": host_cflags})
+        # (the Steam client's chunk unpacker: the LZMA SDK's and Zstandard's
+        # decoders, whose warnings are not ours)
+        n.build(outputs=obj, rule="android_host_cc", inputs=source,
+                variables={"cflags": host_cflags + (" -w" if source.name == "steam_unpack.c" else "")})
         host_objects.append(obj)
     # internet play's UPnP (posix_upnp.c, with port/third_party/miniupnpc),
     # as the other posix_*.c in the host
@@ -614,8 +620,7 @@ def generate_android_build(n: Writer, sln: Any) -> None:
     # port/third_party/mbedtls), as the other posix_*.c in the host
     # (with its locks: internet play's thread and the server browser's master
     # servers' both use it, as on Linux)
-    mbedtls_cflags = " ".join([host_cflags, f"-I{MBEDTLS_DIR / 'include'}", f"-I{MBEDTLS_DIR / 'library'}",
-                               "-DMBEDTLS_THREADING_C", "-DMBEDTLS_THREADING_PTHREAD"])
+    mbedtls_cflags = " ".join([host_cflags, f"-I{MBEDTLS_DIR / 'library'}"])
     # (and the server browser's requests to the master servers: posix_update.c's,
     # host_https.c)
     for source in [LINUX_DIR / "src" / "posix_dtls.c", LINUX_DIR / "src" / "posix_update.c",
@@ -624,6 +629,13 @@ def generate_android_build(n: Writer, sln: Any) -> None:
                               else source.name + ".o")
         n.build(outputs=obj, rule="android_host_cc", inputs=source,
                 variables={"cflags": mbedtls_cflags + (" -w" if source.parent.parent == MBEDTLS_DIR else "")})
+        host_objects.append(obj)
+    # the port's zlib, its names z_ (zlib_prefixed.h), for the Steam client's zip chunks and checksums
+    # (steam_unpack.c, steam_cm.c), as the guest has its own
+    for name in ZLIB_SOURCES:
+        obj = host_obj_dir / ("zlib_" + name + ".o")
+        n.build(outputs=obj, rule="android_host_cc", inputs=ZLIB_DIR / name,
+                variables={"cflags": " ".join([host_cflags, *ZLIB_DEFINES, "-w"])})
         host_objects.append(obj)
     table_obj = host_obj_dir / "host_import_table.c.o"
     n.build(outputs=table_obj, rule="android_host_cc", inputs=host_table_c, variables={"cflags": host_cflags})
