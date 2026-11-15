@@ -126,13 +126,21 @@ static int mcc_resource_read(struct mcc_resource_file *file,char const *name,
         offset=found->offset;
     } else {
         /* Grouped MCC resources require the original, bounded slice. */
-        if (!group_name) return 0;
-        for (i=0;i<file->count;i++) if (!strcmp(file->names+file->items[i].name,group_name)) {
+        if (group_name) for (i=0;i<file->count;i++) if (!strcmp(file->names+file->items[i].name,group_name)) {
             if (found) return 0;
             found=&file->items[i];
         }
-        if (!found || offset<found->offset || offset-found->offset>found->size ||
-            bytes>found->size-(offset-found->offset)) return 0;
+        if (found) {
+            if (offset<found->offset || offset-found->offset>found->size ||
+                bytes>found->size-(offset-found->offset)) return 0;
+        } else {
+            /* (MCC reads a resource at its offset, whatever the member's name:
+               a map built with a tag renamed since keeps its sounds and
+               bitmaps, when the reference is exactly one whole member) */
+            for (i=0;i<file->count && !found;i++)
+                if (file->items[i].offset==offset && file->items[i].size==bytes) found=&file->items[i];
+            if (!found) return 0;
+        }
     }
     return !out || (!fseek(file->stream,(long)offset,SEEK_SET) && fread(out,1,bytes,file->stream)==bytes);
 }
