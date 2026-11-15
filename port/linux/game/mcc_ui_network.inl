@@ -19,6 +19,13 @@ static boolean mcc_pending_local_client;
 static int mcc_pending_error_shown;
 static struct network_game_server *mcc_validation_server;
 
+/* A joined machine still checking its own copy of the package holds the
+ * start (bounded by its admission deadline): told to load before its check
+ * ends, it could not. One fetching the package from this host (the download
+ * prompt or the transfer: map_share_machine_needs_map) does not: as with a
+ * Custom Edition map, the start leaves it out and holds its players, and it
+ * joins the game in progress once it has the package
+ * (network_game_server_start_network_game). */
 static boolean mcc_ui_network_download_pending(struct network_game_server *server)
 {
     long i;
@@ -28,7 +35,8 @@ static boolean mcc_ui_network_download_pending(struct network_game_server *serve
     for (i = 0; i < MAXIMUM_NETWORK_MACHINE_COUNT; ++i) {
         struct network_game_server_client_machine *machine = &server->client_machines[i];
         if (network_game_server_client_machine_is_joined_to_game(server, machine) &&
-            mcc_share_game_machine_active(machine->machine_index)) return TRUE;
+            mcc_share_game_machine_active(machine->machine_index) &&
+            !map_share_machine_needs_map(machine->machine_index)) return TRUE;
     }
     return FALSE;
 }
@@ -82,7 +90,7 @@ void mcc_ui_network_update_map(struct network_game_server *server)
         }
         return;
     }
-    /* Validation and offered downloads must finish before synchronous load.
+    /* Validation must finish before synchronous load; downloads join later.
      * A deferred start at zero otherwise skips the ordinary countdown's
      * heartbeat branch on every frame. Keep that timer alive, including a
      * pending MCC selection still showing the temporary stock lobby map.

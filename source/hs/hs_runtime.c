@@ -977,6 +977,16 @@ boolean hs_runtime_waiting_on_call(
 	return !TEST_FLAG(caller->flags, _hs_syntax_node_script_bit) && caller->function_index == _hs_function_sleep_until;
 }
 
+/* port: a global initializer is not a console command, even when it calls
+a static script. The owning thread, not its current stack frame, decides. */
+boolean hs_runtime_port_executing_console_command(
+	void)
+{
+	return hs_runtime_globals.initialized &&
+		hs_runtime_globals.executing_thread_index != NONE &&
+		hs_thread_get(hs_runtime_globals.executing_thread_index)->type == _hs_thread_type_console_command;
+}
+
 /* port: the map's riding call counts only from a startup script (vehicle_riding.c) */
 short hs_runtime_port_executing_script_type(
 	void)

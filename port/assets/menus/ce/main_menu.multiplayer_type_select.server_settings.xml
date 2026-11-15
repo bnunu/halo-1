@@ -656,6 +656,9 @@
 		<string text="8 MB/S"/>
 		<string text="16 MB/S"/>
 		<string text="20 MB/S"/>
+		<string text="50 MB/S"/>
+		<string text="100 MB/S"/>
+		<string text="250 MB/S"/>
 	</strings>
 	<strings name="main_menu/multiplayer_type_select/server_settings/map_share_options/map_share_options_labels">
 		<string text="SHARE MAPS:"/>
@@ -664,6 +667,9 @@
 	<strings name="main_menu/multiplayer_type_select/server_settings/map_share_options/cap_map_share_options">
 		<string text="Share CE maps and MCC packages automatically.\nMCC base resources must be installed locally."/>
 		<string text="Players who join without the map cannot play."/>
+		<string text="The most you send of maps, so that the game\nkeeps the rest of your upload."/>
+		<string text="The most you send of maps, so that the game\nkeeps the rest of your upload."/>
+		<string text="The most you send of maps, so that the game\nkeeps the rest of your upload."/>
 		<string text="The most you send of maps, so that the game\nkeeps the rest of your upload."/>
 		<string text="The most you send of maps, so that the game\nkeeps the rest of your upload."/>
 		<string text="The most you send of maps, so that the game\nkeeps the rest of your upload."/>

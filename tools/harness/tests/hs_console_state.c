@@ -19,6 +19,7 @@ typedef float real;
 #define NUMBEROF(a) (sizeof(a)/sizeof((a)[0]))
 #define csmemset memset
 #define csstrncpy strncpy
+#define csstrcmp strcmp
 #define CHECK(c) do {if(!(c)){fprintf(stderr,"check line %d: %s\n",__LINE__,#c);return 1;}}while(0)
 static char assertion_text[512],temporary[512];
 static char *csprintf(char *out,char const *format,...) {va_list args;va_start(args,format);vsprintf(out,format,args);va_end(args);return out;}
@@ -89,7 +90,7 @@ static void *game_state_malloc(char const *name,char const *type,long size) {
     void *p=image+used;(void)name;(void)type;used+=(unsigned long)size;
     if(used>capacity)abort();return p;
 }
-static boolean hs_scenario_downloaded;
+static boolean hs_scenario_downloaded,hs_scenario_campaign;
 static boolean hs_function_allowed_in_maps[1]={FALSE};
 static char const *const hs_functions_denied_to_downloaded_maps[]={NULL};
 static char const *const hs_globals_denied_to_downloaded_maps[]={NULL};

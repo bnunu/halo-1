@@ -1782,7 +1782,7 @@ COOP_SETUP_SCREENS = [
 # Server Setup's map sharing (port/linux/game/map_share.c), for any game,
 # laid out as co-op's options are (its key, its title, its row's help and
 # its rows: menu_functions.c's gametype_options give their settings' values)
-MAP_SHARE_UPLOADS = (256, 512, 1024, 2048, 4096, 8192, 16384, 20480)
+MAP_SHARE_UPLOADS = (256, 512, 1024, 2048, 4096, 8192, 16384, 20480, 51200, 102400, 256000)
 MAP_SHARE_SETUP = ("map_share_options", "MAP SHARING",
                    "Sharing Custom Edition maps and MCC packages\\nwith joining players, and how fast.", [
     ("map_share", "SHARE MAPS:", ["ON", "OFF"], [

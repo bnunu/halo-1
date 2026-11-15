@@ -133,6 +133,7 @@ symbols in this file:
 #include "orbiting_camera.h"
 
 #include "editor/editor_stubs.h"
+#include "game/game.h" /* port: game_connection */
 #include "game/players.h"
 #include "input/input.h"
 #include "main/console.h"
@@ -1176,9 +1177,48 @@ void director_update(
 
 			observer_set_camera(local_player_index, &director->command);
 		}
+		/* port: a host with no player of its own runs the scripts' camera all
+		the same, without a player's controls or choice of camera
+		(director_unattended_scripted_camera) */
+		else if (director_unattended_scripted_camera(local_player_index))
+		{
+			struct camera_control controls;
+			struct observer_command command;
+			struct director *director = director_get(local_player_index);
+
+			csmemset(&controls, 0, sizeof(controls));
+			controls.local_player_index = local_player_index;
+			controls.seconds_elapsed = time_delta_sec;
+			csmemset(&command, 0, sizeof(command));
+			if (director->camera_proc == (director_camera_update_proc)scripted_camera_update)
+			{
+				director->camera_proc(
+					director->camera_data,
+					&controls,
+					&command);
+			}
+			if (TEST_FLAG(command.flags, _observer_command_valid_bit))
+				director->command = command;
+			else
+				SET_FLAG(director->command.flags, _observer_command_valid_bit, FALSE);
+			observer_set_camera(local_player_index, &director->command);
+		}
 	}
 
 	return;
+}
+
+/* port: a dedicated server has no local player, so no director or observer
+ran for it, and a cutscene's camera never left the world's origin: its co-op
+clients, shown the host's camera (network_coop.c), watched that. The first
+observer films the scripts' camera for it, as a host's first local player's
+does, while they have the camera (camera_control) */
+boolean director_unattended_scripted_camera(
+	short local_player_index)
+{
+	return local_player_index == 0 && *director_camera_scripted &&
+		local_player_get_next(NONE) == NONE &&
+		game_connection() == _game_connection_network_server;
 }
 
 void director_initialize_for_saved_game(

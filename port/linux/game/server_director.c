@@ -40,6 +40,7 @@ Called from the main loop every frame (main.c).
 #include "network_map_vote.h"
 #include "server_director.h"
 #include "mcc_server.h"
+#include "mcc_ui_network.h"
 #include "server_gametypes.h"
 
 #include "../src/p2p.h" /* port: port/linux/src/p2p.c, p2p_lobby.c */
@@ -1786,6 +1787,19 @@ static boolean server_map_vote(
 	return FALSE;
 }
 
+/* whether the lobby's map is to be set again, its widgets having put
+another back: not once the game is starting, nor while an MCC map waits for
+its package check (mcc_ui_network.c: the lobby shows its stand-in map
+meanwhile, and setting the MCC map again would start the check over, so
+that a check longer than the second between looks never ends) */
+static boolean server_lobby_map_lost(
+	struct network_game_server *network_server,
+	struct network_game const *game)
+{
+	return game && csstrcasecmp(game->map.name, server.current.level) &&
+		!network_game_server_port_start_sent(network_server) && !mcc_ui_network_map_pending(network_server);
+}
+
 static void server_lobby(
 	real seconds)
 {
@@ -1852,7 +1866,7 @@ static void server_lobby(
 		struct network_game *game = server_game();
 
 		server.map_checked_seconds = server.lobby_seconds;
-		if (game && csstrcasecmp(game->map.name, server.current.level) && !network_game_server_port_start_sent(network_server))
+		if (server_lobby_map_lost(network_server, game))
 		{
 			server_log(_server_log_warning, "lobby", "the lobby's map became %s: %s set again", game->map.name,
 				server.current.level);

@@ -118,6 +118,24 @@ web page in the lobby. Saving or playing that entry retains the spaces in its
 full MCC path. The HTTP command bridge calls `mcc_server_play_line` to validate
 the MCC namespace and quote that entry as one console argument. Legacy requests
 keep their established validation and command construction.
+`mcc_server_map_title` supplies the cached MCC catalog title to
+`network_game_server_list` in
+[network_server_manager.c](../../source/networking/network_server_manager.c).
+The small listing hook is needed because that shared caller otherwise strips
+every map to its filename before publishing. A Workshop level such as `2.map`
+can therefore appear as `Abyss`, while its full package path and content identity
+still govern joining. The existing listing text conversion limits the title to
+32 characters. This changes display text only, not the listing format, gameplay
+messages or protocol version. Missing MCC titles and Xbox/CE maps retain the
+existing filename fallback. The helper owns no state; catalog rescan and map
+transitions keep the existing discovery lifecycle.
+
+When installing a Workshop package manually on a dedicated server, preserve
+its `ModInfo.json` and referenced map JSON beside the flattened package's maps.
+These supply both menu titles and the metadata identity checked during joining.
+A maps-only copy does not match a complete Workshop installation, even when
+all `.map` bytes match. Prefer the Workshop item ID as the package folder name.
+
 With Map Sharing enabled, [mcc_share_package.c](../../port/linux/game/mcc_share_package.c)
 offers eligible packages automatically. Base resources stay local;
 [mcc_share_session.c](../../port/linux/game/mcc_share_session.c) validates

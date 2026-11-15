@@ -77,6 +77,7 @@ index and tag, since the map placed them at the same index everywhere.
 #include "cseries/errors.h"
 #include "cache/cache_files.h"
 #include "camera/camera_scripting.h"
+#include "camera/dead_camera.h"
 #include "camera/director.h"
 #include "camera/observer.h"
 #include "cutscene/cinematics.h"
@@ -469,6 +470,17 @@ static struct
 	/* looking through the host's camera: its scripted cutscene camera, or
 	its view for a player with nothing else to look at */
 	boolean host_camera;
+	/* the presentations in a row that wanted that camera and had one that
+	never moved (client_host_camera_unmoved: logged after a second, as a
+	dedicated server of this build's moves it within a tick of a map's first
+	cutscene), and the view watched in its place (client_watch_cutscene) */
+	short host_camera_unmoved_ticks;
+	struct dead_camera unmoved_camera;
+	/* the unit the host's scripts last started a custom animation on in this
+	cinematic, as a cutscene's actors are animated: the one that view watches
+	(cutscene_subject_set FALSE outside a cinematic) */
+	boolean cutscene_subject_set;
+	long cutscene_subject;
 	/* the eased view behind the host, used while there is nothing else to
 	watch (watching_host_valid is FALSE until it is first set) */
 	boolean watching_host_valid;
@@ -1492,12 +1504,20 @@ static long camera_object_get(
 static void host_presentation(
 	struct distributed_coop_presentation *presentation)
 {
-	struct observer_result const *camera = observer_get_camera(0);
+	/* the first local player's camera (director.c's), or, on a host with no
+	player of its own (a dedicated server), the first observer's while it
+	films the scripts' camera (director_unattended_scripted_camera): else
+	none */
+	short observer_index = local_player_get_next(NONE);
+	struct observer_result const *camera;
 	struct hud_timer_state timer;
 	real_rgb_color fade_color;
 	boolean fading_out;
 	long elapsed;
 
+	if (observer_index == NONE && director_unattended_scripted_camera(0))
+		observer_index = 0;
+	camera = observer_get_camera(observer_index);
 	csmemset(presentation, 0, sizeof(*presentation));
 	SET_FLAG(presentation->flags, _presentation_cinematic_bit, cinematic_in_progress());
 	SET_FLAG(presentation->flags, _presentation_letterbox_bit, cinematic_globals->show_letterbox);
@@ -1556,6 +1576,7 @@ static void host_presentation(
 static void client_cinematic_end(
 	void)
 {
+	coop_presentation.cutscene_subject_set = FALSE;
 	if (!coop_presentation.cinematic_started)
 		return;
 	coop_presentation.cinematic_started = FALSE;
@@ -1603,6 +1624,79 @@ static boolean client_watch_host_from_behind(
 	if (!distributed_axes_make_valid(forward, up))
 		observer_up_from_forward(forward, up);
 	return valid_real_vector3d_axes2(forward, up);
+}
+
+/* client: whether the host's camera is one that never moved, as a map's
+start leaves an observer (observer_clear: at the world's origin, looking
+down x). A dedicated server of an earlier build films no cutscene: it has no
+player, and the camera it sends, its first observer's, stays so (its
+director_unattended_scripted_camera came later). Its clients would watch
+every cutscene from the origin through it */
+static boolean client_host_camera_unmoved(
+	struct distributed_coop_presentation const *presentation)
+{
+	struct distributed_vector forward;
+	struct distributed_vector up;
+
+	distributed_vector_pack(global_forward3d, DISTRIBUTED_UNIT_SCALE, &forward);
+	distributed_vector_pack(global_up3d, DISTRIBUTED_UNIT_SCALE, &up);
+	return presentation->camera_position.x == global_origin3d->x &&
+		presentation->camera_position.y == global_origin3d->y &&
+		presentation->camera_position.z == global_origin3d->z &&
+		presentation->camera_forward.i == forward.i && presentation->camera_forward.j == forward.j &&
+		presentation->camera_forward.k == forward.k &&
+		presentation->camera_up.i == up.i && presentation->camera_up.j == up.j && presentation->camera_up.k == up.k;
+}
+
+/* client: in place of a host's camera that never moved, the cutscene's
+camera watches its actor, the unit the host's scripts last animated in it
+(cutscene_subject), else this machine's player, else the first player with
+a unit, as spectating frames a teammate (coop_spectate_camera: from in
+front of one the scripts hold, as a cutscene holds them all). The camera is
+set relative to the unit, at its eyes' height (its face, not its middle,
+where a wall brings the camera close) and a depth back from it, which the
+observer shortens where something is in the way */
+static void client_watch_cutscene(
+	void)
+{
+	struct dead_camera *camera = &coop_presentation.unmoved_camera;
+	short local_player_index = local_player_get_next(NONE);
+	long player_index = local_player_index != NONE ? local_player_get_player_index(local_player_index) : NONE;
+	long unit_index = player_index != NONE ? player_get(player_index)->unit_index : NONE;
+	struct object_datum *unit;
+	real_vector3d forward;
+	real_vector3d up;
+	real_point3d eye;
+	real_point3d behind;
+	real height;
+
+	if (coop_presentation.cutscene_subject_set &&
+		object_try_and_get_and_verify_type(coop_presentation.cutscene_subject, _object_mask_unit))
+	{
+		unit_index = coop_presentation.cutscene_subject;
+	}
+	if (unit_index == NONE)
+	{
+		struct data_iterator iterator;
+		struct player_datum *player;
+
+		data_iterator_new(&iterator, player_data);
+		while (unit_index == NONE && (player = data_iterator_next(&iterator)) != NULL)
+			unit_index = player->unit_index;
+	}
+	if (unit_index == NONE || !(unit = object_try_and_get(unit_index)))
+		return;
+	camera->unit_index = unit_index;
+	coop_spectate_camera(camera);
+	vector3d_from_euler_angles2d(&forward, &camera->facing);
+	observer_up_from_forward(&forward, &up);
+	unit_get_camera_position(unit_index, &eye);
+	height = PIN(eye.z - unit->object.bounding_sphere_center.z, 0.0f, unit->object.bounding_sphere_radius);
+	behind.x = -forward.i * camera->distance;
+	behind.y = -forward.j * camera->distance;
+	behind.z = -forward.k * camera->distance + height;
+	if (valid_real_vector3d_axes2(&forward, &up))
+		scripted_camera_set_camera_point_relative(&behind, &forward, &up, camera->field_of_view, 0, unit_index);
 }
 
 /* client: looks through the host's camera, or with its own */
@@ -1727,9 +1821,17 @@ static void client_apply_unit_animation(
 		return;
 	}
 	if (event->tag_index == NONE)
+	{
 		unit_stop_custom_animation(event->object_index);
+	}
 	else if (distributed_graph_animation(event->tag_index, event->value))
+	{
 		unit_port_play_user_animation(event->object_index, event->tag_index, event->value, event->interpolate, event->frame);
+		/* (a cutscene's actor, for a host whose camera never moved:
+		client_watch_cutscene) */
+		coop_presentation.cutscene_subject = event->object_index;
+		coop_presentation.cutscene_subject_set = TRUE;
+	}
 }
 
 static void client_apply_scenery_animation(
@@ -3675,6 +3777,8 @@ static void client_presentation_apply(
 	struct distributed_coop_presentation const *presentation)
 {
 	boolean cinematic = TEST_FLAG(presentation->flags, _presentation_cinematic_bit);
+	boolean host_camera_wanted;
+	boolean host_camera_unmoved;
 
 	player_input_enable(!presentation->input_disabled);
 	if (presentation->players_vitality_set && distributed_real_valid(presentation->players_maximum_body_vitality) &&
@@ -3705,14 +3809,31 @@ static void client_presentation_apply(
 	Pelican follow this machine's copy of it: camera_object_offset). Spectate
 	instead only when the cutscene leaves the camera with the player. A
 	player with no unit and nobody to watch also gets the host's view,
-	rather than a dead camera at the world origin. */
-	client_host_camera_set((coop_presentation.cinematic_started && presentation->camera_scripted) ||
-		coop_spectate_nothing_to_watch(0));
+	rather than a dead camera at the world origin. A camera that never moved
+	(a dedicated server of an earlier build's: client_host_camera_unmoved)
+	is not looked through: the cutscene's camera watches its actors instead
+	(client_watch_cutscene), rather than the world's origin. */
+	host_camera_wanted = (coop_presentation.cinematic_started && presentation->camera_scripted) ||
+		coop_spectate_nothing_to_watch(0);
+	host_camera_unmoved = host_camera_wanted && client_host_camera_unmoved(presentation);
+	if (!host_camera_unmoved)
+		coop_presentation.host_camera_unmoved_ticks = 0;
+	else if (coop_presentation.host_camera_unmoved_ticks < TICKS_PER_SECOND &&
+		++coop_presentation.host_camera_unmoved_ticks == TICKS_PER_SECOND)
+	{
+		error(_error_silent, "co-op: the host's camera stays at the world's origin (a dedicated server of an "
+			"earlier build films no cutscene): this machine watches the cutscene's actors");
+	}
+	client_host_camera_set(host_camera_wanted);
 	/* (also outside a cinematic: a cutscene that leaves the players their
 	controls shows the bars too) */
 	cinematic_show_letterbox(TEST_FLAG(presentation->flags, _presentation_letterbox_bit));
 	objects_port_set_activating_cluster((short)(presentation->activating_cluster - 1));
-	if (coop_presentation.host_camera)
+	if (coop_presentation.host_camera && host_camera_unmoved)
+	{
+		client_watch_cutscene();
+	}
+	else if (coop_presentation.host_camera)
 	{
 		real_vector3d forward, up;
 

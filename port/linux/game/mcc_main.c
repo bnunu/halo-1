@@ -16,7 +16,35 @@
 #include "networking/network_game_manager.h"
 #include "../src/port_config.h"
 
-boolean mcc_main_campaign_won(void)
+/* The script may spell a path or .map suffix, but only its last component
+ * names a mission, and it remains in the current package. */
+boolean mcc_main_script_level_resolve(char const *current, char const *requested, char *next, size_t size)
+{
+    char const *leaf = requested;
+    char const *cursor;
+    char const *separator;
+    char candidate[160];
+    size_t length;
+    short index;
+
+    if (!current || !mcc_level_name(current) || !requested || !next || !size) return FALSE;
+    separator = strrchr(current, '\\');
+    if (!separator) return FALSE;
+    for (cursor = requested; *cursor; cursor++) {
+        if (*cursor == '\\' || *cursor == '/') leaf = cursor + 1;
+    }
+    length = strlen(leaf);
+    if (length > 4 && !_stricmp(leaf + length - 4, ".map")) length -= 4;
+    if (!length || length > 64) return FALSE;
+    snprintf(candidate, sizeof(candidate), "%.*s\\%.*s", (int)(separator - current), current, (int)length, leaf);
+    index = mcc_maps_find(candidate);
+    if (index == NONE || !mcc_maps_campaign(index) || strlen(mcc_maps_level_name(index)) >= size) return FALSE;
+    csstrncpy(next, mcc_maps_level_name(index), size - 1);
+    next[size - 1] = 0;
+    return TRUE;
+}
+
+boolean mcc_main_campaign_won(char const *requested)
 {
     struct network_game *game;
     char const *current;
@@ -24,15 +52,21 @@ boolean mcc_main_campaign_won(void)
     wchar_t text[512];
     int state;
     boolean server;
+    /* A mission the scripts named is the package's own: no manifest needed. */
     if (!mcc_cache_tags_loaded() || mcc_cache_scenario_type() != 0 ||
-        !config_boolean("game.mcc_campaigns")) return FALSE;
+        (!requested && !config_boolean("game.mcc_campaigns"))) return FALSE;
     /* Clients follow the host's existing round/settings messages. */
     if (game_connection() == _game_connection_network_client) return TRUE;
     server = game_connection() == _game_connection_network_server;
     game = server ? network_game_get_game() : NULL;
     current = game ? game->map.name : main_get_map_name();
     mcc_progress_complete(current, game_difficulty_level_get());
-    state = mcc_maps_next_mission(current, next);
+    if (requested && strlen(requested) < sizeof(next)) {
+        strcpy(next, requested);
+        state = 1;
+    } else {
+        state = mcc_maps_next_mission(current, next);
+    }
     if (state < 0) {
         error(_error_silent, "mcc campaign: next mission for %s is unavailable: %s", current, next);
         mcc_error_text(current, "The next campaign mission is missing or invalid. Install the complete package; no mission was skipped.", text, 512);

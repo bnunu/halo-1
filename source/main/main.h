@@ -58,6 +58,11 @@ void main_save_cancel(
 void main_won_map(
 	void);
 
+/* port: a campaign map's own script naming the level that comes next
+(hs.c's map_name) */
+void main_script_map_name(
+	char const *map_name);
+
 void main_lost_map(
 	void);
 

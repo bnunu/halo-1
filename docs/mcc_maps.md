@@ -936,6 +936,21 @@ the conditional `sleep` calls used in shipped and Ruby campaign scripts.
 It does not call `core_save_name`: that Xbox function writes a raw debug
 save, and remains unchanged and unavailable to map scripts.
 
+An MCC campaign mission's scripts may call `map_name`, which H1A custom
+campaigns use to end a mission and load the next: `(map_name "x05_captured")`
+names a mission of the same package (`mcc_maps\<package>\x05_captured`),
+whose script ends the level as `game_won` does, with that mission next, with
+or without a campaign manifest (`mcc_main_campaign_won`). Alone it loads; a
+network co-op host takes every machine there; a dedicated server plays its
+rotation's next entry, as after any won level. A name that is no campaign
+mission of the package does nothing (logged), and no map's script may load
+any other map. Before, the refused call disabled its whole script: the
+missions' endings (their last cutscene and level change) never ran.
+Global initializers may not change maps, even through a static script; the
+call is logged and ignored until made by a script thread or the console.
+`mcc_main_script_level_resolve` owns the same-package destination lookup;
+the shared `main_script_level_resolve` delegates only MCC level names to it.
+
 MCC scenarios may call the zero-argument, void `ai_deselect` operation through
 the MCC registry in [`mcc_scripts.c`](../port/linux/game/mcc_scripts.c).
 Its evaluator calls the existing `ai_scripting_deselect` service in
