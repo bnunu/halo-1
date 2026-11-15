@@ -2660,7 +2660,7 @@ def _steam_workshop() -> list:
     # ACCOUNT needs; the state whole, kept to 15 characters by the host: "DOWNLOAD
     # AGAIN?", an account's name shortened)
     lines += _widget(f"{base}/steam_name",
-                     [("type", "text"), ("controller", 1), ("width", 236), ("height", 22), ("font", "ui\\large_ui"),
+                     [("type", "text"), ("controller", 1), ("width", 236), ("height", 28), ("font", "ui\\large_ui"),
                       ("color", "#FF2896FF"), ("text_y", 4)], [])
     lines += _widget(f"{base}/steam_state",
                      [("type", "text"), ("controller", 1), ("width", 132), ("height", 22), ("font", "ui\\small_ui"),

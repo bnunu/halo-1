@@ -104,7 +104,7 @@
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_name" x="12"/>
 		<child widget="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_state" x="252"/>
 	</widget>
-	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_name" type="text" controller="1" width="236" height="22" font="ui\large_ui" color="#FF2896FF" text_y="4">
+	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_name" type="text" controller="1" width="236" height="28" font="ui\large_ui" color="#FF2896FF" text_y="4">
 	</widget>
 	<widget name="main_menu/settings_select/player_setup/player_profile_edit/network_setup/steam_workshop/steam_state" type="text" controller="1" width="132" height="22" font="ui\small_ui" color="#FF2896FF" align="center" text_y="6" text_flags="no_focus_test">
 	</widget>
