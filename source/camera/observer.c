@@ -852,18 +852,26 @@ static void observer_update_polynomial(
 	return;
 }
 
+/* port: a turn however small is made. normalize3d calls a vector of less
+than 0.0001 none, and the observer, which the port moves every frame drawn
+(main.c), not 30 times a second, made none of a slow turn's steps: at
+thousands of frames a second the main menu's camera moved but did not turn */
 static void observer_apply_rotational_displacement(
 	real_vector3d const *rotational_displacement,
 	real_vector3d *forward,
 	real_vector3d *up)
 {
 	real_vector3d axis = *rotational_displacement;
-	real angle = normalize3d(&axis);
+	real angle = magnitude3d(&axis);
 
-	if (angle != 0.f)
+	if (angle > 0.f)
 	{
 		real sine_value = (real)sin(angle);
 		real cosine_value = (real)cos(angle);
+
+		axis.i /= angle;
+		axis.j /= angle;
+		axis.k /= angle;
 
 		rotate_vector_about_axis(forward, &axis, sine_value, cosine_value);
 		rotate_vector_about_axis(up, &axis, sine_value, cosine_value);
@@ -989,6 +997,46 @@ static void observer_update_positions(
 	return;
 }
 
+/* port: the turn from one orientation to another as a vector, its length
+the angle, as vector_from_matrices4x3 has it, however small: that calls a
+turn of less than 0.0002 none (quaternion_to_angle_and_vector's
+normalize3d), and the turn left to make was taken for none until it grew
+past that, at a high frame rate for frames on end */
+static void observer_rotation_vector_from_matrices(
+	real_matrix4x3 const *a,
+	real_matrix4x3 const *b,
+	real_vector3d *rotation)
+{
+	real_matrix4x3 inverse_b;
+	real_matrix4x3 relative;
+	real_quaternion quaternion;
+	real length;
+
+	matrix4x3_inverse(b, &inverse_b);
+	matrix4x3_multiply(a, &inverse_b, &relative);
+	matrix4x3_rotation_to_quaternion(&relative, &quaternion);
+	length = magnitude3d(&quaternion.v);
+	if (length > 0.f)
+	{
+		real angle = 2.f*arctangent(length, quaternion.w);
+		real scale;
+
+		/* (the shorter way round) */
+		if (angle > _pi)
+			angle -= 2.f*_pi;
+		scale = angle/length;
+		rotation->i = quaternion.v.i*scale;
+		rotation->j = quaternion.v.j*scale;
+		rotation->k = quaternion.v.k*scale;
+	}
+	else
+	{
+		*rotation = *global_zero_vector3d;
+	}
+
+	return;
+}
+
 static void observer_rotational_displacement(
 	real_vector3d const *forward0,
 	real_vector3d const *up0,
@@ -1012,7 +1060,8 @@ static void observer_rotational_displacement(
 
 	matrix4x3_rotation_from_vectors(&matrix0, forward0, up0);
 	matrix4x3_rotation_from_vectors(&matrix1, forward1, up1);
-	vector_from_matrices4x3(&matrix0, &matrix1, rotation);
+	/* port: (observer_rotation_vector_from_matrices) */
+	observer_rotation_vector_from_matrices(&matrix0, &matrix1, rotation);
 
 	return;
 }
