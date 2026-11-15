@@ -103,7 +103,7 @@ jobs:
             tools/test_mcc_share.py tools/test_mcc_share_rules.py tools/test_mcc_share_stage.py \
             tools/test_mcc_share_storage.py tools/test_mcc_share_metadata.py tools/test_mcc_load_network.py \
             tools/test_checkpoint_epoch.py tools/test_coop_checkpoint.py tools/test_coop_checkpoint_recovery.py \
-            tools/test_mcc_checkpoint.py tools/test_steam_client.py tools/test_host_mcc_hash.py
+            tools/test_mcc_checkpoint.py tools/test_steam_client.py tools/test_host_mcc_hash.py tools/test_mcc_workshop_modinfo.py
           python -m pytest -q tools/test_keyboard_glyphs.py tools/test_menu_button_glyphs.py tools/test_mcc_keyboard_glyphs.py tools/test_controller_buttons.py tools/test_controller_remap.py tools/test_controller_remap_context.py tools/test_hud_button_style.py tools/test_hud_corrections.py
 
       - name: Compile cache
