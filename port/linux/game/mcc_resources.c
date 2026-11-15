@@ -28,6 +28,7 @@ struct mcc_resource_file {
     char *names;
     struct mcc_resource_item *items;
     uint32_t count,data_bytes;
+    int own; /* the map's own file, not a shared one (mcc_package_shared_resource) */
     char path[128];
 };
 struct mcc_resources { struct mcc_resource_file files[2]; };
@@ -85,6 +86,7 @@ static int mcc_resource_open(struct mcc_resource_file *file,unsigned type,char c
     }
     file->count=count;
     file->data_bytes=names;
+    file->own=!mcc_package_shared_resource(path,type);
     strcpy(file->path,path);
     return 1;
 failed:
@@ -110,8 +112,10 @@ static struct mcc_resource_file *mcc_resource_get(struct mcc_runtime *runtime,un
     return file;
 }
 
+/* whole: the map's check of a reference's full extent; a decoder's read may
+   take less of it */
 static int mcc_resource_read(struct mcc_resource_file *file,char const *name,
-    uint32_t offset,uint32_t bytes,void *out,char const *group_name)
+    uint32_t offset,uint32_t bytes,void *out,char const *group_name,int whole)
 {
     uint32_t i;
     struct mcc_resource_item const *found=NULL;
@@ -126,13 +130,26 @@ static int mcc_resource_read(struct mcc_resource_file *file,char const *name,
         offset=found->offset;
     } else {
         /* Grouped MCC resources require the original, bounded slice. */
-        if (!group_name) return 0;
-        for (i=0;i<file->count;i++) if (!strcmp(file->names+file->items[i].name,group_name)) {
+        if (group_name) for (i=0;i<file->count;i++) if (!strcmp(file->names+file->items[i].name,group_name)) {
             if (found) return 0;
             found=&file->items[i];
         }
-        if (!found || offset<found->offset || offset-found->offset>found->size ||
-            bytes>found->size-(offset-found->offset)) return 0;
+        if (found) {
+            if (offset<found->offset || offset-found->offset>found->size ||
+                bytes>found->size-(offset-found->offset)) return 0;
+        } else {
+            /* (MCC reads a resource at its offset, whatever the member's name:
+               in the map's own file, a map built with a tag renamed since keeps
+               its sounds and bitmaps. Its check takes exactly one whole member,
+               and a decoder then reads from that member's start within it. A
+               shared file is never chosen this way: the same offset and size in
+               another file says nothing of which file the map was built with) */
+            if (!file->own) return 0;
+            for (i=0;i<file->count && !found;i++)
+                if (file->items[i].offset==offset &&
+                    (whole ? file->items[i].size==bytes : file->items[i].size>=bytes)) found=&file->items[i];
+            if (!found) return 0;
+        }
     }
     return !out || (!fseek(file->stream,(long)offset,SEEK_SET) && fread(out,1,bytes,file->stream)==bytes);
 }
@@ -141,7 +158,7 @@ int mcc_resources_read(struct mcc_runtime *runtime,unsigned type,char const *nam
     uint32_t offset,uint32_t bytes,void *out,char const *group_name)
 {
     struct mcc_resource_file *file=mcc_resource_get(runtime,type);
-    return file && out && mcc_resource_read(file,name,offset,bytes,out,group_name);
+    return file && out && mcc_resource_read(file,name,offset,bytes,out,group_name,0);
 }
 
 struct mcc_resource_probe {struct mcc_resource_file *file;unsigned type;};
@@ -154,7 +171,7 @@ static int mcc_resource_check(void *context,struct mcc_resource_reference const 
     if (ref->type==1) snprintf(name,sizeof(name),"%s_%lu",ref->tag_name,(unsigned long)ref->first);
     else snprintf(name,sizeof(name),"%s__%lu__%lu",ref->tag_name,(unsigned long)ref->first,(unsigned long)ref->second);
     snprintf(group,sizeof(group),"%s%s",ref->tag_name,ref->type==1 ? "__pixels" : "__permutations");
-    return mcc_resource_read(probe->file,name,ref->offset,ref->bytes,NULL,group);
+    return mcc_resource_read(probe->file,name,ref->offset,ref->bytes,NULL,group,1);
 }
 
 static int mcc_resource_equal(FILE *a,FILE *b)
