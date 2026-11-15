@@ -14,6 +14,11 @@ Overshield, display.overshield_effect; off, the game's own):
   green; the remaining layer through 200% is reddish-pink.
 - On the first-person arms (with display.viewmodel_shield,
   viewmodel_shield.c) it comes up as the rise passes them, and stays.
+- On a cloaked unit (active camouflage) it is as faint as the cloak is
+  strong, as its glow is (shield_glow.c): a unit cloaked whole shows only
+  its shield's own flares, as in the stock game. Lit whole under the cloak,
+  it showed on a cloaked player's sniper rifle or rocket launcher where the
+  weapon reached past the body, which its cloak hid it on.
 - A hit on it plays what a hit on an Elite's shield plays (the hitting
   projectile's own effect for an Elite's energy shield: its sound, sparks
   and light), when the map has it.
@@ -320,8 +325,32 @@ boolean overshield_effect_active(
 	return object && TEST_FLAG(_object_mask_unit, object->object.type) && overshield_effect_get(object_index) != NULL;
 }
 
+/* how much of a unit's overshield shows through its cloak: 1 uncloaked,
+none cloaked whole */
+static real overshield_effect_uncloaked(
+	long unit_index)
+{
+	struct unit_datum *unit = unit_try_and_get(unit_index);
+
+	return unit ? PIN(1.f - unit->unit.active_camouflage, 0.f, 1.f) : 1.f;
+}
+
+/* the intensity an overshield's flare is drawn at, lit this far (the body
+whole, the arms as far as the rise has reached them): as much of it as
+shows through a cloak, and on the body no less than the shield's own flare
+(its own intensity), which shows through a cloak as the stock game's does */
+static real overshield_effect_intensity(
+	real own,
+	real lit,
+	real uncloaked,
+	boolean arms)
+{
+	return arms ? lit * uncloaked : MAX(own, lit * uncloaked);
+}
+
 /* the values a unit's modifier shader is drawn with, given its own: with an
-overshield, a copy whose intensity is full on the body that
+overshield, a copy whose intensity is full on the body (as much as shows
+through a cloak, and the shield's own flares under it) that
 overshield_effect_draw knows again; otherwise its own */
 real const *overshield_effect_values(
 	long unit_index,
@@ -339,7 +368,7 @@ real const *overshield_effect_values(
 		return values;
 	copy = effect->body_values;
 	csmemcpy(copy, values, sizeof(effect->body_values));
-	copy[source] = 1.f;
+	copy[source] = overshield_effect_intensity(values[source], 1.f, overshield_effect_uncloaked(unit_index), FALSE);
 	if (!overshield_effect_model_heights(
 		object_definition_get(object_get(unit_index)->definition_index)->object.model.index,
 		&effect->bottom, &effect->top))
@@ -351,7 +380,8 @@ real const *overshield_effect_values(
 
 /* the values a unit's first-person arms' modifier shader is drawn with,
 given its own, written to arms (viewmodel_shield.c's copy): with an
-overshield, its intensity coming up as the rise passes the arms, and TRUE
+overshield, its intensity coming up as the rise passes the arms (as much as
+shows through a cloak), and TRUE
 (overshield_effect_draw then knows arms again); otherwise FALSE, and arms
 not written */
 boolean overshield_effect_arms_values(
@@ -376,7 +406,9 @@ boolean overshield_effect_arms_values(
 	if (!effect || source == NONE)
 		return FALSE;
 	csmemcpy(arms, values, sizeof(effect->body_values));
-	arms[source] = PIN((effect->progress - OVERSHIELD_EFFECT_ARMS_START) / OVERSHIELD_EFFECT_ARMS_LENGTH, 0.f, 1.f);
+	arms[source] = overshield_effect_intensity(values[source],
+		PIN((effect->progress - OVERSHIELD_EFFECT_ARMS_START) / OVERSHIELD_EFFECT_ARMS_LENGTH, 0.f, 1.f),
+		overshield_effect_uncloaked(unit_index), TRUE);
 	effect->arms_values = arms;
 	return TRUE;
 }

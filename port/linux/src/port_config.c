@@ -561,8 +561,9 @@ static const struct config_setting config_settings[] =
 		"The overshield as this machine draws it: its flare rising up the body as\n"
 		"it charges (2 seconds, 3 from a shield that was down) and staying lit,\n"
 		"its energy slower, green above 200% shield and pink through 200%; on the\n"
-		"arms too with viewmodel_shield; a hit on it plays what the projectile\n"
-		"plays on an Elite's shield. Only what is drawn and heard changes.\n"
+		"arms too with viewmodel_shield, and as faint as a cloak is strong; a hit\n"
+		"on it plays what the projectile plays on an Elite's shield. Only what is\n"
+		"drawn and heard changes.\n"
 		"In a network game, the host's network.shield_effects decides, unless\n"
 		"it is \"players\" (each player's own) or the game is co-op." },
 	{ "display.shield_glow", _config_boolean, "false", "HALO_SHIELD_GLOW", _environment_value, _platform_all,
