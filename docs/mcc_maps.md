@@ -129,10 +129,13 @@ complete map/required resource contents must match the host. Optional
 required.
 
 A package from the Steam Workshop can say which item it is, so a joiner who
-cannot match the host's map is told what to do. The item is the package folder
-when Steam's own name (the item id, all digits) is kept, or a `workshop_id.txt`
-in the folder: the id on the first line and, optionally, the title on the
-second. The host sends the id and title in the map name's reserved tail
+cannot match the host's map is told what to do. The item is a `workshop_id.txt`
+in the folder (the id on the first line and, optionally, the title on the
+second), or the package folder when Steam's own name (the item id, all digits)
+is kept, or else the `ModIdentifier.HostedModIds.SteamWorkshopId` that MCC's
+tools write into the package's `ModInfo.json` (a number or a string, not 0, with
+`Title.Neutral` as its title), so a package copied in under a name of its own
+is still known. The host sends the id and title in the map name's reserved tail
 (`mcc_workshop.c`). The original fork introduced this advisory extension under
 MCC protocol 64. The upstream contribution uses one shared OpenCE protocol, 42,
 including MCC content/metadata digests and checkpoint lifetime fencing; see the

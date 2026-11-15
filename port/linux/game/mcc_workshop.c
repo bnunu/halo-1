@@ -3,7 +3,12 @@
 #include "mcc_workshop.h"
 #include "mcc_maps.h"
 #include "mcc_package.h"
+#include "../src/mcc_manifest.h"
+#include "../src/posix.h"
+#include "../src/server_json.h"
+#include "../src/steam_workshop.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int mcc_workshop_digits(char const *text, unsigned length)
@@ -41,6 +46,60 @@ int mcc_workshop_parse_sidecar(char const *text, struct mcc_workshop_item *item)
     return 1;
 }
 
+int mcc_workshop_parse_modinfo(char const *text, int length, struct mcc_workshop_item *item)
+{
+    struct server_json_document document;
+    char engine[32],title[MCC_WORKSHOP_TITLE_SIZE*2];
+    int token,id_length,valid=0;
+    memset(item,0,sizeof(*item));
+    /* (a byte order mark, as Windows editors leave one) */
+    if (text && length>=3 && (unsigned char)text[0]==0xEF && (unsigned char)text[1]==0xBB &&
+        (unsigned char)text[2]==0xBF) {
+        text+=3;
+        length-=3;
+    }
+    if (!text || length<=0 || !server_json_parse(&document,text,length,16)) return 0;
+    if (document.count<1 || document.tokens[0].type!=_server_json_object ||
+        !server_json_get_string(&document,server_json_member(&document,0,"Engine"),engine,sizeof(engine)) ||
+        strcmp(engine,"Halo1")) goto done;
+    token=server_json_member(&document,server_json_member(&document,
+        server_json_member(&document,0,"ModIdentifier"),"HostedModIds"),"SteamWorkshopId");
+    if (token<0) goto done;
+    /* a number in MCC's own (its text kept: an id may pass a double's
+     * precision), a string in some hand-made ones */
+    if (!server_json_get_string(&document,token,item->id,sizeof(item->id))) {
+        id_length=document.tokens[token].end-document.tokens[token].start;
+        if (document.tokens[token].type!=_server_json_primitive || id_length<=0 ||
+            id_length>=(int)sizeof(item->id)) goto done;
+        memcpy(item->id,document.text+document.tokens[token].start,(size_t)id_length);
+        item->id[id_length]=0;
+    }
+    /* (an unpublished package's is 0 or empty) */
+    id_length=(int)strlen(item->id);
+    if (!mcc_workshop_digits(item->id,(unsigned)id_length) || strspn(item->id,"0")==(size_t)id_length) goto done;
+    if (server_json_get_string(&document,server_json_member(&document,
+        server_json_member(&document,0,"Title"),"Neutral"),title,sizeof(title)))
+        mcc_workshop_title_copy(title,(unsigned)strlen(title),item->title);
+    valid=1;
+done:
+    server_json_document_free(&document);
+    if (!valid) memset(item,0,sizeof(*item));
+    return valid;
+}
+
+/* the package's ModInfo.json, where its folder is resolved (beside the
+ * level, or a Steam item's above its maps folder) */
+static int mcc_workshop_modinfo_item(char const *name, struct mcc_workshop_item *item)
+{
+    char root[1024],*text;
+    int length,valid=0;
+    if (!mcc_manifest_package_root(name,root) || !(text=malloc(STEAM_WORKSHOP_MAXIMUM_JSON))) return 0;
+    length=posix_mcc_preview_read(root,"ModInfo.json",text,STEAM_WORKSHOP_MAXIMUM_JSON);
+    if (length>0) valid=mcc_workshop_parse_modinfo(text,length,item);
+    free(text);
+    return valid;
+}
+
 int mcc_workshop_package_folder(char const *name, char folder[64])
 {
     char canonical[64],*first,*last;
@@ -74,6 +133,12 @@ int mcc_workshop_local_item(char const *name, struct mcc_workshop_item *item)
         /* the Steam item's own title when this machine has the item */
         if (mcc_maps_workshop_title(folder,title,sizeof(title)))
             mcc_workshop_title_copy(title,(unsigned)strlen(title),item->title);
+        if (!item->title[0]) mcc_workshop_title_from_level(name,item->title);
+        return 1;
+    }
+    /* a package copied in under a name of its own, with neither: the id MCC's
+     * tools wrote into its ModInfo.json */
+    if (mcc_workshop_modinfo_item(name,item)) {
         if (!item->title[0]) mcc_workshop_title_from_level(name,item->title);
         return 1;
     }
