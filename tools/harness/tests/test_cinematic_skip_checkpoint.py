@@ -3,7 +3,8 @@ as the cinematic begins (game_save_totally_unsafe), and its game_reverted then s
 later in the cinematic took its place: Mercury Rising's mercury_falling saves every so often from a continuous script
 (game_save), a second into its intro, and each skip went back there and played the rest of the intro again. main.c
 holds a save while a cinematic can be skipped and its skip's checkpoint is taken (cinematics.c says which), until
-cinematic_skip_stop; a skip lets go of it. The checkpoint the next cinematic takes, and one gone back to, are its skip's.
+cinematic_skip_stop, as one that is not safe waits: a (game_save) gives up after as many ticks, an unsafe one at once;
+a skip lets go of it. The checkpoint the next cinematic takes, and one gone back to, are its skip's.
 """
 
 import re
@@ -15,9 +16,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from harness import CHECK_FAILED, build, function, mutated, read, run, structure  # noqa: E402
 
-CASES = ["passive-save", "save-at-the-end", "unsafe-save", "next-cinematic", "loaded-in-a-cinematic", "no-cinematic"]
+CASES = ["passive-save", "save-at-the-end", "unsafe-save", "timed-save-gives-up", "untimed-save-held",
+         "next-cinematic", "loaded-in-a-cinematic", "no-cinematic"]
 MAIN = ("main_saving_map", "main_skip_cinematic", "main_save_map_nonsafe", "main_save_map_safe",
-        "main_saving_map_private", "main_save_map_private")
+        "main_save_map_no_timeout", "main_saving_map_private", "main_save_map_private")
 CINEMATICS = ("cinematic_initialize_for_new_map", "cinematic_skip_start", "cinematic_skip_stop",
               "cinematic_can_be_skipped", "cinematic_port_checkpoint", "cinematic_port_holds_checkpoints")
 STATE = ("game_state_save",)
@@ -29,8 +31,16 @@ NEGATIVE_CONTROLS = {
                       "passive-save"),
     "unsafe-save-not-held": (("if (cinematic_port_holds_checkpoints())", "if (main_globals.save_map_safely && "
                               "cinematic_port_holds_checkpoints())"), "main_save_map_private", "unsafe-save"),
-    "held-ticks-counted": (("\t\tmain_save_last_tick = game_time_get();\n\t\treturn;", "\t\treturn;"),
-                           "main_save_map_private", "save-at-the-end"),
+    "unsafe-save-waits": (("if (!main_globals.save_map_safely ||", "if (FALSE ||"), "main_save_map_private",
+                          "unsafe-save"),
+    # as the change was before review: a (game_save) a script waited for before cinematic_skip_stop never ended
+    "timed-save-never-gives-up": (("(main_globals.save_map_timeout && main_globals.ticks_unable_to_save > 240)",
+                                   "FALSE"), "main_save_map_private", "timed-save-gives-up"),
+    "held-ticks-counted-twice": (("\t\tmain_save_last_tick = current_tick;\n\t\tif (!main_globals.save_map_safely",
+                                  "\t\tif (!main_globals.save_map_safely"), "main_save_map_private",
+                                 "timed-save-gives-up"),
+    "untimed-save-dropped": (("if (!main_globals.save_map_safely ||", "if (!main_globals.save_map_timeout ||"),
+                             "main_save_map_private", "untimed-save-held"),
     "held-for-good": (("return cinematic_globals->can_be_skipped && cinematic_skip_checkpoint_taken;",
                        "return cinematic_skip_checkpoint_taken;"), "cinematic_port_holds_checkpoints",
                       "save-at-the-end"),

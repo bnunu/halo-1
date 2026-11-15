@@ -146,7 +146,7 @@ int main(int argc, char **argv)
 			checkpoints, checkpoint_tick);
 		frames(30);
 		frame(script_saves);
-		frames(300);
+		frames(200);
 		CHECK(checkpoints == 1 && checkpoint_tick == 1, "the cinematic's skip would go back to tick %ld",
 			checkpoint_tick);
 		CHECK(main_saving_map(), "the script's save waits for the cinematic's end");
@@ -163,8 +163,8 @@ int main(int argc, char **argv)
 	}
 
 	/* b30's cutscene_map: (game_save) at the cutscene's end, before
-	cinematic_skip_stop, is taken once the cinematic is over, waiting for its
-	own safe checks then and not given up for the time it waited */
+	cinematic_skip_stop, is taken once the cinematic is over, after its own
+	safe checks */
 	CASE("save-at-the-end")
 	{
 		long stopped;
@@ -172,7 +172,7 @@ int main(int argc, char **argv)
 		frame(cutscene_starts);
 		frames(600);
 		frame(script_saves);
-		frames(400);
+		frames(5);
 		CHECK(checkpoints == 1 && checkpoint_tick == 1, "the cinematic's skip would go back to tick %ld",
 			checkpoint_tick);
 		frame(cinematic_skip_stop);
@@ -186,18 +186,68 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	/* an unsafe save (game_save_totally_unsafe) during the cinematic waits too */
+	/* an unsafe save (game_save_totally_unsafe) during the cinematic, which
+	can't wait, gives up at once */
 	CASE("unsafe-save")
 	{
 		frame(cutscene_starts);
 		frames(10);
 		frame(main_save_map_nonsafe);
+		CHECK(!main_saving_map(), "an unsafe save in the cinematic is still pending");
 		frames(100);
-		CHECK(checkpoints == 1 && checkpoint_tick == 1, "the cinematic's skip would go back to tick %ld",
-			checkpoint_tick);
 		frame(cinematic_skip_stop);
 		frames(2);
-		CHECK(checkpoints == 2, "taken once the cinematic is over");
+		CHECK(checkpoints == 1 && checkpoint_tick == 1, "the cinematic's skip would go back to tick %ld",
+			checkpoint_tick);
+		return 0;
+	}
+
+	/* a (game_save) a script waits for (game_saving) before the cinematic's
+	cinematic_skip_stop gives up as one never safe gives up without a
+	cinematic, and the skip's checkpoint stays */
+	CASE("timed-save-gives-up")
+	{
+		long requested, never_safe, held;
+
+		safe = FALSE;
+		frame(script_saves);
+		requested = tick - 1;
+		while (main_saving_map() && tick < 600)
+			frame(NULL);
+		never_safe = tick - requested;
+		CHECK(!main_saving_map() && checkpoints == 0, "a save never safe gave up after %ld ticks", never_safe);
+
+		new_map();
+		frame(cutscene_starts);
+		frames(50);
+		frame(script_saves);
+		requested = tick - 1;
+		while (main_saving_map() && tick < 1000)
+			frame(NULL);
+		held = tick - requested;
+		CHECK(!main_saving_map(), "a held (game_save) never gave up (%ld ticks)", held);
+		CHECK(held == never_safe, "a held (game_save) gave up after %ld ticks, one never safe after %ld", held,
+			never_safe);
+		frame(cinematic_skip_stop);
+		frames(60);
+		CHECK(checkpoints == 1 && checkpoint_tick == 1, "the cinematic's skip would go back to tick %ld",
+			checkpoint_tick);
+		return 0;
+	}
+
+	/* a (game_save_no_timeout), which waits for as long as it isn't safe,
+	waits for the cinematic's end, then is taken */
+	CASE("untimed-save-held")
+	{
+		frame(cutscene_starts);
+		frames(10);
+		frame(main_save_map_no_timeout);
+		frames(600);
+		CHECK(checkpoints == 1 && checkpoint_tick == 1 && main_saving_map(),
+			"the untimed save in the cinematic (%d at %ld)", checkpoints, checkpoint_tick);
+		frame(cinematic_skip_stop);
+		frames(60);
+		CHECK(checkpoints == 2 && !checkpoint_skippable, "taken after the cinematic (%d)", checkpoints);
 		return 0;
 	}
 
