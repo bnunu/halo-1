@@ -770,7 +770,9 @@ its name alone beside it, has its name given back as the map lists find it.
   downloading starts the others without it: the machine's players are held
   out of the game, and so is any player it asks for meanwhile (a machine
   whose download began in the lobby does not know the game has started),
-  and the machine joins the game in progress once the map is there. A
+  and the machine joins the game in progress once the map is there. Not
+  told to load, it is neither waited for nor timed out while the others
+  load, even if the map is there before they have loaded. A
   client told to start before its download is done (by a host of an earlier
   build) puts the start off until the map is there, rather than loading a
   map it does not have yet (the damaged disc error, which stops the game).

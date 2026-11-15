@@ -65,6 +65,30 @@ static char mcc_share_name[128];
 static unsigned char mcc_share_digest[32], mcc_share_metadata[32];
 static boolean mcc_share_prompt_pending, mcc_share_prompt_visible;
 static boolean mcc_share_prompt_download;
+/* A package that is a Workshop item, with a Steam sign-in: its whole item
+ * installed from Steam (mcc_share_install_begin), the host's offer let go, and
+ * the package checked again once it is in; the level tried that way, so a
+ * second offer of it (the Workshop's not the host's) asks the player and the
+ * host sends it. */
+static boolean mcc_share_installing;
+static char mcc_share_install_tried[64];
+/* where Steam installs it: the item's own folder (mcc_maps\<item id>\<map>),
+which the host's may not be (a package the host downloaded from another
+host is in a dl_ folder of its own) */
+static char mcc_share_install_level[64];
+/* Once it is in, the package is checked here against the host's identity, as
+ * a download from the host is (mcc_share_identity_check), not by asking the
+ * host for a second validation window: a host gives each machine one a join
+ * (mcc_admission.c: a closed lease is a tombstone), and the join's own check
+ * used it. Joining: the check passed and the players are no longer held; the
+ * host's offer is let go only once the host has this machine's player (or
+ * its request, a game in progress), since a machine with neither a player
+ * nor a transfer is refused. */
+static struct mcc_validation_check *mcc_share_install_check;
+static struct mcc_validation_proof mcc_share_install_proof;
+static boolean mcc_share_install_joining;
+static unsigned long mcc_share_install_joining_at;
+#define MCC_SHARE_INSTALL_JOIN_MS 3000u
 /* Manual guidance outlives the refused join, but never a new session. */
 static enum {
     MCC_SHARE_MANUAL_NONE,
@@ -87,6 +111,7 @@ void platform_translate_path(char const *, char *, unsigned long);
 void platform_open_url(char const *);
 void ui_widget_port_go_back(struct widget_instance *widget);
 static void mcc_share_offered(void *, uint64_t, char const *);
+static int mcc_share_client_current(void);
 static void mcc_share_host_lifecycle(void);
 struct network_game_server_client_machine *network_game_server_get_client_machine_at_index(struct network_game_server *,long);
 boolean network_game_server_client_machine_is_joined_to_game(struct network_game_server *,struct network_game_server_client_machine *);
@@ -228,6 +253,50 @@ void mcc_share_game_handle_message(
 
 /* ---------- the host's admission */
 
+/* (the host) a package's files hashed on the host's threads with the CPU's
+SHA-256 (host_mcc_hash.c's host_sha256_*), not a few megabytes a frame on
+the game's: hashed in the frame, a 360 MB package outlasted a joiner's wait
+for the offer and took its frames */
+#if defined(HALO_ANDROID)
+int host_sha256_start(unsigned int path);
+int host_sha256_poll(int id, unsigned int digest, unsigned int size);
+void host_sha256_cancel(int id);
+
+static int mcc_share_hash_begin(void *user, char const *path)
+{
+    (void)user;
+    return host_sha256_start((unsigned int)(uintptr_t)path);
+}
+
+static int mcc_share_hash_poll(void *user, int job, uint8_t digest[32], uint64_t *size)
+{
+    static uint8_t done_digest[32];
+    static uint32_t done_size[2];
+    int status;
+    (void)user;
+    status=host_sha256_poll(job,(unsigned int)(uintptr_t)done_digest,(unsigned int)(uintptr_t)done_size);
+    if (status==1) {
+        memcpy(digest,done_digest,32);
+        *size=(uint64_t)done_size[0]|(uint64_t)done_size[1]<<32;
+    }
+    return status;
+}
+
+static void mcc_share_hash_cancel(void *user, int job)
+{
+    (void)user;
+    host_sha256_cancel(job);
+}
+#endif
+
+/* (the host) a transfer refused before it was offered: the joiner is told the
+result alone, so the reason is said here */
+static void mcc_share_host_refused(void *user, long machine, char const *level, int result, char const *why)
+{
+    (void)user;
+    error(_error_silent,"mcc share: machine #%ld's download of %s refused (result %d): %s",machine,level,result,why);
+}
+
 static void mcc_share_host_package_files(void *user, char const *level,
     struct mcc_share_host_package *package)
 {
@@ -304,6 +373,23 @@ static int mcc_share_destination(void *user, char const *level,
 
 /* the staged files are the host's content: fingerprinted where they are, with the package's own
 files read from the staging folder, against the identity in the host's game record */
+#if defined(HALO_ANDROID)
+int host_steam_shared_fetch(unsigned int data_root);
+int host_steam_shared_state(void);
+#endif
+/* MCC's shared sets asked of Steam with the download's resources
+(mcc_share_shared_begin): the identity check reads them, so it waits for them */
+static int mcc_share_shared_asked;
+
+static int mcc_share_shared_pending(void)
+{
+#if defined(HALO_ANDROID)
+    return mcc_share_shared_asked && host_steam_shared_state()==1;
+#else
+    return 0;
+#endif
+}
+
 static int mcc_share_identity_check(void *user, char const *stage_dir)
 {
     struct mcc_share_metadata_entry *entries;
@@ -312,6 +398,7 @@ static int mcc_share_identity_check(void *user, char const *stage_dir)
     char native[1024],reason[320];
     char const *leaf=strrchr(mcc_share_globals.level,'\\')+1;
     (void)user;
+    if (!mcc_share_check && mcc_share_shared_pending()) return MCC_SHARE_CHECK_PENDING;
     if (mcc_share_check) {
         ok=mcc_validation_check_step(mcc_share_check,&mcc_share_proof,mcc_share_check_reason,sizeof(mcc_share_check_reason));
         if (!ok) return MCC_SHARE_CHECK_PENDING;
@@ -378,6 +465,26 @@ static int mcc_share_prepare_install(void *user,struct mcc_share_stage *stage)
         mcc_workshop_wire_unpack(mcc_share_name,&item) ? &item : NULL);
 }
 
+#if defined(HALO_ANDROID)
+const char *platform_data_root(void);
+#define MCC_SHARE_HOST_ADDRESS(pointer) ((unsigned int)(uintptr_t)(pointer))
+/* (the data root, as the host's Steam calls are given it) */
+static char mcc_share_steam_root[1024];
+#endif
+
+/* the download accepted: MCC's shared sets queued from Steam when they are
+missing, as a host never sends them */
+static void mcc_share_shared_begin(void)
+{
+    mcc_share_shared_asked=0;
+#if defined(HALO_ANDROID)
+    snprintf(mcc_share_steam_root,sizeof(mcc_share_steam_root),"%s",platform_data_root());
+    mcc_share_shared_asked=host_steam_shared_fetch(MCC_SHARE_HOST_ADDRESS(mcc_share_steam_root))==1;
+    if (mcc_share_shared_asked)
+        error(_error_silent,"mcc share: MCC's shared files are missing here: downloading them from Steam too");
+#endif
+}
+
 static int mcc_share_reuse_file(void *user,struct mcc_share_file const *file,char path[1024])
 {
     char root[1024];
@@ -386,6 +493,25 @@ static int mcc_share_reuse_file(void *user,struct mcc_share_file const *file,cha
     platform_translate_path("d:\\mcc_maps",root,sizeof(root));
     mcc_share_storage_native_io(&io);
     return mcc_share_storage_find_resource(root,&io,file,path);
+}
+
+/* the session's reads of a package's files (the host's hashing and serving,
+the joiner's copies of a resource it has): mcc_share_storage.c's opener,
+and when it cannot, why, in debug.txt (a path its safety check refuses, the
+system's error, or something there that is not a file) */
+static FILE *mcc_share_open_native_said(char const *path)
+{
+    FILE *file=mcc_share_open_native(path);
+    if (!file) {
+        int error_number=errno,safe=posix_mcc_share_path_safe(path);
+        struct posix_file_information information;
+        int present=!posix_stat(path,&information);
+        error(_error_silent,"mcc share: cannot read %s: %s (errno %d, %s, %lu bytes)",path,
+            safe ? "the system would not open it" : "its path is not one the downloads may read",error_number,
+            !present ? "not there" : information.flags&_posix_file_is_directory ? "a folder" : "a file",
+            present ? (unsigned long)information.size_low : 0ul);
+    }
+    return file;
 }
 
 static void mcc_share_release_validation(void)
@@ -453,15 +579,17 @@ boolean mcc_share_game_downloading(
 	if (mcc_identity_pending(level_name)) return TRUE;
 	return mcc_share_ready && mcc_share_manual==MCC_SHARE_MANUAL_NONE &&
         level_name && mcc_package_name(level_name, canonical) &&
-		(mcc_share_client_level(&mcc_share_globals, canonical) ||
+		((!mcc_share_install_joining && mcc_share_client_level(&mcc_share_globals, canonical)) ||
+        (mcc_share_installing && !strcmp(canonical,mcc_share_install_tried)) ||
         ((mcc_share_prompt_pending || mcc_share_prompt_visible) && !strcmp(canonical,mcc_share_name)));
 }
 
 boolean mcc_share_game_holds_players(
 	void)
 {
-	return mcc_identity_pending(NULL) || mcc_admission_client_pending() ||
-        (mcc_share_ready && mcc_share_manual==MCC_SHARE_MANUAL_NONE && (mcc_share_client_busy(&mcc_share_globals) ||
+	return mcc_identity_pending(NULL) || mcc_admission_client_pending() || mcc_share_installing ||
+        (mcc_share_ready && mcc_share_manual==MCC_SHARE_MANUAL_NONE &&
+        ((mcc_share_client_busy(&mcc_share_globals) && !mcc_share_install_joining) ||
         mcc_share_prompt_pending || mcc_share_prompt_visible));
 }
 
@@ -487,6 +615,158 @@ boolean mcc_share_game_machine_needs_map(long machine_index)
         mcc_share_host_active(&mcc_share_globals,machine_index));
 }
 
+#if defined(HALO_ANDROID)
+int host_steam_install_start(unsigned int data_root, unsigned int id_low, unsigned int id_high);
+int host_steam_install_status(void);
+void host_steam_install_progress(unsigned int progress);
+int host_steam_take_rescan(void);
+#endif
+/* the host's offer kept alive while the Workshop installs: asked again this
+often (a host gives an offer not taken up two minutes, and while it lives
+counts the joiner as fetching the package, starting the game without it) */
+#define MCC_SHARE_INSTALL_RENEW_MS 90000u
+static unsigned long mcc_share_install_renewed_at;
+
+/* (the host's offer in) a package that is a Workshop item, with a Steam
+sign-in: its whole item installed from the Workshop, MCC's shared sets too
+when they are missing (no host sends them), and the host's offer let go; 1
+when begun. The host sends it only when the Workshop cannot. */
+static int mcc_share_install_begin(void)
+{
+#if defined(HALO_ANDROID)
+    struct mcc_workshop_item item;
+    unsigned long long id;
+    if (!strcmp(mcc_share_install_tried,mcc_share_globals.level)) {
+        error(_error_silent,"mcc share: %s from the Workshop was tried: asking the player (the host's alone)",
+            mcc_share_globals.level);
+        return 0;
+    }
+    if (!mcc_workshop_wire_unpack(mcc_share_name,&item) || !item.id[0] || !(id=strtoull(item.id,NULL,10))) {
+        error(_error_silent,"mcc share: %s is not a Workshop item: asking the player (the host's alone)",
+            mcc_share_globals.level);
+        return 0;
+    }
+    snprintf(mcc_share_steam_root,sizeof(mcc_share_steam_root),"%s",platform_data_root());
+    if (!host_steam_install_start(MCC_SHARE_HOST_ADDRESS(mcc_share_steam_root),(unsigned int)id,(unsigned int)(id>>32))) {
+        error(_error_silent,"mcc share: no Steam sign-in: asking the player for %s (the host's alone)",
+            mcc_share_globals.level);
+        return 0;
+    }
+    snprintf(mcc_share_install_tried,sizeof(mcc_share_install_tried),"%s",mcc_share_globals.level);
+    {
+        char const *leaf=strrchr(mcc_share_globals.level,'\\');
+        snprintf(mcc_share_install_level,sizeof(mcc_share_install_level),"mcc_maps\\%s\\%s",item.id,
+            leaf ? leaf+1 : mcc_share_globals.level);
+    }
+    error(_error_silent,"mcc share: installing Workshop item %s for %s from Steam (as %s) instead of the host's download",
+        item.id,mcc_share_globals.level,mcc_share_install_level);
+    mcc_share_shared_asked=host_steam_shared_fetch(MCC_SHARE_HOST_ADDRESS(mcc_share_steam_root))==1;
+    if (mcc_share_shared_asked)
+        error(_error_silent,"mcc share: MCC's shared files are missing here: downloading them from Steam too");
+    mcc_share_installing=TRUE;
+    /* (the offer left waiting, not let go: while it lives the host counts this
+       machine as fetching the package, and starts the game without it, which
+       joins it once its package is in) */
+    mcc_share_install_renewed_at=system_milliseconds();
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+static void mcc_share_install_end(void)
+{
+    mcc_share_installing=FALSE;
+    mcc_share_install_joining=FALSE;
+    if (mcc_share_install_check) mcc_validation_check_end(mcc_share_install_check);
+    mcc_share_install_check=NULL;
+}
+
+/* (the host's offer asked again before it lapses) */
+static void mcc_share_install_renew(void)
+{
+#if defined(HALO_ANDROID)
+    if (system_milliseconds()-mcc_share_install_renewed_at<MCC_SHARE_INSTALL_RENEW_MS) return;
+    mcc_share_install_renewed_at=system_milliseconds();
+    mcc_share_client_cancel(&mcc_share_globals);
+    mcc_share_client_begin(&mcc_share_globals,mcc_share_install_tried,mcc_share_digest);
+#endif
+}
+
+/* (each frame while installing) installed: the package checked here against
+the host's identity, and, the host's, this machine's players let join, the
+offer let go once the host has one; not installed, or not the host's: the
+host asked again, and the player asked (the level tried) */
+static void mcc_share_install_update(void)
+{
+#if defined(HALO_ANDROID)
+    struct network_game_client *client;
+    struct network_game *game;
+    char const *why="could not be installed";
+    int status;
+    if (!mcc_share_installing && !mcc_share_install_joining) return;
+    client=global_network_game_client_get();
+    game=client ? network_game_client_get_game(client) : NULL;
+    if (!game || global_network_game_server_get() || !mcc_share_name[0] ||
+        memcmp(game->mcc_content_sha256,mcc_share_digest,32)) {
+        mcc_share_install_end();
+        return;
+    }
+    if (mcc_share_install_joining) {
+        int i,joined=0;
+        for (i=0;i<NUMBEROF(game->players);i++)
+            joined|=network_player_is_valid(&game->players[i]) &&
+                game->players[i].machine_index==network_game_client_get_machine_index(client);
+        if (joined || system_milliseconds()-mcc_share_install_joining_at>=MCC_SHARE_INSTALL_JOIN_MS) {
+            mcc_share_install_joining=FALSE;
+            mcc_share_client_cancel(&mcc_share_globals);
+        }
+        return;
+    }
+    if (!mcc_share_install_check) {
+        status=host_steam_install_status();
+        /* (the shared sets, which the check reads, in first too) */
+        if (!status || (status>0 && mcc_share_shared_pending())) {
+            mcc_share_install_renew();
+            return;
+        }
+        mcc_maps_rescan();
+        if (status>0) {
+            error(_error_silent,"mcc share: %s installed from the Workshop: checking it against the host's",
+                mcc_share_install_level);
+            mcc_share_install_check=mcc_validation_check_begin(mcc_share_install_level,NULL);
+            mcc_validation_check_expect(mcc_share_install_check,mcc_share_digest);
+            if (mcc_share_install_check) return;
+        }
+    } else {
+        char reason[320];
+        status=mcc_validation_check_step(mcc_share_install_check,&mcc_share_install_proof,reason,sizeof(reason));
+        if (!status) {
+            mcc_share_install_renew();
+            return;
+        }
+        mcc_validation_check_end(mcc_share_install_check);
+        mcc_share_install_check=NULL;
+        why="is not the host's";
+        if (status>0 && !memcmp(mcc_share_install_proof.digest,mcc_share_digest,32) &&
+            (!game->map.version || mcc_share_install_proof.checksum==(uint32_t)game->map.version) &&
+            mcc_validation_publish(mcc_share_install_level,&mcc_share_install_proof) &&
+            mcc_identity_accept_installed(mcc_share_name,mcc_share_digest,mcc_share_metadata,mcc_share_install_level)) {
+            error(_error_silent,"mcc share: %s from the Workshop is the host's: joining",mcc_share_install_level);
+            mcc_share_release_validation();
+            mcc_share_installing=FALSE;
+            mcc_share_install_joining=TRUE;
+            mcc_share_install_joining_at=system_milliseconds();
+            return;
+        }
+    }
+    mcc_share_install_end();
+    mcc_share_client_cancel(&mcc_share_globals);
+    error(_error_silent,"mcc share: Workshop item for %s %s: asking the host",mcc_share_install_tried,why);
+    mcc_share_client_begin(&mcc_share_globals,mcc_share_install_tried,mcc_share_digest);
+#endif
+}
+
 static void mcc_share_offered(void *user,uint64_t bytes,char const *credit)
 {
     (void)user;
@@ -499,6 +779,11 @@ static void mcc_share_offered(void *user,uint64_t bytes,char const *credit)
         "Maps, required metadata/resources and supported previews are included.\n"
         "Your existing installation will be kept.\nMaker: %s",
         (double)bytes/(1024.0*1024.0),credit[0] ? credit : "Not provided");
+    /* (an offer asked again while the Workshop installs: left waiting) */
+    if ((mcc_share_installing || mcc_share_install_joining) &&
+        !strcmp(mcc_share_install_tried,mcc_share_globals.level)) return;
+    if (mcc_share_install_begin()) return;
+    /* (the host the only source: the player asked) */
     mcc_share_prompt_pending=TRUE;
 }
 
@@ -584,7 +869,7 @@ void mcc_share_game_prompt_action(int action)
     }
     if (!manual && action==0 && download) {
         mcc_share_prompt_download=FALSE;
-        mcc_share_client_accept(&mcc_share_globals);
+        if (mcc_share_client_accept(&mcc_share_globals)) mcc_share_shared_begin();
         return;
     }
     if (manual) {
@@ -598,6 +883,9 @@ void mcc_share_game_prompt_action(int action)
 void mcc_share_game_disconnect(void)
 {
     int manual=mcc_share_manual==MCC_SHARE_MANUAL_LEAVING;
+    /* (a Workshop install of the level tried, or under way, is this session's) */
+    mcc_share_install_end();
+    mcc_share_install_tried[0]=0;
     mcc_admission_disconnect();
     mcc_load_network_disconnect();
     mcc_share_validation_token=0;
@@ -687,6 +975,12 @@ void mcc_share_game_update(
 		env.host_package = mcc_share_host_package_files;
 		env.upload_limit = mcc_share_upload_limit;
         env.host_finished = mcc_share_host_finished;
+        env.host_refused = mcc_share_host_refused;
+#if defined(HALO_ANDROID)
+        env.hash_begin = mcc_share_hash_begin;
+        env.hash_poll = mcc_share_hash_poll;
+        env.hash_cancel = mcc_share_hash_cancel;
+#endif
 		env.free_bytes = mcc_share_free_bytes;
 		env.offered = mcc_share_offered;
 		env.destination = mcc_share_destination;
@@ -697,7 +991,7 @@ void mcc_share_game_update(
 		env.io.delete_file = mcc_share_io_delete;
 		env.io.path_safe = mcc_share_io_safe;
 		env.io.publish_directory = mcc_share_io_publish;
-        env.io.open_native_read = mcc_share_open_native;
+        env.io.open_native_read = mcc_share_open_native_said;
 #ifdef HALO_WEB
         web_mcc_share_io(&env.io);
 #endif
@@ -734,6 +1028,11 @@ void mcc_share_game_update(
     }
     mcc_share_host_lifecycle();
     mcc_share_update(&mcc_share_globals);
+#if defined(HALO_ANDROID)
+    /* (files the Steam downloader put in mcc_maps, whatever put them there) */
+    if (host_steam_take_rescan()) mcc_maps_rescan();
+#endif
+    mcc_share_install_update();
     if ((mcc_share_prompt_pending || mcc_share_prompt_visible) && !mcc_share_prompt_download &&
         mcc_share_manual==MCC_SHARE_MANUAL_NONE && mcc_share_client_current()) {
         /* There is no admission path without this content. Leave now rather
@@ -766,8 +1065,8 @@ void mcc_share_game_render(
 	int percent;
 
 	/* The consent screen owns this space until the player accepts its offer. */
-	if (!mcc_share_ready || !mcc_share_client_busy(&mcc_share_globals) ||
-        mcc_share_prompt_pending || mcc_share_prompt_visible)
+	if (!mcc_share_ready || (!mcc_share_client_busy(&mcc_share_globals) && !mcc_share_installing) ||
+        mcc_share_install_joining || mcc_share_prompt_pending || mcc_share_prompt_visible)
 		return;
 	font_tag_index = interface_get_tag_index(_interface_font_terminal);
 	if (font_tag_index == NONE)
@@ -775,7 +1074,33 @@ void mcc_share_game_render(
 	name = strrchr(mcc_share_globals.level, '\\');
 	name = name ? name + 1 : mcc_share_globals.level;
 	percent = mcc_share_client_percent(&mcc_share_globals);
-	if (mcc_share_globals.state==MCC_SHARE_CLIENT_VERIFYING)
+	if (mcc_share_installing)
+	{
+		/* (from the Workshop: its bytes and speed, in KB, once Steam has said how many) */
+		uint32_t progress[3] = { 0, 0, 0 };
+		char speed[32];
+
+#if defined(HALO_ANDROID)
+		host_steam_install_progress(MCC_SHARE_HOST_ADDRESS(progress));
+#endif
+		speed[0] = 0;
+		if (progress[2] >= 1024)
+			snprintf(speed, sizeof(speed), " %.1f MB/s", (double)progress[2] / 1024.0);
+		else if (progress[2])
+			snprintf(speed, sizeof(speed), " %lu KB/s", (unsigned long)progress[2]);
+		if (progress[0] > progress[1])
+			progress[0] = progress[1];
+		if (!progress[1])
+			snprintf(mcc_share_text, sizeof(mcc_share_text), "Downloading %s from the Workshop...", name);
+		/* (in MB past 150 MB, where kilobytes are too many digits to read) */
+		else if (progress[1] > 150 * 1024)
+			snprintf(mcc_share_text, sizeof(mcc_share_text), "Downloading %s from the Workshop %lu/%lu MB%s", name,
+				(unsigned long)(progress[0] / 1024), (unsigned long)(progress[1] / 1024), speed);
+		else
+			snprintf(mcc_share_text, sizeof(mcc_share_text), "Downloading %s from the Workshop %lu/%lu KB%s", name,
+				(unsigned long)progress[0], (unsigned long)progress[1], speed);
+	}
+	else if (mcc_share_globals.state==MCC_SHARE_CLIENT_VERIFYING)
         snprintf(mcc_share_text,sizeof(mcc_share_text),"Verifying the downloaded map %s...",name);
 	else if (percent <= 0)
 		snprintf(mcc_share_text, sizeof(mcc_share_text), "Asking the host for the map %s...", name);

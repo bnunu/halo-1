@@ -129,10 +129,13 @@ complete map/required resource contents must match the host. Optional
 required.
 
 A package from the Steam Workshop can say which item it is, so a joiner who
-cannot match the host's map is told what to do. The item is the package folder
-when Steam's own name (the item id, all digits) is kept, or a `workshop_id.txt`
-in the folder: the id on the first line and, optionally, the title on the
-second. The host sends the id and title in the map name's reserved tail
+cannot match the host's map is told what to do. The item is a `workshop_id.txt`
+in the folder (the id on the first line and, optionally, the title on the
+second), or the package folder when Steam's own name (the item id, all digits)
+is kept, or else the `ModIdentifier.HostedModIds.SteamWorkshopId` that MCC's
+tools write into the package's `ModInfo.json` (a number or a string, not 0, with
+`Title.Neutral` as its title), so a package copied in under a name of its own
+is still known. The host sends the id and title in the map name's reserved tail
 (`mcc_workshop.c`). The original fork introduced this advisory extension under
 MCC protocol 64. The upstream contribution uses one shared OpenCE protocol, 42,
 including MCC content/metadata digests and checkpoint lifetime fencing; see the
@@ -1497,6 +1500,15 @@ Several data corrections are confined to MCC conversion:
   Duplicate names, size mismatches, and invalid ranges are refused. This is
   structural validation, not a content hash: supply the correct package's
   resources. Mercury Falling needs this for a relocated footstep sample.
+- A reference with neither its own nor its group's name in the package's own
+  resource file is found at its offset when it spans exactly one whole member,
+  as MCC reads it: a map whose resources were built with a tag since renamed or
+  moved keeps its sounds and bitmaps. Part of a member, or a slice across
+  members, is still refused; a bitmap's decoding then reads from the member's
+  start within it (its pixels may be fewer than the member's bytes). A shared
+  resource file is never matched this way: the same offset and size in another
+  file says nothing of which file the map was built with, so choosing among
+  shared files still goes by names alone.
 - Non-power-of-two 2D bitmaps retain their dimensions in a linear ARGB texture.
   Their declared source mip chain is validated, but only the base level is
   retained because the native linear texture path has no mipmaps. This handles

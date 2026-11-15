@@ -13,7 +13,9 @@
 #define MCC_SHARE_HASH_SLICE 0x400000u
 #define MCC_SHARE_OFFER_TIMEOUT 120000u
 #define MCC_SHARE_OFFER_HEARTBEAT 10000u
-#define MCC_SHARE_REUSE_SLICE 0x100000u
+#define MCC_SHARE_REUSE_SLICE 0x400000u
+/* A local copy's time an update: it hashes as it copies, on the game's thread. */
+#define MCC_SHARE_REUSE_MILLISECONDS 12u
 /* how long the last package's digests stand in for hashing it again */
 #define MCC_SHARE_HASHED_LIFETIME 600000u
 
@@ -189,7 +191,10 @@ static struct mcc_share_host_transfer *host_find(struct mcc_share *share, long m
 
 static void host_free(struct mcc_share_host_transfer *transfer)
 {
+    if (transfer->hash_job_active && transfer->hash_job_cancel)
+        transfer->hash_job_cancel(transfer->hash_job_user,transfer->hash_job);
     if (transfer->hash_stream) fclose(transfer->hash_stream);
+    if (transfer->serve_stream) fclose(transfer->serve_stream);
     memset(transfer,0,sizeof(*transfer));
 }
 
@@ -333,6 +338,9 @@ static void host_request_manifest(struct mcc_share *share, long machine, struct 
         transfer->package.count>MCC_SHARE_STAGE_FILES) {
         enum mcc_share_result refusal=transfer->package.refusal!=MCC_SHARE_RESULT_OK ?
             transfer->package.refusal : MCC_SHARE_RESULT_NOT_SHAREABLE;
+        if (share->env.host_refused)
+            share->env.host_refused(share->env.user,machine,request->level,(int)refusal,
+                transfer->package.refusal!=MCC_SHARE_RESULT_OK ? "its admission refused it" : "it has no files");
         memset(transfer,0,sizeof(*transfer));
         host_reply(share,machine,MCC_SHARE_OP_MANIFEST,refusal,request->level,0,0,0,0,0,NULL,NULL,0);
         return;
@@ -352,8 +360,10 @@ static void host_request_manifest(struct mcc_share *share, long machine, struct 
 }
 
 static void host_fail(struct mcc_share *share, struct mcc_share_host_transfer *transfer,
-    enum mcc_share_result result)
+    enum mcc_share_result result, char const *why)
 {
+    if (share->env.host_refused)
+        share->env.host_refused(share->env.user,transfer->machine,transfer->level,(int)result,why);
     host_reply(share,transfer->machine,MCC_SHARE_OP_MANIFEST,result,transfer->level,0,0,0,0,0,NULL,NULL,0);
     host_free(transfer);
 }
@@ -365,12 +375,42 @@ static void host_hash(struct mcc_share *share, struct mcc_share_host_transfer *t
     static uint8_t block[16384];                       /* (static: this runs in the game's frame, on its stack) */
     while (budget && transfer->hash_file<transfer->package.count) {
         struct mcc_share_file *file=&transfer->files[transfer->hash_file];
+        /* (elsewhere when it can be: the host's threads, not a slice a frame) */
+        if (!transfer->hash_stream && share->env.hash_begin) {
+            int status;
+            uint64_t size=0;
+            if (!transfer->hash_job_active) {
+                transfer->hash_job=share->env.hash_begin(share->env.user,transfer->package.files[transfer->hash_file].path);
+                if (transfer->hash_job>=0) {
+                    transfer->hash_job_active=1;
+                    transfer->hash_job_cancel=share->env.hash_cancel;
+                    transfer->hash_job_user=share->env.user;
+                }
+            }
+            if (transfer->hash_job_active) {
+                status=share->env.hash_poll(share->env.user,transfer->hash_job,file->sha256,&size);
+                if (!status) return;
+                transfer->hash_job_active=0;
+                if (status<0) {
+                    host_fail(share,transfer,MCC_SHARE_RESULT_UNAVAILABLE,"a file could not be read to be hashed");
+                    return;
+                }
+                if (!size || size>MCC_SHARE_MAXIMUM_FILE_BYTES) {
+                    host_fail(share,transfer,MCC_SHARE_RESULT_UNAVAILABLE,"a file is empty or too large");
+                    return;
+                }
+                file->size=(uint32_t)size;
+                transfer->hash_file++;
+                continue;
+            }
+        }
         if (!transfer->hash_stream) {
             long size;
             transfer->hash_stream=share_open_native(share,transfer->package.files[transfer->hash_file].path);
             if (!transfer->hash_stream || fseek(transfer->hash_stream,0,SEEK_END) || (size=ftell(transfer->hash_stream))<=0 ||
                 (uint32_t)size>MCC_SHARE_MAXIMUM_FILE_BYTES || fseek(transfer->hash_stream,0,SEEK_SET)) {
-                host_fail(share,transfer,MCC_SHARE_RESULT_UNAVAILABLE);
+                host_fail(share,transfer,MCC_SHARE_RESULT_UNAVAILABLE,transfer->hash_stream ?
+                    "a file is empty or too large" : "a file would not open");
                 return;
             }
             file->size=(uint32_t)size;
@@ -384,7 +424,7 @@ static void host_hash(struct mcc_share *share, struct mcc_share_host_transfer *t
             if (want>budget) want=budget;
             got=fread(block,1,want,transfer->hash_stream);
             if (got!=want) {
-                host_fail(share,transfer,MCC_SHARE_RESULT_UNAVAILABLE);
+                host_fail(share,transfer,MCC_SHARE_RESULT_UNAVAILABLE,"a file read short");
                 return;
             }
             mcc_sha256_add(&transfer->hash,block,(int)got);
@@ -408,7 +448,7 @@ static void host_offer(struct mcc_share *share, struct mcc_share_host_transfer *
     char level_leaf[MCC_SHARE_LEAF_SIZE],folder[64];
     if (!share_level_split(transfer->level,folder,level_leaf) ||
         !mcc_share_manifest_valid(transfer->files,transfer->package.count,level_leaf)) {
-        host_fail(share,transfer,MCC_SHARE_RESULT_UNAVAILABLE);
+        host_fail(share,transfer,MCC_SHARE_RESULT_UNAVAILABLE,"its list of files is not a valid package");
         return;
     }
     if (hashed) {
@@ -480,17 +520,32 @@ static void host_serve(struct mcc_share *share, struct mcc_share_host_transfer *
          * limit lower than a chunk still moves at the limit on average. */
         if (share->budget<=0) return;
         file=&transfer->files[index];
-        stream=share_open_native(share,transfer->package.files[index].path);
-        if (stream && !fseek(stream,0,SEEK_END)) end=ftell(stream);
-        if (!stream || end!=(long)file->size || fseek(stream,(long)offset,SEEK_SET) ||
-            (got=fread(data,1,length,stream))!=length) {
-            if (stream) fclose(stream);
+        /* The file stays open while its chunks are served, in order: opened,
+         * and its size checked, once a file, not once a 3 KB chunk. */
+        stream=transfer->serve_stream && transfer->serve_file==index ? transfer->serve_stream : NULL;
+        if (!stream) {
+            if (transfer->serve_stream) fclose(transfer->serve_stream);
+            transfer->serve_stream=NULL;
+            transfer->serve_file=-1;
+            stream=share_open_native(share,transfer->package.files[index].path);
+            if (stream) setvbuf(stream,NULL,_IOFBF,0x40000);
+            if (stream && !fseek(stream,0,SEEK_END)) end=ftell(stream);
+            if (stream && end==(long)file->size && !fseek(stream,(long)offset,SEEK_SET)) {
+                transfer->serve_stream=stream;
+                transfer->serve_file=index;
+                transfer->serve_offset=offset;
+            } else if (stream) {
+                fclose(stream);
+                stream=NULL;
+            }
+        } else if (transfer->serve_offset!=offset && fseek(stream,(long)offset,SEEK_SET)) stream=NULL;
+        if (!stream || (got=fread(data,1,length,stream))!=length) {
             host_reply(share,transfer->machine,MCC_SHARE_OP_CHUNK,MCC_SHARE_RESULT_CHANGED,transfer->level,
                 transfer->session,index,0,offset,0,NULL,NULL,0);
             host_free(transfer);
             return;
         }
-        fclose(stream);
+        transfer->serve_offset=offset+length;
         if (!host_reply(share,transfer->machine,MCC_SHARE_OP_CHUNK,MCC_SHARE_RESULT_OK,transfer->level,
             transfer->session,index,0,offset,length,NULL,data,length)) return;
         share->budget-=(int32_t)(sizeof(struct mcc_share_response)+length);
@@ -651,7 +706,7 @@ static void client_pump(struct mcc_share *share)
     }
     /* Decide reuse before requesting a file. The chunk window stays within that
      * file so no speculative resource requests precede its local verification. */
-    while (share->outstanding<MCC_SHARE_WINDOW && share->request_file==current &&
+    while (share->outstanding<MCC_SHARE_CLIENT_WINDOW && share->request_file==current &&
         share->request_file<share->stage.count) {
         uint32_t size=share->stage.files[share->request_file].size;
         uint32_t length=size-share->request_offset;
@@ -668,9 +723,9 @@ static void client_pump(struct mcc_share *share)
 
 static void client_reuse(struct mcc_share *share)
 {
-    uint32_t budget=MCC_SHARE_REUSE_SLICE;
+    uint32_t budget=MCC_SHARE_REUSE_SLICE,began=share_now(share);
     static unsigned char block[65536];
-    while (share->reuse_stream && budget) {
+    while (share->reuse_stream && budget && !share_elapsed(share_now(share),began,MCC_SHARE_REUSE_MILLISECONDS)) {
         uint32_t want=mcc_share_stage_wanted(&share->stage);
         enum mcc_share_stage_result result;
         if (want>sizeof(block)) want=sizeof(block);

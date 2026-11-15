@@ -470,6 +470,7 @@ symbols in this file:
 #include "networking/network_server_manager_internal.h"
 #include "networking/network_server_message_handler.h"
 #include "mcc_ui_network.h" /* port: port/linux/game/mcc_ui_network.h */
+#include "mcc_server.h" /* port: port/linux/game/mcc_server.c */
 #include "mcc_load_network.h" /* port: bounded MCC conversion progress */
 #include "mcc_share.h" /* port: port/linux/game/mcc_share.c */
 #include "network_link.h" /* port: port/linux/game/network_link.c */
@@ -1603,6 +1604,10 @@ static void network_game_server_list(
 	short state = network_game_server_get_state(server, NULL);
 	char name[NUMBEROF(game->name) + 1];
 	char gametype[NUMBEROF(game->variant.human_readable_game_description) + 1];
+	/* port: MCC metadata supplies only the browser's 32-character display label. */
+	char map_title[33];
+	char const *map_label = tag_name_strip_path(game->map.name);
+	wchar_t const *mcc_title = mcc_server_map_title(game->map.name);
 	boolean in_progress = state != _network_game_server_state_pregame || network_game_server_game_is_loading(server);
 	boolean open = state == _network_game_server_state_ingame ? network_game_server_accepts_late_joins(server) :
 		network_game_server_game_is_open(server) && network_game_has_free_player_slot(game);
@@ -1618,9 +1623,16 @@ static void network_game_server_list(
 
 		snprintf(gametype + length, sizeof(gametype) - length, " %s", difficulty_names[game->difficulty]);
 	}
-	/* (the scenario's name, not its path: the listing has 32 characters) */
+	/* port: numeric Workshop filenames retain their identity for joining;
+	 * the listing shows the authored title through its existing text field. */
+	if (mcc_title)
+	{
+		listing_text(map_title, sizeof(map_title), mcc_title, NUMBEROF(map_title) - 1);
+		map_label = map_title;
+	}
+	/* (the scenario's name, not its path, when no MCC title is available) */
 	/* port: (and its OpenCE gametype's kind: port/linux/game/game_modes.c) */
-	p2p_set_game_listing(name, tag_name_strip_path(game->map.name), gametype, game->variant.game_engine_index,
+	p2p_set_game_listing(name, map_label, gametype, game->variant.game_engine_index,
 		game_modes_kind(&game->variant, &game->variant_options), open, in_progress,
 		game->variant.universal_variant.teams);
 }
@@ -2586,9 +2598,13 @@ void network_game_server_client_machine_game_loading_complete(
 		struct network_game_server_client_machine *client_machine =
 			&server->client_machines[client_machine_index];
 
-		/* (the machines in the game: not a connection that has not joined) */
+		/* (the machines in the game: not a connection that has not joined;
+		port: nor one left out of the start for a map download, which was
+		not told to load, and joins in progress once the game has begun,
+		network_game_server_release_map_fetchers) */
 		if (network_game_server_client_machine_is_joined_to_game(server, client_machine) &&
 			!map_share_machine_needs_map(client_machine->machine_index) &&
+			!network_game_server_map_pending[client_machine_index] &&
 			!TEST_FLAG(client_machine->flags, _network_client_machine_level_loaded_bit))
 		{
 			loading_machine_count++;
@@ -2629,8 +2645,10 @@ static void network_game_server_check_loading_complete(
 		struct network_game_server_client_machine *client_machine =
 			&server->client_machines[client_machine_index];
 
+		/* (port: not one left out of the start for a map download) */
 		if (network_game_server_client_machine_is_joined_to_game(server, client_machine) &&
 			!map_share_machine_needs_map(client_machine->machine_index) &&
+			!network_game_server_map_pending[client_machine_index] &&
 			!TEST_FLAG(client_machine->flags, _network_client_machine_level_loaded_bit))
 		{
 			return;
@@ -5534,13 +5552,18 @@ static boolean network_game_server_idle_pregame_tasks(
 
 			for (i = 0; i < MAXIMUM_NETWORK_MACHINE_COUNT; i++)
 			{
+				/* port: a machine left out of the start for a map download was
+				not told to load: it has not timed out loading, and joins in
+				progress once the game has begun
+				(network_game_server_release_map_fetchers) */
 				if (TEST_FLAG(
 					server->client_machines[i].flags,
 					_network_client_machine_connected_bit) &&
 					!TEST_FLAG(
 						server->client_machines[i].flags,
 						_network_client_machine_level_loaded_bit) &&
-					!map_share_machine_needs_map(server->client_machines[i].machine_index))
+					!map_share_machine_needs_map(server->client_machines[i].machine_index) &&
+					!network_game_server_map_pending[i])
 				{
 					char ascii_name[MAXIMUM_MACHINE_NAME_LENGTH];
 					boolean removed;

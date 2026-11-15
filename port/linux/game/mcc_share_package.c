@@ -135,13 +135,28 @@ void mcc_share_package_build(char const *level, struct mcc_share_host_package *p
     unsigned i,base_mask;
     memset(package,0,sizeof(*package));
     package->refusal=MCC_SHARE_RESULT_NOT_SHAREABLE;
-    if (!mcc_package_name(level,canonical) || !mcc_identity_host_package(canonical,digest)) return;
+    if (!mcc_package_name(level,canonical)) {
+        error(_error_silent,"mcc share: not offering %s: not an MCC package's name",level);
+        return;
+    }
+    if (!mcc_identity_host_package(canonical,digest)) {
+        error(_error_silent,"mcc share: not offering %s: this host has no checked identity for it",canonical);
+        return;
+    }
     leaf=strrchr(canonical,'\\')+1;
     if (!strchr(canonical+9,'\\') || !mcc_package_map_path(canonical,map) ||
-        !mcc_manifest_package_root(canonical,root)) return;
+        !mcc_manifest_package_root(canonical,root)) {
+        error(_error_silent,"mcc share: not offering %s: its package folder or map could not be found",canonical);
+        return;
+    }
     platform_translate_path(map,maps,sizeof(maps));
     for (end=maps;*end;end++) if (*end=='\\') *end='/';
-    end=strrchr(maps,'/'); if (!end) return; *end=0;
+    end=strrchr(maps,'/');
+    if (!end) {
+        error(_error_silent,"mcc share: not offering %s: its map's path has no folder (%s)",canonical,maps);
+        return;
+    }
+    *end=0;
     file=fopen(MCC_SHARE_LIST_FILE,"rb");
     if (file) {
         length=fread(list,1,sizeof(list),file);
@@ -191,7 +206,11 @@ void mcc_share_package_build(char const *level, struct mcc_share_host_package *p
         }
     }
     plan=malloc(sizeof(*plan));
-    if (!plan) return;
+    if (!plan) {
+        error(_error_silent,"mcc share: cannot offer %s: no memory for its metadata's list (%lu bytes)",canonical,
+            (unsigned long)sizeof(*plan));
+        return;
+    }
     if (!mcc_share_metadata_plan(root,-1,leaf,plan,reason)) {
         error(_error_silent,"mcc share: %s metadata refused: %s",canonical,reason);
         free(plan); return;
@@ -208,6 +227,11 @@ void mcc_share_package_build(char const *level, struct mcc_share_host_package *p
     }
     free(plan);
     for (i=0;i<NUMBEROF(credits);i++)
-        if (source_path(root,credits[i],path) && !add_file(package,MCC_SHARE_FILE_CREDIT,credits[i],path)) return;
+        if (source_path(root,credits[i],path) && !add_file(package,MCC_SHARE_FILE_CREDIT,credits[i],path)) {
+            error(_error_silent,"mcc share: cannot offer %s: its %s cannot be listed (%d files)",canonical,credits[i],
+                package->count);
+            return;
+        }
     package->refusal=MCC_SHARE_RESULT_OK;
+    error(_error_silent,"mcc share: offering %s: %d files",canonical,package->count);
 }
