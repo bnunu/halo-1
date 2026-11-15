@@ -807,6 +807,12 @@ Each frame shows the world between the last two ticks
   the last tick.
 - Rotations use quaternions. Positions and scales are linear.
 - A teleport, a respawn or a cut of the camera does not mix. It jumps.
+- An object whose pose changes at once (an actor waking, a model swapped:
+  a part of it moving further in a tick than any limb does) is not mixed
+  either. A part moving steadily, however fast (it moves about as far, and
+  the same way, as it did the tick before), is mixed: a30's lifepod sheds its
+  airbrakes as it falls, and the whole pod, with the camera that follows it,
+  had stepped once a tick.
 - After a long frame (several ticks in one frame), the camera mixes the
   last tick only, as the objects do.
 - In cinematics, a camera that moves with an object (the lifepod in a30,
