@@ -9,6 +9,18 @@
 
 static int mcc_server_rescan_pending;
 
+wchar_t const *mcc_server_map_title(char const *level)
+{
+    char canonical[64];
+    short index;
+    wchar_t const *title;
+    if (!mcc_package_name(level,canonical)) return NULL;
+    index=mcc_maps_find(canonical);
+    if (index<0) return NULL;
+    title=mcc_maps_name(index);
+    return title && title[0] ? title : NULL;
+}
+
 void mcc_server_request_rescan(void)
 {
     mcc_server_rescan_pending=1;
