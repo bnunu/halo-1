@@ -150,3 +150,20 @@ identity-candidate, sharing and server tests exercise these cases with synthetic
 files; they do not measure slow-device join times. Host downloads use separate
 folders and never replace the player's installed package. See
 [MCC installation and sharing](../mcc_maps.md) for prerequisites and limits.
+
+## Tracing a refused MCC conversion
+
+MCC refusal diagnostics resolve the original authoring tag path and add the field
+or zero-based element index plus the failed check. Start with
+[`mcc_diagnostics.c`](../../port/linux/game/mcc_diagnostics.c), then follow the
+converter named in the [complete before/after catalogue](../mcc_conversion_diagnostics.md).
+For example, `bitmaps[3]` identifies the fourth image inside the named `.bitmap`;
+sound errors include pitch-range/permutation indices and names, codec and payload
+location. Nested validation paths retain block indices. The source scenario name
+is captured before runtime renaming, and specialized bitmap copies report their
+source tag. Diagnostic state is owned and cleared by the MCC runtime.
+
+The catalogue distinguishes authored-data failures from missing resource files,
+allocation failures and damaged compiled-map headers. It also records the
+fallback when a corrupt map does not contain a safely readable tag name. These
+messages do not relax conversion checks or change Xbox/Custom Edition loading.

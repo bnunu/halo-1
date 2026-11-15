@@ -45,7 +45,7 @@ static uint32_t mcc_ogg_u32(unsigned char const *p)
  * permutation first, including EOS, so a truncated/damaged packet is not made
  * acceptable by the narrow empty-book compatibility rule. */
 static int mcc_ogg_validate(unsigned char const *bytes, uint32_t size, uint32_t *frames,
-    uint32_t *payload_end, uint32_t *final_page)
+    uint32_t *payload_end, uint32_t *final_page, char const **reason)
 {
     uint32_t table[256], offset=0, serial=0, sequence=0, i, j;
     uint32_t last_page=0, last_end=0, previous_granule=0;
@@ -60,25 +60,28 @@ static int mcc_ogg_validate(unsigned char const *bytes, uint32_t size, uint32_t 
         unsigned char const *page=bytes+offset;
         uint32_t length=27, count, crc=0;
         mcc_loading_pulse();
-        if (ended || size-offset<27 || memcmp(page,"OggS",4) || page[4] || (page[5]&~7)) return 0;
+        if (ended) {*reason="Ogg contains data after the end-of-stream page";return 0;}
+        if (size-offset<27) {*reason="Ogg page header is truncated";return 0;}
+        if (memcmp(page,"OggS",4) || page[4] || (page[5]&~7)) {*reason="Ogg page has an invalid signature, version or flags";return 0;}
         count=page[26];
-        if (count>size-offset-length) return 0;
+        if (count>size-offset-length) {*reason="Ogg segment table is truncated";return 0;}
         length+=count;
         for (i=0;i<count;i++) length+=page[27+i];
-        if (length>size-offset || (count && !!(page[5]&1)!=continued)) return 0;
+        if (length>size-offset) {*reason="Ogg page payload is truncated";return 0;}
+        if (count && !!(page[5]&1)!=continued) {*reason="Ogg packet continuation flags disagree between pages";return 0;}
         if (!offset) {
-            if (!(page[5]&2)) return 0;
+            if (!(page[5]&2)) {*reason="Ogg first page lacks the beginning-of-stream flag";return 0;}
             serial=mcc_ogg_u32(page+14);sequence=mcc_ogg_u32(page+18);
-        } else if ((page[5]&2) || mcc_ogg_u32(page+14)!=serial || mcc_ogg_u32(page+18)!=sequence) return 0;
+        } else if ((page[5]&2) || mcc_ogg_u32(page+14)!=serial || mcc_ogg_u32(page+18)!=sequence) {*reason="Ogg page stream serial, sequence or beginning flag is inconsistent";return 0;}
         for (i=0;i<length;i++) {
             unsigned char value=i>=22 && i<26 ? 0 : page[i];
             crc=(crc<<8)^table[(crc>>24)^value];
         }
-        if (crc!=mcc_ogg_u32(page+22)) return 0;
+        if (crc!=mcc_ogg_u32(page+22)) {*reason="Ogg page CRC checksum does not match its contents";return 0;}
         /* A page without a completed packet has no granule. All other known
          * positions must progress; EOS cannot trim an earlier page's audio. */
         if (mcc_ogg_u32(page+6)!=0xFFFFFFFFu || mcc_ogg_u32(page+10)!=0xFFFFFFFFu) {
-            if (mcc_ogg_u32(page+10) || mcc_ogg_u32(page+6)<previous_granule) return 0;
+            if (mcc_ogg_u32(page+10) || mcc_ogg_u32(page+6)<previous_granule) {*reason="Ogg granule position is too large or moves backwards";return 0;}
             previous_granule=mcc_ogg_u32(page+6);
         }
         /* Ogg permits zero-segment pages (including a separate EOS page). With
@@ -90,15 +93,16 @@ static int mcc_ogg_validate(unsigned char const *bytes, uint32_t size, uint32_t 
         }
         ended=(page[5]&4)!=0;
         if (ended) {
-            if (continued || mcc_ogg_u32(page+10)) return 0;
+            if (continued || mcc_ogg_u32(page+10)) {*reason="Ogg end-of-stream page ends mid-packet or has an unsupported granule";return 0;}
             *frames=mcc_ogg_u32(page+6);
             if (!count) {
-                if (!last_end) return 0;
+                if (!last_end) {*reason="empty Ogg terminal page has no preceding packet";return 0;}
                 *payload_end=last_end;*final_page=last_page;
             }
         }
         offset+=length;sequence++;
     }
+    if (!ended) *reason="Ogg end-of-stream page is missing";
     return ended;
 }
 
@@ -171,8 +175,31 @@ static int mcc_vorbis_residues(vorb *stream)
     return 1;
 }
 
-int mcc_vorbis_decode(unsigned char const *bytes, uint32_t size, uint32_t frame_limit,
-    short **samples, uint32_t *frames, uint32_t *rate, int *channels)
+/* Keep dependency error numbers supplementary to an author-readable cause. */
+static char const *mcc_vorbis_decoder_reason(int code)
+{
+    switch (code) {
+    case VORBIS_outofmem: return "not enough memory inside the Vorbis decoder";
+    case VORBIS_feature_not_supported: return "Vorbis stream uses an unsupported floor/codec feature";
+    case VORBIS_too_many_channels: return "Vorbis channel count exceeds the decoder limit";
+    case VORBIS_unexpected_eof: return "Vorbis packet ended before the decoder could read its required data";
+    case VORBIS_invalid_setup: return "Vorbis setup packet or block-size declaration is invalid";
+    case VORBIS_invalid_stream: return "Vorbis audio packet is invalid";
+    case VORBIS_missing_capture_pattern: return "Vorbis decoder could not find the Ogg page signature";
+    case VORBIS_invalid_stream_structure_version: return "Vorbis decoder encountered an unsupported Ogg version";
+    case VORBIS_continued_packet_flag_invalid: return "Vorbis decoder encountered an invalid packet continuation flag";
+    case VORBIS_incorrect_stream_serial_number: return "Vorbis decoder encountered inconsistent Ogg stream serial numbers";
+    case VORBIS_invalid_first_page: return "Vorbis identification/header page is invalid";
+    case VORBIS_bad_packet_type: return "Vorbis packet type is invalid for this decoding stage";
+    case VORBIS_cant_find_last_page: return "Vorbis decoder could not find the final Ogg page";
+    case VORBIS_ogg_skeleton_not_supported: return "Ogg Skeleton streams are unsupported by the Vorbis decoder";
+    default: return NULL;
+    }
+}
+
+int mcc_vorbis_decode_ex(unsigned char const *bytes, uint32_t size, uint32_t frame_limit,
+    short **samples, uint32_t *frames, uint32_t *rate, int *channels,
+    char const **reason, int *decoder_error)
 {
     vorb stream;
     uint32_t expected=0, count=0, payload_end=0, final_page=0;
@@ -181,12 +208,17 @@ int mcc_vorbis_decode(unsigned char const *bytes, uint32_t size, uint32_t frame_
     short packet[8192 * 2];
     uint32_t decoded=0;
     int ok=0, boundary_known=0, boundary_bias=0;
+    char const *decoder_reason;
     *samples=NULL;*frames=0;*rate=0;*channels=0;
-    if (!bytes || !size || size>INT_MAX || !mcc_ogg_validate(bytes,size,&expected,&payload_end,&final_page) ||
-        !expected || expected>frame_limit || expected>INT_MAX/(2*sizeof(short))) return 0;
+    *decoder_error=0;
+    *reason="Ogg payload is empty or exceeds the decoder's input limit";
+    if (!bytes || !size || size>INT_MAX) return 0;
+    if (!mcc_ogg_validate(bytes,size,&expected,&payload_end,&final_page,reason)) return 0;
+    *reason="Ogg declared frame count is zero or exceeds the decoded frame/allocation limit";
+    if (!expected || expected>frame_limit || expected>INT_MAX/(2*sizeof(short))) return 0;
     if (payload_end<size) {
         normalized=mcc_ogg_terminal_page(bytes,payload_end,final_page,expected);
-        if (!normalized) return 0;
+        if (!normalized) {*reason="not enough memory to normalize an empty Ogg terminal page";return 0;}
         bytes=normalized;size=payload_end;
     }
     vorbis_init(&stream,NULL);
@@ -194,18 +226,24 @@ int mcc_vorbis_decode(unsigned char const *bytes, uint32_t size, uint32_t frame_
     stream.stream_start=stream.stream;
     stream.stream_end=stream.stream+size;
     stream.stream_len=size;
-    if (!start_decoder(&stream) || !mcc_vorbis_residues(&stream) ||
-        stream.channels<1 || stream.channels>2 || stream.sample_rate<8000 || stream.sample_rate>192000) goto done;
+    *reason="Vorbis setup headers were rejected by the decoder";
+    if (!start_decoder(&stream)) goto done;
+    *reason="unsupported Vorbis floor/residue codebook layout";
+    if (!mcc_vorbis_residues(&stream)) goto done;
+    *reason="Vorbis requires 1 or 2 channels and a sample rate of 8000..192000 Hz";
+    if (stream.channels<1 || stream.channels>2 || stream.sample_rate<8000 || stream.sample_rate>192000) goto done;
     pcm=malloc((size_t)expected*stream.channels*sizeof(short));
+    *reason="not enough memory for decoded Vorbis samples";
     if (!pcm) goto done;
     /* Normalization precedes the discarded overlap packet, which can itself use
      * an empty residue vector book. No Xbox/CE decoder state is accessible here. */
+    *reason="Vorbis first audio packet could not be decoded";
     if (!vorbis_pump_first_frame(&stream) || stream.error) goto done;
     for (;;) {
         int got=stb_vorbis_get_frame_short_interleaved(&stream,stream.channels,packet,8192*2);
         uint32_t retain;
         mcc_loading_pulse();
-        if (stream.error) goto done;
+        if (stream.error) {*reason="Vorbis audio packet decode failed";goto done;}
         if (!got) break;
         decoded+=(uint32_t)got;
         if (!(stream.page_flag&PAGEFLAG_last_page) && stream.last_seg_which==stream.end_seg_with_known_loc) {
@@ -214,7 +252,9 @@ int mcc_vorbis_decode(unsigned char const *bytes, uint32_t size, uint32_t frame_
              * window's start, beyond the packet's centre/granule. This offset
              * disappears again after the short packet. Accept only that exact
              * window transition, not arbitrary drifting page positions. */
-            if (difference!=0 && difference!=(stream.blocksize_1-stream.blocksize_0)/4) goto done;
+            if (difference!=0 && difference!=(stream.blocksize_1-stream.blocksize_0)/4) {
+                *reason="Vorbis decoded frame positions disagree with Ogg page granules";goto done;
+            }
             boundary_bias=difference;boundary_known=1;
         }
         retain=(uint32_t)got;
@@ -224,20 +264,34 @@ int mcc_vorbis_decode(unsigned char const *bytes, uint32_t size, uint32_t frame_
              * drain an unbounded remainder or suppress packet errors. */
             if (decoded-expected>(uint32_t)stream.blocksize_1 ||
                 (!(stream.page_flag&PAGEFLAG_last_page) &&
-                 (!boundary_known || decoded-expected>(uint32_t)boundary_bias))) goto done;
+                 (!boundary_known || decoded-expected>(uint32_t)boundary_bias))) {
+                *reason="Vorbis final-packet trimming exceeds the permitted block/window boundary";goto done;
+            }
             retain=expected-count;
         }
         memcpy(pcm+count*stream.channels,packet,(size_t)retain*stream.channels*sizeof(short));
         count+=retain;
     }
-    if (count!=expected) goto done;
+    if (count!=expected) {*reason="Vorbis decoded fewer frames than the Ogg end-of-stream declaration";goto done;}
     *samples=pcm;*frames=count;*rate=stream.sample_rate;*channels=stream.channels;
     pcm=NULL;ok=1;
 done:
+    *decoder_error=stream.error;
+    decoder_reason=mcc_vorbis_decoder_reason(stream.error);
+    if (ok) *reason=NULL;
+    else if (decoder_reason) *reason=decoder_reason;
     free(pcm);
     vorbis_deinit(&stream);
     free(normalized);
     return ok;
+}
+
+int mcc_vorbis_decode(unsigned char const *bytes, uint32_t size, uint32_t frame_limit,
+    short **samples, uint32_t *frames, uint32_t *rate, int *channels)
+{
+    char const *reason;
+    int decoder_error;
+    return mcc_vorbis_decode_ex(bytes,size,frame_limit,samples,frames,rate,channels,&reason,&decoder_error);
 }
 
 void mcc_vorbis_free(short *samples)

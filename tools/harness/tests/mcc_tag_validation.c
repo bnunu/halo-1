@@ -6,6 +6,7 @@
 #include "mcc_syntax.h"
 #include "../../mcc_loading_stub.c"
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -262,6 +263,12 @@ void tag_validate_report(char const *message)
     (void)message;
 #endif
 }
+void error(short level,char const *format,...) {va_list args;(void)level;va_start(args,format);vprintf(format,args);va_end(args);putchar(10);}
+void *mcc_runtime_pointer(struct mcc_runtime *r,uint32_t address,uint32_t size) {
+    uint32_t offset=address-r->report.tag_base;
+    return address>=r->report.tag_base && offset<=r->used && size<=r->used-offset ? r->tags+offset : NULL;
+}
+uint32_t mcc_bitmaps_source_handle(struct mcc_runtime *r,uint32_t h) {(void)r;return h;}
 uint32_t mcc_audio_stream_end(struct mcc_runtime *runtime) { (void)runtime; return 1024; }
 uint32_t mcc_bitmaps_stream_end(struct mcc_runtime *runtime) { (void)runtime; return 1024; }
 int mcc_audio_contains(struct mcc_runtime *runtime, long tag, uint32_t offset, uint32_t size)
@@ -297,13 +304,6 @@ void *mcc_runtime_allocate(struct mcc_runtime *runtime,uint32_t bytes)
 }
 
 #ifdef MCC_HUD_VALIDATION
-void *mcc_runtime_pointer(struct mcc_runtime *runtime,uint32_t address,uint32_t bytes)
-{
-    uintptr_t start=(uintptr_t)runtime->tags;
-    return address>=start && address-start<=runtime->used && bytes<=runtime->used-(address-start) ?
-        (void *)(uintptr_t)address : NULL;
-}
-void error(short level,char const *text,...) {(void)level;(void)text;}
 char const *config_string(char const *name) {(void)name;return "tab";}
 
 static void hud_test_overlay(struct weapon_hud_overlays_element *owner,void *items,long count)
@@ -424,6 +424,7 @@ int main(int argc, char **argv)
     if (!strncmp(argv[1], "palette_", 8)) runtime.used = runtime.capacity = 2097152;
     runtime.tags = malloc(runtime.capacity); CHECK(runtime.tags != NULL);
     memset(runtime.tags, 0, runtime.capacity);
+    runtime.tag_index=runtime.tags+40;runtime.report.tag_base=(uint32_t)(uintptr_t)runtime.tags;runtime.report.tag_count=1;
     header = (struct test_header *)runtime.tags;
     instance = (struct test_instance *)(runtime.tags + 0x28);
     root = (struct test_root *)(runtime.tags + 0x100);
@@ -471,6 +472,7 @@ int main(int argc, char **argv)
     if (!strcmp(argv[1], "misaligned")) { root->children.address = (byte *)child + 1; expected = 0; }
     if (!strcmp(argv[1], "negative")) { root->children.count = -1; expected = 0; }
     if (!strcmp(argv[1], "cycle")) { root->children.address = root; expected = 0; }
+    if (!strcmp(argv[1], "nested_data")) { child->data.address=root;expected=0; }
     if (!strcmp(argv[1], "file_range")) { root->file.file_offset = 1023; expected = 0; }
     if (!strcmp(argv[1], "stream_hole")) { root->file.file_offset = 0x4ffffff0; expected = 0; }
     if (!strcmp(argv[1], "handle")) { instance->handle++; expected = 0; }

@@ -26,6 +26,7 @@ int main(int argc, char **argv) {
     status=mcc_cache_inspect(&source,&report);
     printf("status=%s\n",mcc_cache_status_string(status));
     printf("problem_tag=%u\nproblem_location=0x%08X\n",report.problem_tag,report.problem_location);
+    printf("problem_path=%s\nproblem_detail=%s\n",report.problem_path,report.problem_detail);
     if (report.identity.tag_data_size) {
         printf("name=%s\nbuild=%s\nscenario_type=%u\nflags=0x%04X\n",
             report.identity.name,report.identity.build,report.identity.scenario_type,report.identity.flags);
