@@ -126,6 +126,11 @@ typedef char verify_hud_global_default_title_bounds_offset[
 
 struct cinematic_global_data *cinematic_globals = NULL;
 
+/* port: whether the checkpoint a skip of the cinematic goes back to has been
+taken (cinematic_port_checkpoint); main.c holds any other until the cinematic
+can no longer be skipped */
+static boolean cinematic_skip_checkpoint_taken = FALSE;
+
 /* ---------- public code */
 
 void cinematic_initialize(
@@ -157,6 +162,7 @@ void cinematic_initialize_for_new_map(
 		cinematic_globals->queued_titles,
 		NONE,
 		sizeof(cinematic_globals->queued_titles));
+	cinematic_skip_checkpoint_taken = FALSE; /* port */
 
 	return;
 }
@@ -165,8 +171,27 @@ void cinematic_skip_start(
 	void)
 {
 	cinematic_globals->can_be_skipped = TRUE;
+	/* port: its checkpoint is the next one taken */
+	cinematic_skip_checkpoint_taken = FALSE;
 
 	return;
+}
+
+/* port: a checkpoint was taken or gone back to (game_state.c): the first one
+taken while a cinematic can be skipped is the one its skip goes back to */
+void cinematic_port_checkpoint(
+	void)
+{
+	cinematic_skip_checkpoint_taken = cinematic_globals->can_be_skipped;
+}
+
+/* port: whether a checkpoint taken now would replace the one the cinematic's
+skip goes back to, and the skip would go back to partway into the cinematic
+and play the rest of it again (a map's script that saves every so often) */
+boolean cinematic_port_holds_checkpoints(
+	void)
+{
+	return cinematic_globals->can_be_skipped && cinematic_skip_checkpoint_taken;
 }
 
 void cinematic_skip_stop(

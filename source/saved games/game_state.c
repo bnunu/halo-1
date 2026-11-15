@@ -125,6 +125,7 @@ symbols in this file:
 #include "lruv_cache.h"
 #include "memory_pool.h"
 #include "cluster_partitions.h"
+#include "cutscene/cinematics.h" /* port: cinematic_port_checkpoint */
 #include "mcc_cache.h" /* port: port/linux/game/mcc_cache.h */
 #include "mcc_checkpoint.h" /* port: port/linux/game/mcc_checkpoint.h */
 #include "hs_console_state.h" /* port: port/linux/game/hs_console_state.inl */
@@ -230,7 +231,9 @@ static game_state_after_load_proc after_load_procs[] =
 	/* port: restore matching homes or forget an unrelated disk/core load. */
 	coop_vehicles_after_load,
 	/* port: (vehicle_riding.c: also for a revert in the same structure) */
-	bipeds_riding_latch
+	bipeds_riding_latch,
+	/* port: a cinematic's skip goes back to the checkpoint gone back to */
+	cinematic_port_checkpoint
 };
 
 /* ---------- public code */
@@ -364,7 +367,11 @@ void game_state_save(
 	game_state_globals.saved_game_valid = (game_state_write_to_file()!=FALSE);
 	/* port: never associate new players with an older or failed save. */
 	if (game_state_globals.saved_game_valid)
+	{
 		network_coop_checkpoint_saved();
+		/* port: (the one a cinematic's skip goes back to) */
+		cinematic_port_checkpoint();
+	}
 	main_start_time();
 	game_state_note_event("checkpoint saved");
 

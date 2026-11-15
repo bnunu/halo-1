@@ -2192,6 +2192,16 @@ static void main_saving_map_private(
 static void main_save_map_private(
 	void)
 {
+	/* port: none while a cinematic can be skipped and the checkpoint its skip
+	goes back to is taken: a script that saves every so often would replace it,
+	and the skip would play the rest of the cinematic again. The save waits
+	(its ticks not counted) until cinematic_skip_stop; a skip lets go of it
+	(main_skip_cinematic) */
+	if (cinematic_port_holds_checkpoints())
+	{
+		main_save_last_tick = game_time_get();
+		return;
+	}
 	if (!game_time_get_paused())
 	{
 		boolean save_map_safely = main_globals.save_map_safely;
