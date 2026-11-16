@@ -49,7 +49,9 @@ int steam_downloads_poll(void);
 /* the rows of the list shown */
 int steam_downloads_count(void);
 void steam_downloads_row(int place, char *name, int name_size, char *state, int state_size);
-void steam_downloads_details(int place, char *title, int title_size, char *text, int text_size);
+/* the chosen row's title, text, and its Workshop item's author ("" until Steam has said, and for a row of none) */
+void steam_downloads_details(int place, char *title, int title_size, char *text, int text_size, char *author,
+	int author_size);
 /* A on a row */
 void steam_downloads_choose(int place);
 /* B: nonzero when it was taken (a sign-in under way cancelled, a list left
@@ -87,7 +89,8 @@ void host_steam_set_first(int first);
 int host_steam_chosen(void);
 void host_steam_set_chosen(int chosen);
 void host_steam_row(int place, unsigned int name, int name_size, unsigned int state, int state_size);
-void host_steam_details(int place, unsigned int title, int title_size, unsigned int text, int text_size);
+void host_steam_details(int place, unsigned int title, int title_size, unsigned int text, int text_size,
+	unsigned int author, int author_size);
 void host_steam_choose(int place);
 int host_steam_back(void);
 int host_steam_picture(unsigned int key, unsigned int pixels);

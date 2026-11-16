@@ -737,6 +737,14 @@ See [MCC maps](../../docs/mcc_maps.md) for supported formats, resources and limi
 [MCC previews](../../docs/reading/mcc_level_previews.md) for menu discovery, and
 [browser imports](../../docs/reading/browser_imports.md) for browser storage.
 
+The lobby shows the author of a Steam Workshop map under the map's name
+("Author:" and a name cut short with "..." to stay one line), also to a player
+still downloading it, and so does the lobby of a game under way before joining
+it when this machine has the map: the Steam name of the account that published
+the item. Steam is asked once a run, without signing in, so the name
+shows a moment after the lobby opens, and not at all offline or in the web
+build (Steam does not answer a web page's requests).
+
 All map families use network version 44 (camera mode 32745); older peers
 cannot join, including OpenCE protocol 43 peers. MCC content identity, sharing
 consent and load-progress checks remain separate from the existing Xbox/CE paths;

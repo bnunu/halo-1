@@ -514,6 +514,12 @@ wchar_t const *mcc_maps_description(short index)
 	return index >= 0 && index < mcc_menu_catalog.count ? mcc_menu_catalog.maps[index].description : L"";
 }
 
+char const *mcc_maps_item_id(short index)
+{
+	mcc_maps_scan();
+	return index >= 0 && index < mcc_menu_catalog.count ? mcc_menu_catalog.maps[index].item_id : "";
+}
+
 boolean mcc_maps_campaign(short index)
 {
 	mcc_maps_scan();

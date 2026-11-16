@@ -39,7 +39,7 @@ def client(tmp_path_factory):
         pytest.skip("clang required")
     work = tmp_path_factory.mktemp("steam-client")
     objects = []
-    for source in ["posix_files.c", "posix_mcc_share.c"]:
+    for source in ["posix_files.c", "posix_mcc_share.c", "workshop_authors.c", "server_json.c"]:
         objects.append(work / (source + ".o"))
         subprocess.run([clang, "-std=gnu99", "-w", "-c", str(ROOT / "port/linux/src" / source), "-o", str(objects[-1])],
                        check=True)

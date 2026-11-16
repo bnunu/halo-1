@@ -184,7 +184,8 @@ void host_steam_set_first(int first);
 int host_steam_chosen(void);
 void host_steam_set_chosen(int chosen);
 void host_steam_row(int place, unsigned int name, int name_size, unsigned int state, int state_size);
-void host_steam_details(int place, unsigned int title, int title_size, unsigned int text, int text_size);
+void host_steam_details(int place, unsigned int title, int title_size, unsigned int text, int text_size,
+	unsigned int author, int author_size);
 void host_steam_choose(int place);
 int host_steam_back(void);
 int host_steam_picture(unsigned int key, unsigned int pixels);
@@ -201,5 +202,8 @@ int host_steam_install_status(void);
 void host_steam_install_progress(unsigned int progress);
 /* files put in mcc_maps by the Steam downloader since the last ask (once) */
 int host_steam_take_rescan(void);
+/* a Workshop item's author's name, asked of Steam on the host's thread (port/linux/src/workshop_authors.c's
+workshop_authors_get) */
+int host_steam_author(unsigned int item_id, unsigned int name, int name_size);
 
 #endif

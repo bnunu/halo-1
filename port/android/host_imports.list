@@ -104,3 +104,5 @@ host_steam_install_start
 host_steam_install_status
 host_steam_install_progress
 host_steam_take_rescan
+# a Workshop item's author's name, for the lobby (port/linux/src/workshop_authors.c)
+host_steam_author
