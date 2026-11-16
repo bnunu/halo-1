@@ -1268,6 +1268,33 @@ static void mcc_solo_map_text(short row, wchar_t *text)
 	mcc_menu_text_row(text);
 }
 
+static void mods_wide_text(char const *text, wchar_t *wide, short length);
+static void text_append(wchar_t *text, short size, wchar_t const *word);
+
+/* the help under a folder in the MCC map lists' panel, in a text box of this length */
+#define MCC_FOLDER_HELP_LENGTH (ROW_TEXT_LENGTH * 3)
+
+/* the help under the chosen folder; a Workshop item's folder's ends with its author, once Steam has said
+(workshop_authors.c). A collection's has none: it holds the items of many */
+static void mcc_folder_help_text(struct mcc_map_browser const *browser, wchar_t *help, short size)
+{
+	short row = browser->chosen;
+	char author[WORKSHOP_AUTHORS_NAME_SIZE];
+	/* (one more than the name: mods_wide_text keeps 2 for a line break) */
+	wchar_t wide[WORKSHOP_AUTHORS_NAME_SIZE + 1];
+
+	help[0] = 0;
+	text_append(help, size, browser->count ? L"Open folder to\r\nchoose a map." : L"No MCC maps found\r\nin this category.");
+	if (row < 0 || row >= browser->count || !browser->folders[row] || browser->groups[row] != NONE ||
+		!workshop_authors_get(mcc_maps_item_id(browser->entries[row]), author, sizeof(author)))
+	{
+		return;
+	}
+	mods_wide_text(author, wide, NUMBEROF(wide));
+	text_append(help, size, L"\r\nAuthor\r\n");
+	text_append(help, size, wide);
+}
+
 static void mcc_browser_description(struct widget_instance *description, struct mcc_map_browser *browser)
 {
 	short index = mcc_map_browser_index(browser, browser->chosen);
@@ -1277,10 +1304,12 @@ static void mcc_browser_description(struct widget_instance *description, struct 
 	mcc_map_description_show(description, index);
 	if (index == NONE)
 	{
+		wchar_t help[MCC_FOLDER_HELP_LENGTH];
+
 		mcc_map_browser_text(browser, browser->chosen, text);
 		text_set(named(description, "mcc_folder_name", 0), text);
-		text_set(named(description, "mcc_folder_help", 0), browser->count ?
-			L"Open folder to\r\nchoose a map." : L"No MCC maps found\r\nin this category.");
+		mcc_folder_help_text(browser, help, NUMBEROF(help));
+		text_set_length(named(description, "mcc_folder_help", 0), help, NUMBEROF(help));
 		visible_set(named(description, "mcc_folder_name", 0), TRUE);
 		visible_set(named(description, "mcc_folder_help", 0), TRUE);
 	}
@@ -7135,7 +7164,7 @@ static boolean lobby_author_line(char const map_name[128], wchar_t *line, short 
 	struct mcc_workshop_item item;
 	char const *item_id = item.id;
 	char author[WORKSHOP_AUTHORS_NAME_SIZE];
-	wchar_t wide[WORKSHOP_AUTHORS_NAME_SIZE];
+	wchar_t wide[WORKSHOP_AUTHORS_NAME_SIZE + 1];
 	short length, kept;
 
 	if (!mcc_level_name(map_name))

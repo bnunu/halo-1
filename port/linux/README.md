@@ -740,8 +740,9 @@ See [MCC maps](../../docs/mcc_maps.md) for supported formats, resources and limi
 The lobby shows the author of a Steam Workshop map under the map's name
 ("Author:" and a name cut short with "..." to stay one line), also to a player
 still downloading it, and so does the lobby of a game under way before joining
-it when this machine has the map: the Steam name of the account that published
-the item. Steam is asked once a run, without signing in, so the name
+it when this machine has the map. The MCC map lists (multiplayer and campaign)
+show it in two lines under the map's description, which is cut short above
+them. The name is the Steam name of the account that published the item. Steam is asked once a run, without signing in, so the name
 shows a moment after the lobby opens, and not at all offline or in the web
 build (Steam does not answer a web page's requests).
 
