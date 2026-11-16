@@ -38,7 +38,9 @@ void steam_screen_set_first(int first);
 int steam_screen_chosen(void);
 void steam_screen_set_chosen(int chosen);
 void steam_screen_row(int place, char *name, int name_size, char *state, int state_size);
-void steam_screen_details(int place, char *title, int title_size, char *text, int text_size);
+/* (author: the row's Workshop item's, "" until Steam has said or for a row of none) */
+void steam_screen_details(int place, char *title, int title_size, char *text, int text_size, char *author,
+	int author_size);
 void steam_screen_choose(int place);
 int steam_screen_back(void);
 /* pixels: STEAM_PICTURE_SIDE squared, or NULL to ask only */

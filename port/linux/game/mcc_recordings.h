@@ -8,6 +8,10 @@
 int mcc_recording_prepare(unsigned char *stream, uint32_t size,
     unsigned version, unsigned control_version, uint32_t *corrected);
 
+int mcc_recording_prepare_ex(unsigned char *stream, uint32_t size,
+    unsigned version, unsigned control_version, uint32_t *corrected,
+    char const **reason,uint32_t *bad_offset);
+
 /* Valid version-4 weapon events with no movement or authored directions. */
 int mcc_recording_weapon_only(unsigned char *stream, uint32_t size,
     unsigned version, unsigned control_version);

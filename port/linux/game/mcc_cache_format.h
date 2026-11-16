@@ -64,6 +64,7 @@ struct mcc_cache_report {
     struct mcc_cache_identity identity;
     enum mcc_cache_status status;
     uint32_t problem_tag, problem_location;
+    char problem_path[320], problem_detail[384];
     uint32_t tag_base, tag_count, scenario_handle;
     uint32_t model_file_offset, model_vertex_bytes, model_bytes;
     uint32_t bsp_count, largest_bsp_bytes, bsp_material_count;

@@ -33,18 +33,27 @@ static struct hs_syntax_node const *mcc_syntax_node(
     return nodes + index;
 }
 
-boolean mcc_syntax_graph_valid(struct data_array const *syntax, long bytes)
+boolean mcc_syntax_graph_check(struct data_array const *syntax, long bytes, char const **reason, long *bad_node)
 {
     struct hs_syntax_node const *nodes;
     unsigned start, depth, live = 0;
-    if (!syntax || bytes < (long)sizeof(*syntax) || ((uintptr_t)syntax & 3u) ||
-        syntax->signature != 'd@t@' || !syntax->valid ||
-        syntax->size != sizeof(*nodes) || syntax->maximum_count <= 0 ||
-        syntax->maximum_count > MCC_SYNTAX_CAPACITY || syntax->count < 0 ||
-        syntax->count > syntax->maximum_count || syntax->actual_count < 0 ||
-        syntax->actual_count > syntax->count || syntax->first_free_absolute_index < 0 ||
-        syntax->first_free_absolute_index > syntax->maximum_count ||
-        bytes != (long)(sizeof(*syntax) + (unsigned)syntax->maximum_count * sizeof(*nodes))) return FALSE;
+    *bad_node=NONE;
+    *reason="syntax header is missing, truncated or misaligned";
+    if (!syntax || bytes < (long)sizeof(*syntax) || ((uintptr_t)syntax & 3u)) return FALSE;
+    *reason="syntax header signature is not d@t@ or the valid flag is clear";
+    if (syntax->signature != 'd@t@' || !syntax->valid) return FALSE;
+    *reason="syntax node size differs from the required 20-byte layout";
+    if (syntax->size != sizeof(*nodes)) return FALSE;
+    *reason="syntax maximum_count is outside 1..32767";
+    if (syntax->maximum_count <= 0 || syntax->maximum_count > MCC_SYNTAX_CAPACITY) return FALSE;
+    *reason="syntax count is negative or exceeds maximum_count";
+    if (syntax->count < 0 || syntax->count > syntax->maximum_count) return FALSE;
+    *reason="syntax actual_count is negative or exceeds count";
+    if (syntax->actual_count < 0 || syntax->actual_count > syntax->count) return FALSE;
+    *reason="syntax first_free_absolute_index is outside 0..maximum_count";
+    if (syntax->first_free_absolute_index < 0 || syntax->first_free_absolute_index > syntax->maximum_count) return FALSE;
+    *reason="syntax byte size differs from header plus maximum_count nodes";
+    if (bytes != (long)(sizeof(*syntax) + (unsigned)syntax->maximum_count * sizeof(*nodes))) return FALSE;
     nodes = (struct hs_syntax_node const *)(syntax + 1);
     memset(mcc_syntax_colors, 0, sizeof(mcc_syntax_colors));
     for (start = 0; start < (unsigned)syntax->count; ++start) {
@@ -67,17 +76,28 @@ boolean mcc_syntax_graph_valid(struct data_array const *syntax, long bytes)
             link = edge == 0 ? nodes[index].next_node_index :
                 ((nodes[index].flags & 1) ? NONE : nodes[index].data);
             if (link == NONE) continue;
+            *bad_node=(long)index;
+            *reason=edge ? "expression child handle is stale or outside the syntax array" : "next_node_index is stale or outside the syntax array";
             if (!mcc_syntax_node(syntax, link)) return FALSE;
             child = (uint32_t)link & 0xFFFFu;
-            if (mcc_syntax_colors[child] == 1) return FALSE;
+            if (mcc_syntax_colors[child] == 1) {*reason="syntax expression graph contains a cycle";return FALSE;}
             if (mcc_syntax_colors[child] == 2) continue;
-            if (depth >= (unsigned)syntax->count) return FALSE;
+            if (depth >= (unsigned)syntax->count) {*reason="syntax graph traversal exceeds its node count";return FALSE;}
             mcc_syntax_colors[child] = 1;
             mcc_syntax_stack[depth] = (unsigned short)child;
             mcc_syntax_edges[depth++] = 0;
         }
     }
+    *bad_node=NONE;
+    *reason="syntax actual_count differs from the number of live nodes";
     return live == (unsigned)syntax->actual_count;
+}
+
+boolean mcc_syntax_graph_valid(struct data_array const *syntax, long bytes)
+{
+    char const *reason;
+    long bad_node;
+    return mcc_syntax_graph_check(syntax,bytes,&reason,&bad_node);
 }
 
 int mcc_syntax_scenario_valid(struct scenario const *scenario)

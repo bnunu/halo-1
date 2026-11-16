@@ -74,10 +74,10 @@ static int mcc_bitmap_clone_block(struct mcc_runtime *runtime,struct tag_block *
     uint32_t bytes;
     if (!block->count) {block->address=NULL;return 1;}
     source=mcc_bitmap_block(runtime,block,stride);
-    if (!source) return 0;
+    if (!source) return mcc_diagnostic_fail(runtime,"bitmap data block or source tag is outside loaded data");
     bytes=(uint32_t)block->count*stride;
     copy=mcc_runtime_allocate(runtime,bytes);
-    if (!copy) return 0;
+    if (!copy) return mcc_diagnostic_fail(runtime,"not enough tag memory for independent bitmap metadata");
     memcpy(copy,source,bytes);block->address=copy;
     return 1;
 }
@@ -98,11 +98,11 @@ static int mcc_bitmap_specialize(struct mcc_runtime *runtime,struct mcc_textures
         struct mcc_bitmap_clone const *clone=&textures->clones[i];
         if (clone->source==*handle && clone->channels==channels) {*handle=clone->target;return 1;}
     }
-    if (runtime->report.tag_count>=textures->tag_capacity) return 0;
+    if (runtime->report.tag_count>=textures->tag_capacity) return mcc_diagnostic_fail(runtime,"bitmap specialization exceeds the tag table capacity (%lu)",(unsigned long)textures->tag_capacity);
     source=mcc_bitmap_tag(runtime,*handle,BITMAP_GROUP_TAG,sizeof(*source));
-    if (!source) return 0;
+    if (!source) return mcc_diagnostic_fail(runtime,"bitmap data block or source tag is outside loaded data");
     copy=mcc_runtime_allocate(runtime,sizeof(*copy));
-    if (!copy) return 0;
+    if (!copy) return mcc_diagnostic_fail(runtime,"not enough tag memory for independent bitmap metadata");
     *copy=*source;
     if (!mcc_bitmap_clone_block(runtime,&copy->sequences,sizeof(*sequences)) ||
         !mcc_bitmap_clone_block(runtime,&copy->bitmaps,sizeof(*bitmaps))) return 0;
@@ -115,7 +115,7 @@ static int mcc_bitmap_specialize(struct mcc_runtime *runtime,struct mcc_textures
     memset(&copy->import_bitmap,0,sizeof(copy->import_bitmap));
     memset(&copy->pixel_data,0,sizeof(copy->pixel_data));
     name=mcc_runtime_allocate(runtime,48);
-    if (!name) return 0;
+    if (!name) return mcc_diagnostic_fail(runtime,"not enough tag memory for bitmap copy name");
     snprintf(name,48,"mcc_runtime\\bitmap_%08lx_%u",(unsigned long)*handle,channels);
     entry=(uint32_t *)(runtime->tag_index+runtime->report.tag_count*32);
     memcpy(entry,runtime->tag_index+(*handle&0xFFFF)*32,32);
@@ -124,7 +124,7 @@ static int mcc_bitmap_specialize(struct mcc_runtime *runtime,struct mcc_textures
     bitmaps=copy->bitmaps.address;
     for (i=0;i<(uint32_t)copy->bitmaps.count;i++) {
         struct mcc_texture *texture;
-        if (textures->count>=textures->capacity) return 0;
+        if (textures->count>=textures->capacity) return mcc_diagnostic_fail(runtime,"bitmap specialization exceeds the texture table capacity");
         texture=&textures->items[textures->count++];
         texture->bitmap=&bitmaps[i];texture->handle=new_handle;texture->channels=channels;
         texture->resource_handle=*handle;texture->resource_index=i;
@@ -149,25 +149,25 @@ static int mcc_bitmap_mark(struct mcc_runtime *runtime,struct mcc_textures *text
     handle=*reference;
     if (handle==0xFFFFFFFFu) return 1;
     group=mcc_bitmap_tag(runtime,handle,BITMAP_GROUP_TAG,sizeof(*group));
-    if (!group) return 0;
+    if (!group) return mcc_diagnostic_fail(runtime,"bitmap reference %08lx has the wrong group, a stale handle, or an out-of-range header",(unsigned long)handle);
     bitmaps=mcc_bitmap_block(runtime,&group->bitmaps,sizeof(*bitmaps));
-    if (!bitmaps) return 0;
+    if (!bitmaps) return mcc_diagnostic_fail(runtime,"referenced bitmap has an out-of-range bitmaps block");
     if (sequence>=0 && sequence<group->sequences.count) {
         struct bitmap_group_sequence *sequences=mcc_bitmap_block(runtime,&group->sequences,sizeof(*sequences));
         struct bitmap_group_sequence *selected;
-        if (!sequences) return 0;
+        if (!sequences) return mcc_diagnostic_fail(runtime,"referenced bitmap has an out-of-range sequences block");
         selected=&sequences[sequence];
         if (selected->sprites.count) {
             struct bitmap_group_sprite *sprites=mcc_bitmap_block(runtime,&selected->sprites,sizeof(*sprites));
-            if (!sprites) return 0;
+            if (!sprites) return mcc_diagnostic_fail(runtime,"bitmap sequence %d has an out-of-range sprites block",sequence);
             for (index=0;index<(uint32_t)selected->sprites.count;index++) {
                 short n=sprites[index].bitmap_index;
-                if (n<0 || n>=group->bitmaps.count) return 0;
+                if (n<0 || n>=group->bitmaps.count) return mcc_diagnostic_fail(runtime,"bitmap sequence %d sprites[%lu].bitmap_index=%d is outside 0..%ld",sequence,(unsigned long)index,n,group->bitmaps.count-1);
                 mcc_bitmap_mark_one(textures,&bitmaps[n],channels);
             }
         } else {
             if (selected->first_bitmap_index<0 || selected->bitmap_count<0 ||
-                selected->first_bitmap_index>group->bitmaps.count-selected->bitmap_count) return 0;
+                selected->first_bitmap_index>group->bitmaps.count-selected->bitmap_count) return mcc_diagnostic_fail(runtime,"bitmap sequence %d range (first %d, count %d) exceeds %ld bitmaps",sequence,selected->first_bitmap_index,selected->bitmap_count,group->bitmaps.count);
             for (index=0;index<(uint32_t)selected->bitmap_count;index++)
                 mcc_bitmap_mark_one(textures,&bitmaps[selected->first_bitmap_index+index],channels);
         }
@@ -211,6 +211,8 @@ static int mcc_bitmap_model_usage(struct mcc_runtime *runtime,struct mcc_texture
      * the flag clear and must still receive its own reordered clone. */
     for (n=0;n<4;n++) {
         unsigned channels=n==1 && !(flags&0x40) ? 2 : 1;
+        static char const *const names[]={"base_map","multipurpose_map","detail_map","reflection_cube_map"};
+        mcc_diagnostic_at(runtime,"%s",names[n]);
         if (!mcc_bitmap_mark(runtime,textures,(uint32_t *)(shader+offsets[n]),NONE,channels)) return 0;
     }
     return 1;
@@ -221,41 +223,57 @@ static int mcc_bitmap_usages(struct mcc_runtime *runtime,struct mcc_textures *te
     uint32_t index;
     for (index=0;index<runtime->report.tag_count;index++) {
         uint32_t *entry=(uint32_t *)(runtime->tag_index+index*0x20);
+        mcc_diagnostic_tag(runtime,entry[3]);
+        mcc_diagnostic_at(runtime,"shader/HUD bitmap references");
         if (entry[0]=='soso') {
             unsigned char *shader=mcc_runtime_pointer(runtime,entry[5],0x174);
-            if (!shader || !mcc_bitmap_model_usage(runtime,textures,shader)) return 0;
+            if (!shader) return mcc_diagnostic_fail(runtime,"shader_model header is outside loaded data");
+            if (!mcc_bitmap_model_usage(runtime,textures,shader)) return 0;
         } else if (entry[0]==UNIT_HUD_INTERFACE_DEFINITION_TAG) {
             struct unit_hud_interface_definition *hud=mcc_runtime_pointer(runtime,entry[5],sizeof(*hud));
             struct auxilary_meter_definition *meters;
             struct auxilary_overlay_definition *overlays;
             uint32_t n;
-            if (!hud || !mcc_meter_usage(runtime,textures,&hud->shield_meter.meter) ||
-                !mcc_meter_usage(runtime,textures,&hud->health_meter.meter) ||
-                !mcc_static_usage(runtime,textures,&hud->background) ||
-                !mcc_static_usage(runtime,textures,&hud->shield_meter.background) ||
-                !mcc_static_usage(runtime,textures,&hud->health_meter.background) ||
-                !mcc_static_usage(runtime,textures,&hud->motion_sensor.background) ||
-                !mcc_static_usage(runtime,textures,&hud->motion_sensor.foreground)) return 0;
+            if (!hud) return mcc_diagnostic_fail(runtime,"unit HUD header is outside loaded data");
+            mcc_diagnostic_at(runtime,"shield_meter.meter.bitmap");
+            if (!mcc_meter_usage(runtime,textures,&hud->shield_meter.meter)) return 0;
+            mcc_diagnostic_at(runtime,"health_meter.meter.bitmap");
+            if (!mcc_meter_usage(runtime,textures,&hud->health_meter.meter)) return 0;
+            mcc_diagnostic_at(runtime,"background.bitmap");
+            if (!mcc_static_usage(runtime,textures,&hud->background)) return 0;
+            mcc_diagnostic_at(runtime,"shield_meter.background.bitmap");
+            if (!mcc_static_usage(runtime,textures,&hud->shield_meter.background)) return 0;
+            mcc_diagnostic_at(runtime,"health_meter.background.bitmap");
+            if (!mcc_static_usage(runtime,textures,&hud->health_meter.background)) return 0;
+            mcc_diagnostic_at(runtime,"motion_sensor.background.bitmap");
+            if (!mcc_static_usage(runtime,textures,&hud->motion_sensor.background)) return 0;
+            mcc_diagnostic_at(runtime,"motion_sensor.foreground.bitmap");
+            if (!mcc_static_usage(runtime,textures,&hud->motion_sensor.foreground)) return 0;
             meters=mcc_bitmap_block(runtime,&hud->auxilary_meters,sizeof(*meters));
             overlays=mcc_bitmap_block(runtime,&hud->auxilary_panel.auxilary_overlays,sizeof(*overlays));
-            if (!meters || !overlays) return 0;
+            if (!meters || !overlays) return mcc_diagnostic_fail(runtime,"auxiliary HUD meters or overlays block is outside loaded data");
             for (n=0;n<(uint32_t)hud->auxilary_meters.count;n++) {
-                if (!mcc_meter_usage(runtime,textures,&meters[n].panel.meter) ||
-                    !mcc_static_usage(runtime,textures,&meters[n].panel.background)) return 0;
+                mcc_diagnostic_at(runtime,"auxiliary_meters[%lu].meter.bitmap",(unsigned long)n);
+                if (!mcc_meter_usage(runtime,textures,&meters[n].panel.meter)) return 0;
+                mcc_diagnostic_at(runtime,"auxiliary_meters[%lu].background.bitmap",(unsigned long)n);
+                if (!mcc_static_usage(runtime,textures,&meters[n].panel.background)) return 0;
             }
-            for (n=0;n<(uint32_t)hud->auxilary_panel.auxilary_overlays.count;n++)
+            for (n=0;n<(uint32_t)hud->auxilary_panel.auxilary_overlays.count;n++) {
+                mcc_diagnostic_at(runtime,"auxiliary_overlays[%lu].bitmap",(unsigned long)n);
                 if (!mcc_static_usage(runtime,textures,&overlays[n].static_element)) return 0;
+            }
         } else if (entry[0]=='wphi') {
             unsigned char *hud=mcc_runtime_pointer(runtime,entry[5],0x78);
             unsigned which;
-            if (!hud) return 0;
+            if (!hud) return mcc_diagnostic_fail(runtime,"weapon HUD header is outside loaded data");
             for (which=0;which<2;which++) {
                 struct tag_block *block=(struct tag_block *)(hud+0x60+which*12);
                 unsigned char *elements=mcc_bitmap_block(runtime,block,0xB4);
                 uint32_t n;
-                if (!elements) return 0;
+                if (!elements) return mcc_diagnostic_fail(runtime,"weapon HUD %s elements block is outside loaded data",which ? "meter" : "static");
                 for (n=0;n<(uint32_t)block->count;n++) {
                     void *element=elements+n*0xB4+0x24;
+                    mcc_diagnostic_at(runtime,"%s_elements[%lu].bitmap",which ? "meter" : "static",(unsigned long)n);
                     if (!(which ? mcc_meter_usage(runtime,textures,element) : mcc_static_usage(runtime,textures,element))) return 0;
                 }
             }
@@ -443,15 +461,29 @@ static int mcc_texture_prepare(struct mcc_runtime *runtime,struct mcc_textures *
     int bytes_per_pixel=mcc_bitmap_bytes(bitmap->format);
     int non_power_two=bitmap->type==0 && ((bitmap->width&(bitmap->width-1)) || (bitmap->height&(bitmap->height-1)));
     uint32_t input_offset=0,output_offset=0,hardware_size,allocation;
-    if (bitmap->width<=0 || bitmap->height<=0 || bitmap->depth<=0 || bitmap->type<0 || bitmap->type>2 ||
-        bitmap->width>16384 || bitmap->height>16384 || bitmap->depth>512 || bitmap->mipmap_count<0 || bitmap->mipmap_count>13 ||
-        bitmap->pixels_size<=0 || (!bytes_per_pixel && (bitmap->format<14 || bitmap->format>18))) return 0;
-    if ((bitmap->width>8192 || bitmap->height>8192) && !non_power_two && !(bitmap->flags&16)) return 0;
+    char const *reason="pixel packing failed for the normalized hardware layout";
+    mcc_diagnostic_tag(runtime,texture->resource_handle);
+    mcc_diagnostic_at(runtime,"bitmaps[%lu] (zero-based)",(unsigned long)texture->resource_index);
+    if (bitmap->width<=0 || bitmap->height<=0 || bitmap->depth<=0 ||
+        bitmap->width>16384 || bitmap->height>16384 || bitmap->depth>512)
+        return mcc_diagnostic_fail(runtime,"dimensions %d x %d x %d exceed supported positive limits (16384 x 16384 x 512)",
+            bitmap->width,bitmap->height,bitmap->depth);
+    if (bitmap->type<0 || bitmap->type>2)
+        return mcc_diagnostic_fail(runtime,"unsupported bitmap type %d (expected 0=2D, 1=3D, 2=cubemap)",bitmap->type);
+    if (bitmap->mipmap_count<0 || bitmap->mipmap_count>13)
+        return mcc_diagnostic_fail(runtime,"mipmap count %d is outside 0..13",bitmap->mipmap_count);
+    if (bitmap->pixels_size<=0)
+        return mcc_diagnostic_fail(runtime,"pixel payload size %ld must be positive",(long)bitmap->pixels_size);
+    if (!bytes_per_pixel && (bitmap->format<14 || bitmap->format>18))
+        return mcc_diagnostic_fail(runtime,"unsupported pixel format %d",bitmap->format);
+    if ((bitmap->width>8192 || bitmap->height>8192) && !non_power_two && !(bitmap->flags&16))
+        return mcc_diagnostic_fail(runtime,"nonlinear texture %d x %d exceeds the 8192-pixel dimension limit",bitmap->width,bitmap->height);
     if ((bitmap->type==1 && (bitmap->width>512 || bitmap->height>512 || bitmap->depth>256)) ||
-        (bitmap->type!=1 && bitmap->depth!=1)) return 0;
+        (bitmap->type!=1 && bitmap->depth!=1))
+        return mcc_diagnostic_fail(runtime,"dimensions %d x %d x %d are invalid for type %d (3D maximum 512 x 512 x 256; other types require depth 1)",
+            bitmap->width,bitmap->height,bitmap->depth,bitmap->type);
     if (texture->channels && (texture->channels&(texture->channels-1))) {
-        error(_error_silent,"mcc bitmap: tag %08lx has conflicting pixel-channel uses",texture->handle);
-        return 0;
+        return mcc_diagnostic_fail(runtime,"conflicting pixel-channel uses (mask %u)",texture->channels);
     }
     mcc_bitmap_complete_mips(&normalized);
     for (level=0;level<=(unsigned)normalized.mipmap_count;level++) {
@@ -461,20 +493,29 @@ static int mcc_texture_prepare(struct mcc_runtime *runtime,struct mcc_textures *
         raw_size+=slice*d*faces;
         decoded_size+=(uint64_t)w*h*d*faces*4;
     }
-    if (raw_size>(uint32_t)bitmap->pixels_size || raw_size>MCC_BITMAP_ALLOCATION_LIMIT ||
-        (convert && decoded_size>MCC_BITMAP_ALLOCATION_LIMIT)) return 0;
+    if (raw_size>(uint32_t)bitmap->pixels_size)
+        return mcc_diagnostic_fail(runtime,"pixel payload is too short: %lu bytes available, %llu required for format %d, %d x %d x %d, %d mipmaps",
+            (unsigned long)bitmap->pixels_size,(unsigned long long)raw_size,bitmap->format,
+            bitmap->width,bitmap->height,bitmap->depth,bitmap->mipmap_count);
+    if (raw_size>MCC_BITMAP_ALLOCATION_LIMIT || (convert && decoded_size>MCC_BITMAP_ALLOCATION_LIMIT))
+        return mcc_diagnostic_fail(runtime,"texture exceeds the 128 MiB allocation limit (source %llu bytes, decoded %llu bytes)",
+            (unsigned long long)raw_size,(unsigned long long)decoded_size);
     if (non_power_two) {
         /* Preserve arbitrary MCC HUD dimensions using the engine's linear
          * ARGB layout. Validate the entire declared source chain above,
          * then retain its base level: Xbox linear textures have no mips. */
-        if (decoded_size>MCC_BITMAP_ALLOCATION_LIMIT) return 0;
+        if (decoded_size>MCC_BITMAP_ALLOCATION_LIMIT)
+            return mcc_diagnostic_fail(runtime,"non-power-of-two texture needs %llu decoded bytes; limit is 128 MiB",(unsigned long long)decoded_size);
         convert=1;normalized.flags=(normalized.flags&~1u)|16u;
         normalized.mipmap_count=0;
         decoded_size=(uint64_t)(unsigned)bitmap->width*(unsigned)bitmap->height*4;
     }
     if (normalized.flags&0x1000) {
         struct bitmap_group *group=mcc_bitmap_tag(runtime,texture->handle,BITMAP_GROUP_TAG,sizeof(*group));
-        if (!group || !mcc_bitmap_lightmap_flags(&normalized,group->usage)) return 0;
+        if (!group) return mcc_diagnostic_fail(runtime,"bitmap tag header is outside loaded data");
+        if (!mcc_bitmap_lightmap_flags(&normalized,group->usage))
+            return mcc_diagnostic_fail(runtime,"unsupported lightmap layout: usage %d, flags 0x%04x, format %d, type %d, dimensions %d x %d x %d, mipmaps %d, bytes %ld; bit 12 requires a tightly packed RGB565 lightmap",
+                group->usage,bitmap->flags,bitmap->format,bitmap->type,bitmap->width,bitmap->height,bitmap->depth,bitmap->mipmap_count,(long)bitmap->pixels_size);
     }
     if (convert) {
         normalized.format=11;
@@ -489,11 +530,21 @@ static int mcc_texture_prepare(struct mcc_runtime *runtime,struct mcc_textures *
     normalized.flags&=~(2|4);
     if (normalized.format>=14 && normalized.format<=16) normalized.flags|=2;
     if (normalized.format==17) normalized.flags|=4;
-    if (!bitmap_verify(&normalized,FALSE)) return 0;
+    if (!bitmap_verify(&normalized,FALSE)) {
+        char const *check="format/type dimension or mipmap constraint";
+        if (normalized.signature!=BITMAP_GROUP_TAG) check="bitmap signature is not bitm";
+        else if (normalized.flags&~0x1FFu) check="unsupported normalized bitmap flags";
+        else if (normalized.mipmap_count>floor_log2(MAX(normalized.width,MAX(normalized.height,normalized.depth)))) check="mipmap count exceeds the texture dimensions";
+        return mcc_diagnostic_fail(runtime,"normalized descriptor failed bitmap validation (%s): signature %08lx, flags 0x%04x, format %d, type %d, dimensions %d x %d x %d, mipmaps %d",
+            check,(unsigned long)normalized.signature,normalized.flags,normalized.format,normalized.type,
+            normalized.width,normalized.height,normalized.depth,normalized.mipmap_count);
+    }
     if (!(normalized.flags&16) &&
         ((normalized.width&(normalized.width-1)) || (normalized.height&(normalized.height-1)) ||
-         (normalized.depth&(normalized.depth-1)))) return 0;
-    if ((normalized.flags&16) && (normalized.type!=0 || normalized.mipmap_count || (normalized.flags&2))) return 0;
+         (normalized.depth&(normalized.depth-1))))
+        return mcc_diagnostic_fail(runtime,"nonlinear texture dimensions must be powers of two");
+    if ((normalized.flags&16) && (normalized.type!=0 || normalized.mipmap_count || (normalized.flags&2)))
+        return mcc_diagnostic_fail(runtime,"linear layout requires a 2D uncompressed texture with no mipmaps");
     hardware_size=(uint32_t)rasterizer_xbox_bitmap_get_pixel_data_size(&normalized);
     /* The generic bitmap verifier includes the tiny DXT mip tail, whereas
      * native hardware stops at a 4-texel dimension. Own enough storage for
@@ -507,7 +558,8 @@ static int mcc_texture_prepare(struct mcc_runtime *runtime,struct mcc_textures *
         stream_offset>MCC_BITMAP_LIMIT || textures->end>MCC_BITMAP_STORAGE_LIMIT ||
         allocation>MCC_BITMAP_LIMIT-stream_offset || allocation>MCC_BITMAP_STORAGE_LIMIT-textures->end) {
         error(_error_silent,"mcc bitmap: storage limit (used %lu, requested %lu)",textures->end,allocation);
-        return 0;
+        return mcc_diagnostic_fail(runtime,"hardware texture storage limit exceeded (hardware %lu, allocation %lu, tag stream %lu, total %lu bytes)",
+            (unsigned long)hardware_size,(unsigned long)allocation,(unsigned long)stream_offset,(unsigned long)textures->end);
     }
     raw=malloc((size_t)raw_size);
     if (!raw) goto out_of_memory;
@@ -515,14 +567,17 @@ static int mcc_texture_prepare(struct mcc_runtime *runtime,struct mcc_textures *
         uint32_t *entry=(uint32_t *)(runtime->tag_index+(texture->resource_handle&0xFFFF)*32);
         char const *name=mcc_runtime_pointer(runtime,entry[4],256);
         char resource_name[272],group_name[272];
-        if (!name || !memchr(name,0,256)) goto failed;
+        if (!name || !memchr(name,0,256)) {reason="external bitmap resource name is outside loaded data or exceeds 255 characters";goto failed;}
         snprintf(resource_name,sizeof(resource_name),"%s_%lu",name,(unsigned long)texture->resource_index);
         snprintf(group_name,sizeof(group_name),"%s__pixels",name);
         if (!mcc_resources_read(runtime,1,resource_name,bitmap->pixels_offset,(uint32_t)raw_size,raw,group_name)) {
             error(_error_silent,"mcc bitmap: external '%s' does not match the selected MCC bitmaps.map",resource_name);
+            reason="external pixel payload could not be read or matched in the selected MCC bitmaps.map; check the package's matching resources";
             goto failed;
         }
-    } else if (!mcc_runtime_read(runtime,bitmap->pixels_offset,(uint32_t)raw_size,raw)) goto failed;
+    } else if (!mcc_runtime_read(runtime,bitmap->pixels_offset,(uint32_t)raw_size,raw)) {
+        reason="embedded pixel payload could not be read from the map";goto failed;
+    }
     if (convert) {
         pixels=malloc(allocation);
         if (!pixels) goto out_of_memory;
@@ -564,11 +619,13 @@ static int mcc_texture_prepare(struct mcc_runtime *runtime,struct mcc_textures *
 out_of_memory:
     error(_error_silent,"mcc bitmap: out of memory for tag %08lx (stored %lu, texture %lu bytes)",
         texture->handle,textures->end,allocation);
+    reason="not enough memory for texture conversion";
 failed:
     if (raw) free(raw);
     if (pixels) free(pixels);
     if (hardware) free(hardware);
-    return 0;
+    return mcc_diagnostic_fail(runtime,"%s (pixel offset 0x%08lx, source bytes %llu, allocation %lu)",reason,
+        (unsigned long)bitmap->pixels_offset,(unsigned long long)raw_size,(unsigned long)allocation);
 }
 
 int mcc_bitmaps_prepare(struct mcc_runtime *runtime)
@@ -576,8 +633,10 @@ int mcc_bitmaps_prepare(struct mcc_runtime *runtime)
     struct mcc_textures *textures;
     uint32_t index,original_count=runtime->report.tag_count,stream_offset=0;
     unsigned char *new_index;
+    mcc_diagnostic_tag(runtime,UINT32_MAX);
+    mcc_diagnostic_at(runtime,"bitmap conversion setup");
     textures=malloc(sizeof(*textures));
-    if (!textures) return 0;
+    if (!textures) return mcc_diagnostic_fail(runtime,"not enough memory for bitmap conversion state");
     memset(textures,0,sizeof(*textures));
     runtime->bitmaps=textures;
     /* three entries a bitmap: its own and its channel clones' */
@@ -585,14 +644,14 @@ int mcc_bitmaps_prepare(struct mcc_runtime *runtime)
     textures->capacity=runtime->report.bitmap_count*3;
     textures->tag_capacity=MIN(original_count*3,0xFFFFu);
     new_index=mcc_runtime_allocate(runtime,textures->tag_capacity*32);
-    if (!new_index) return 0;
+    if (!new_index) return mcc_diagnostic_fail(runtime,"not enough tag memory for expanded bitmap tag table");
     memcpy(new_index,runtime->tag_index,original_count*32);
     runtime->tag_index=new_index;
     textures->clones=malloc(textures->tag_capacity*sizeof(*textures->clones));
-    if (!textures->clones) return 0;
+    if (!textures->clones) return mcc_diagnostic_fail(runtime,"not enough memory for bitmap copy table");
     if (runtime->report.bitmap_count) {
         textures->items=malloc(textures->capacity*sizeof(*textures->items));
-        if (!textures->items) return 0;
+        if (!textures->items) return mcc_diagnostic_fail(runtime,"not enough memory for bitmap descriptor table");
         memset(textures->items,0,textures->capacity*sizeof(*textures->items));
     }
     for (index=0;index<original_count;index++) {
@@ -600,18 +659,20 @@ int mcc_bitmaps_prepare(struct mcc_runtime *runtime)
         struct bitmap_group *group;
         struct bitmap_data *bitmaps;
         if (entry[0]!=BITMAP_GROUP_TAG) continue;
+        mcc_diagnostic_tag(runtime,entry[3]);
+        mcc_diagnostic_at(runtime,"bitmaps");
         group=mcc_runtime_pointer(runtime,entry[5],sizeof(*group));
-        if (!group || !(bitmaps=mcc_bitmap_block(runtime,&group->bitmaps,sizeof(*bitmaps)))) return 0;
+        if (!group || !(bitmaps=mcc_bitmap_block(runtime,&group->bitmaps,sizeof(*bitmaps)))) return mcc_diagnostic_fail(runtime,"bitmap header or bitmaps block is outside loaded data");
         for (n=0;n<(uint32_t)group->bitmaps.count;n++) {
             struct mcc_texture *texture;
-            if (textures->count>=runtime->report.bitmap_count) return 0;
+            if (textures->count>=runtime->report.bitmap_count) return mcc_diagnostic_fail(runtime,"bitmap count exceeds the count validated in the original map");
             texture=&textures->items[textures->count++];
             texture->bitmap=&bitmaps[n];texture->handle=entry[3];
             texture->resource_handle=entry[3];texture->resource_index=n;
         }
     }
     if (!mcc_bitmap_usages(runtime,textures)) {
-        error(_error_silent,"mcc bitmaps: invalid bitmap reference in shader or HUD"); return 0;
+        return 0;
     }
     /* Original groups and fresh-handle clones are appended as complete runs.
      * Each runtime handle has its own stream, including clones that share a
@@ -619,7 +680,6 @@ int mcc_bitmaps_prepare(struct mcc_runtime *runtime)
     for (index=0;index<textures->count;index++) {
         if (!index || textures->items[index].handle!=textures->items[index-1].handle) stream_offset=0;
         if (!mcc_texture_prepare(runtime,textures,&textures->items[index],stream_offset)) {
-            error(_error_silent,"mcc bitmaps: cannot convert texture %lu of tag %08lx; map refused",index,textures->items[index].handle);
             return 0;
         }
         stream_offset+=textures->items[index].size;
@@ -627,6 +687,15 @@ int mcc_bitmaps_prepare(struct mcc_runtime *runtime)
     }
     error(_error_silent,"mcc bitmaps: %lu textures converted to %lu bytes",textures->count,textures->end);
     return 1;
+}
+
+uint32_t mcc_bitmaps_source_handle(struct mcc_runtime *runtime,uint32_t handle)
+{
+    struct mcc_textures *textures=runtime->bitmaps;
+    uint32_t i;
+    for (i=0;textures && i<textures->clone_count;i++)
+        if (textures->clones[i].target==handle) return textures->clones[i].source;
+    return handle;
 }
 
 int mcc_bitmaps_read(struct mcc_runtime *runtime,long tag,uint32_t offset,uint32_t bytes,void *out)

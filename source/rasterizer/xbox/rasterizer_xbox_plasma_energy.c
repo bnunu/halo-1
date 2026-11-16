@@ -40,18 +40,9 @@ symbols in this file:
 #include <xtl.h>
 #include "rasterizer/xbox/rasterizer_xbox_pixel_shader.h"
 #include "rasterizer/rasterizer_console_vars.h"
-#include "view_fov.h" /* port: port/linux/game/view_fov.c */
+#include "viewmodel_shield.h" /* port: port/linux/game/viewmodel_shield.c */
 
 /* ---------- constants */
-
-/* port: rasterizer_xbox_transparent_geometry.c's
-_rasterizer_geometry_first_person_bit */
-#define PLASMA_GEOMETRY_FIRST_PERSON_BIT 7
-/* port: the farthest the shield's flare is pushed out from the first-person
-arms (display.viewmodel_shield), in world units: a body's shield stands off
-much farther than an arm's radius, which so close to the camera fills the
-view */
-#define PLASMA_FIRST_PERSON_MAXIMUM_OFFSET 0.0075f
 
 /* ---------- macros */
 
@@ -65,8 +56,7 @@ struct plasma_runtime_parameters
 
 struct rasterizer_transparent_geometry_group_plasma
 {
-	unsigned long geometry_flags; /* port: (the first-person bit) */
-	byte reserved04[8];
+	byte reserved00[0xC];
 	struct shader *shader;
 	short bitmap_sequence_index;
 	byte reserved12[0x5A];
@@ -144,7 +134,7 @@ boolean shield_color_override(real_rgb_color const *colors, real_rgb_color *chos
 void shield_color_apply(real_rgb_color const *chosen, real_rgb_color const *original, real_rgb_color *result);
 /* port: port/linux/game/overshield_effect.c */
 boolean overshield_effect_draw(real const *values, real *energy_speed, real *inverse_softness, real *height);
-boolean overshield_effect_color(real const *values, real_rgb_color *color);
+boolean overshield_effect_color(real const *values, real_rgb_color *perpendicular, real_rgb_color *parallel);
 /* port: port/linux/src/d3d8_gl.c */
 void d3d8_gl_set_height_fade(float inverse_softness, float height, float offset, float scale);
 
@@ -166,7 +156,6 @@ void rasterizer_plasma_energy_draw(
 	real_rgb_color const *tint;
 	real intensity;
 	real offset;
-	real offset_amount; /* port: PLASMA_FIRST_PERSON_MAXIMUM_OFFSET */
 	real primary_time;
 	real secondary_time;
 	real primary_scale;
@@ -193,14 +182,6 @@ void rasterizer_plasma_energy_draw(
 		tint = global_real_rgb_white;
 		intensity = 1.0f;
 		offset = 0.0f;
-		/* port: the shield on the first-person arms kept close to them */
-		offset_amount = plasma->offset_amount;
-		if (viewmodel_shield_is_visible() &&
-			TEST_FLAG(group->geometry_flags, PLASMA_GEOMETRY_FIRST_PERSON_BIT) &&
-			offset_amount > PLASMA_FIRST_PERSON_MAXIMUM_OFFSET)
-		{
-			offset_amount = PLASMA_FIRST_PERSON_MAXIMUM_OFFSET;
-		}
 		runtime = group->runtime_parameters;
 		if (runtime)
 		{
@@ -221,7 +202,10 @@ void rasterizer_plasma_energy_draw(
 				if (source >= 1 && source <= 4)
 					offset = (real)pow(
 						(double)runtime->exponents[source - 1],
-						(double)plasma->offset_exponent) * offset_amount;
+						(double)plasma->offset_exponent) * plasma->offset_amount;
+				/* port: cap the final displacement after the authored function
+				and exponent; only the arms' copied values identify this draw. */
+				offset = viewmodel_shield_offset_amount(runtime->exponents, offset);
 			}
 		}
 
@@ -229,8 +213,11 @@ void rasterizer_plasma_energy_draw(
 		(port/linux/game/shield_color.c) */
 		perpendicular_color = plasma->perpendicular_color;
 		parallel_color = plasma->parallel_color;
-		if ((runtime && overshield_effect_color(runtime->exponents, &chosen)) ||
-			shield_color_override(runtime ? runtime->colors : NULL, &chosen))
+		if (runtime && overshield_effect_color(runtime->exponents, &perpendicular_color, &parallel_color))
+		{
+			tint = global_real_rgb_white;
+		}
+		else if (shield_color_override(runtime ? runtime->colors : NULL, &chosen))
 		{
 			shield_color_apply(&chosen, &plasma->perpendicular_color, &perpendicular_color);
 			shield_color_apply(&chosen, &plasma->parallel_color, &parallel_color);

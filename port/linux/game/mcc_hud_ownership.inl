@@ -48,20 +48,34 @@ static int mcc_hud_plan_add(struct mcc_hud_plan *plan,unsigned char *source,
     return 1;
 }
 
+/* Follow ownership back to the author's tag before reporting a copied block. */
+static void mcc_hud_plan_context(struct mcc_hud_plan const *plan,struct mcc_runtime *r,
+    uint32_t parent,uint32_t offset,uint32_t kind)
+{
+    static char const *const fields[]={"auxiliary_overlays","auxiliary_meters","static_elements",
+        "meter_elements","number_elements","crosshair_overlays","screen_overlays"};
+    uint32_t root=parent;
+    while (plan->uses[root].parent!=UINT32_MAX) root=plan->uses[root].parent;
+    mcc_diagnostic_tag(r,((uint32_t *)(r->tag_index+plan->uses[root].offset*32))[3]);
+    if (kind<=MCC_HUD_OVERLAYS) mcc_diagnostic_at(r,"%s",fields[kind]);
+    else if (plan->uses[parent].parent==UINT32_MAX) mcc_diagnostic_at(r,"overlays.items");
+    else mcc_diagnostic_at(r,"%s[%lu].items",kind==MCC_HUD_CROSSHAIR_ITEMS ? "crosshair_overlays" : "screen_overlays",
+        (unsigned long)((offset-0x34)/0x68));
+}
+
 static int mcc_hud_plan_block(struct mcc_hud_plan *plan,struct mcc_runtime *r,
     uint32_t parent,uint32_t offset,uint32_t stride,uint32_t kind)
 {
     uint32_t count;
     unsigned char *source=mcc_hud_block(r,plan->uses[parent].source+offset,stride,&count);
-    if (!source || count>MCC_HUD_MAX_VISITS-plan->visits) {
-        uint32_t root=parent;
-        while (plan->uses[root].parent!=UINT32_MAX) root=plan->uses[root].parent;
-        error(_error_silent,"mcc hud: tag #%lu block +%lx has an invalid range or exceeds the traversal budget",
-            (unsigned long)plan->uses[root].offset,(unsigned long)offset);
-        return 0;
-    }
+    mcc_hud_plan_context(plan,r,parent,offset,kind);
+    if (!source) return mcc_diagnostic_fail(r,"HUD block count or address is outside loaded tag data");
+    if (count>MCC_HUD_MAX_VISITS-plan->visits)
+        return mcc_diagnostic_fail(r,"HUD block exceeds the ownership traversal budget of %lu records",(unsigned long)MCC_HUD_MAX_VISITS);
     plan->visits+=count;
-    return !count || mcc_hud_plan_add(plan,source,count*stride,parent,offset,kind);
+    if (count && !mcc_hud_plan_add(plan,source,count*stride,parent,offset,kind))
+        return mcc_diagnostic_fail(r,"not enough memory or ownership records to track the HUD block");
+    return 1;
 }
 
 static int mcc_hud_use_compare(void const *a,void const *b)
@@ -81,10 +95,13 @@ static int mcc_hud_plan_prepare(struct mcc_hud_plan *plan,struct mcc_runtime *r)
     uint32_t i,n,roots;
     int ok=0;
     char const *problem="not enough memory for HUD ownership planning";
-    if (!r->report.tag_count || r->report.tag_count>65535) return 0;
+    mcc_diagnostic_tag(r,UINT32_MAX);
+    mcc_diagnostic_at(r,"HUD ownership planning");
+    if (!r->report.tag_count || r->report.tag_count>65535)
+        return mcc_diagnostic_fail(r,"HUD ownership tag count must be 1..65535");
     plan->tag_count=r->report.tag_count;
     plan->frames=malloc(plan->tag_count);
-    if (!plan->frames) return 0;
+    if (!plan->frames) return mcc_diagnostic_fail(r,"not enough memory for HUD ownership frames");
     memset(plan->frames,0,plan->tag_count);
     for (i=0;i<plan->tag_count;i++) {
         uint32_t *entry=(uint32_t *)(r->tag_index+i*32),bytes=0;
@@ -97,15 +114,18 @@ static int mcc_hud_plan_prepare(struct mcc_hud_plan *plan,struct mcc_runtime *r)
         case 'hud#': bytes=0x64;break;
         }
         if (!bytes) continue;
+        mcc_diagnostic_tag(r,entry[3]);
+        mcc_diagnostic_at(r,"HUD root");
         source=mcc_runtime_pointer(r,entry[5],bytes);
         if (!source) {
-            error(_error_silent,"mcc hud: tag #%lu root is outside loaded data",(unsigned long)i);
-            problem="invalid HUD root";goto done;
+            problem="HUD root is outside loaded tag data";goto done;
         }
         if (!mcc_hud_plan_add(plan,source,bytes,UINT32_MAX,i,entry[0])) goto done;
     }
     roots=plan->count;plan->visits=roots;
     if (!roots) {ok=1;goto done;}
+    mcc_diagnostic_tag(r,UINT32_MAX);
+    mcc_diagnostic_at(r,"HUD ownership planning");
     sorted=malloc(roots*sizeof(*sorted));
     if (!sorted) goto done;
     for (i=0;i<roots;i++) sorted[i]=plan->uses+i;
@@ -117,7 +137,7 @@ static int mcc_hud_plan_prepare(struct mcc_hud_plan *plan,struct mcc_runtime *r)
     for (i=0;i<roots;i++) {
         uint32_t group=plan->uses[i].kind,entry_index=plan->uses[i].offset;
         if (plan->frames[entry_index]==2) continue;
-        problem="invalid HUD block or exhausted ownership budget";
+        problem=NULL; /* mcc_hud_plan_block reports its own precise failure. */
         if (group=='unhi') {
             if (!mcc_hud_plan_block(plan,r,i,0x3A4,0x84,MCC_HUD_AUX_OVERLAYS) ||
                 !mcc_hud_plan_block(plan,r,i,0x3CC,0x144,MCC_HUD_AUX_METERS)) goto done;
@@ -144,6 +164,8 @@ static int mcc_hud_plan_prepare(struct mcc_hud_plan *plan,struct mcc_runtime *r)
         if (plan->frames[entry_index]!=2)
             plan->frames[entry_index]=(unsigned char)mcc_hud_layout_stock(mcc_hud_layout_visit(r,entry));
     }
+    mcc_diagnostic_tag(r,UINT32_MAX);
+    mcc_diagnostic_at(r,"HUD ownership planning");
     problem="not enough memory to sort HUD ownership records";
     sorted=malloc(plan->count*sizeof(*sorted));
     if (!sorted) goto done;
@@ -159,7 +181,7 @@ static int mcc_hud_plan_prepare(struct mcc_hud_plan *plan,struct mcc_runtime *r)
          * the largest original extent so validation still sees bad overlaps. */
         use->owned=mcc_runtime_allocate(r,use->bytes);
         if (!use->owned) {
-            error(_error_silent,"mcc hud: no room to isolate a %lu-byte HUD block",(unsigned long)use->bytes);
+            mcc_hud_plan_context(plan,r,use->parent,use->offset,use->kind);
             problem="HUD block isolation exhausted runtime tag space";goto done;
         }
         memcpy(use->owned,use->source,use->bytes);
@@ -174,7 +196,7 @@ static int mcc_hud_plan_prepare(struct mcc_hud_plan *plan,struct mcc_runtime *r)
     ok=1;
 done:
     if (sorted) free(sorted);
-    if (!ok) error(_error_silent,"mcc hud: %s",problem);
+    if (!ok && problem) mcc_diagnostic_fail(r,"%s",problem);
     return ok;
 }
 

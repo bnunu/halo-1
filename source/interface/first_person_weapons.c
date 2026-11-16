@@ -126,12 +126,7 @@ symbols in this file:
 #include "sound/sound_manager.h"
 #include "units/units.h"
 #include "view_fov.h" /* port: port/linux/game/view_fov.c */
-#include "shaders/shader_definitions.h" /* port: (the shield's flare on the arms) */
-#include "shaders/shaders.h"
-/* port: port/linux/game/shield_color.c */
-real_rgb_color const *shield_color_colors(long unit_index, real_rgb_color const *colors);
-/* port: port/linux/game/overshield_effect.c */
-real const *overshield_effect_values(long unit_index, real const *values, boolean arms);
+#include "viewmodel_shield.h" /* port: port/linux/game/viewmodel_shield.c */
 
 /* ---------- constants */
 
@@ -565,30 +560,6 @@ void first_person_weapon_draw(
 							FLAG(_render_model_first_person_bit));
 					}
 
-					/* port: the shield's flare on the arms as on the body, the
-					unit's own modifier shader (display.viewmodel_shield,
-					view_fov.c), in the color chosen for it as on the body
-					(display.shield_color, shield_color.c); the weapon above is
-					drawn without it */
-					if (viewmodel_shield_is_visible())
-					{
-						struct object_definition *unit_definition= object_definition_get(object_get(unit_index)->definition_index);
-
-						if (unit_definition->object.modifier_shader.index!=NONE)
-						{
-							struct shader *modifier_shader= shader_definition_get(unit_definition->object.modifier_shader.index);
-
-							if (shader_type_is_valid_for_modifier(modifier_shader->base.type))
-							{
-								model_effect.modifier_shader= modifier_shader;
-								model_effect.modifier_animation.colors= shield_color_colors(unit_index,
-									unit->object.outgoing_change_colors);
-								model_effect.modifier_animation.values= overshield_effect_values(unit_index,
-									unit_functions, TRUE);
-							}
-						}
-					}
-
 					if (first_person_weapon->hands_node_remapping_table_valid &&
 						first_person_interface->hands.index!=NONE)
 					{
@@ -598,6 +569,9 @@ void first_person_weapon_draw(
 							weapon_definition->weapon.interface_definition.first_person_animations.index,
 							first_person_weapon->node_matrices,
 							first_person_weapon->hands_node_remapping_table);
+						/* port: only the posed hands receive the shield modifier (viewmodel_shield.c). */
+						viewmodel_shield_apply(render.local_player_index, unit_index,
+							first_person_interface->hands.index, model_node_matrices, unit_functions, &model_effect);
 						render_model(
 							first_person_interface->hands.index,
 							0.0f,

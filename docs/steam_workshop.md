@@ -22,9 +22,11 @@ Steam's own client downloads Workshop items and the game finds them in place
   - Downloads the three shared resource maps from Halo: CE Anniversary's depot
     (976733) into `mcc_maps/_shared/singleplayer` and `mcc_maps/_shared/multiplayer`.
   - Lists the Workshop packages in `mcc_maps`, and updates or removes them.
+    Each one's details end with its publisher.
 - **BROWSE WORKSHOP:** the Halo 1 Workshop, 20 items at a time. You can search,
   sort and filter by type, and each item shows its preview picture, decoded
-  by Android (`HaloActivity.steamPreview`).
+  by Android (`HaloActivity.steamPreview`), and its publisher under its
+  description.
   - Installing an item builds it in `mcc_staging/steam_<id>`, then moves it into
     `mcc_maps/<id>/` whole, replacing an older copy.
   - The package has the layout of an MCC package in `mcc_maps` (`docs/mcc_maps.md`).
@@ -34,6 +36,19 @@ Steam's own client downloads Workshop items and the game finds them in place
   (`Authentication.RevokeToken`), then forgets it on the device. If Steam can't
   be reached, the sign-in is forgotten on the device only. The screen then says
   that Steam's own settings can deauthorize it.
+
+## Publishers
+
+An item's publisher is the Steam name of the account that published it, who
+may not be the original maker of what it holds ("Publisher" on the screens). Nothing
+on the card names it, so the app's host asks Steam the first time an item is
+shown in a run (`port/linux/src/workshop_authors.c`): the item's creator from
+the public Web API (`ISteamRemoteStorage/GetPublishedFileDetails`, which needs
+no key or sign-in), then the name on that account's profile
+(`steamcommunity.com/profiles/<id>/?xml=1`). The lobby asks the same way for a
+Workshop map, through the host (`host_steam_author`), and the desktop builds
+ask from the game. Nothing is written to disk, and an item Steam could not
+answer for is asked about again after 10 minutes at the soonest.
 
 ## Joining an MCC game
 

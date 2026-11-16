@@ -27,7 +27,8 @@ static long tick;
 static int paused,safe,saves,checks;
 static long game_time_get(void) {return tick;}
 static int game_time_get_paused(void) {return paused;}
-static boolean game_safe_to_save(void) {checks++;return safe;}
+static boolean coop_scripts_safe_to_save(void) {checks++;return safe;}
+static boolean cinematic_port_holds_checkpoints(void) {return FALSE;}
 static void players_note_checkpoint(void) {}
 static void hud_autosave(boolean on) {saves+=on;}
 static void console_printf(boolean error,const char *text) {(void)error;(void)text;}

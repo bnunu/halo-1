@@ -73,7 +73,7 @@ def geometry_tool(tmp_path_factory):
                "-iquote", str(ROOT/"port/linux/include")]
     command += ["-I"+str(ROOT/p) for p in includes]
     command += [str(ROOT/p) for p in ["port/tools/mcc_geometry_check.c",
-                "port/linux/game/mcc_geometry.c", "port/linux/game/mcc_cache_format.c",
+                "port/linux/game/mcc_geometry.c", "port/linux/game/mcc_diagnostics.c", "port/linux/game/mcc_cache_format.c",
                 "source/rasterizer/rasterizer_geometry.c"]]
     # Exercise the real legacy callback with the same long strips. Its
     # original 16-bit count limit must remain effective for Xbox/CE.
@@ -322,3 +322,21 @@ def test_large_strip_cpu_allocation_failure_cleanup(geometry_tool, tmp_path, all
     path.write_bytes(large_strip_map(70943, repair=True))
     code, _ = run(geometry_tool, path, -1, allocation)
     assert code == 1
+
+
+@pytest.mark.parametrize("offset,encoding,value,reason", [
+    (0xB00 + 204, "H", 7, "triangle_indices[0]=7 exceeds vertex count 3"),
+    (0xB00 + 56, "h", 9, "vertices[0].nodes[0] references 9"),
+    (0xB00, "f", float("nan"), "vertices[0].position[0]"),
+])
+def test_geometry_failure_names_source_model_and_element(geometry_tool, tmp_path, offset, encoding, value, reason):
+    data = geometry_map()
+    struct.pack_into("<" + encoding, data, offset, value)
+    path = tmp_path / "diagnostic.map"
+    path.write_bytes(data)
+    result = subprocess.run([str(geometry_tool), str(path)], capture_output=True, text=True)
+    assert result.returncode == 1
+    assert "'mod.gbxmodel'" in result.stderr
+    assert "geometries[0].parts[0]" in result.stderr
+    assert reason in result.stderr
+    assert "active_buffers=0" in result.stdout

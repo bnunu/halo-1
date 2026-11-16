@@ -75,21 +75,22 @@ static int mcc_hud_multiplayer_text(struct mcc_runtime *r,uint32_t const *entry)
     int characters;
     if (!actual || memcmp(actual,name,sizeof(name))) return 1;
     root=mcc_runtime_pointer(r,entry[5],12);
-    if (!root) return 0;
+    if (!root) return mcc_diagnostic_fail(r,"unicode string list header is outside loaded tag data");
     strings=mcc_hud_block(r,root,20,&count);
-    if (!strings) return 0;
+    if (!strings) return mcc_diagnostic_fail(r,"unicode strings block is outside loaded tag data");
     if (count<=100) return 1;
+    mcc_diagnostic_at(r,"strings[100] (scoreboard hint)");
     hint=strings+100*20;bytes=mcc_hud_word(hint);
     if (!bytes) return 1; /* Maps may deliberately omit the score hint. */
-    if (bytes<2 || (bytes&1)) return 0;
+    if (bytes<2 || (bytes&1)) return mcc_diagnostic_fail(r,"UTF-16 string size %lu must be even and at least 2 bytes",(unsigned long)bytes);
     source=mcc_runtime_pointer(r,mcc_hud_word(hint+12),bytes);
-    if (!source || ((uintptr_t)source&1)) return 0;
+    if (!source || ((uintptr_t)source&1)) return mcc_diagnostic_fail(r,"UTF-16 string is misaligned or outside loaded data");
     characters=mcc_hud_score_text(source,bytes/2,config_string("controls.scoreboard"),NULL,0);
-    if (characters<0) return 0;
+    if (characters<0) return mcc_diagnostic_fail(r,"scoreboard hint has no terminating UTF-16 NUL");
     if (!characters) return 1;
     replacement=mcc_runtime_allocate(r,(uint32_t)characters*2);
     if (!replacement || mcc_hud_score_text(source,bytes/2,config_string("controls.scoreboard"),
-        replacement,(uint32_t)characters)!=characters) return 0;
+        replacement,(uint32_t)characters)!=characters) return mcc_diagnostic_fail(r,"could not allocate or format the scoreboard hint");
     bytes=(uint32_t)characters*2;address=(uint32_t)(uintptr_t)replacement;
     memcpy(hint,&bytes,4);memcpy(hint+12,&address,4);
     return 1;
@@ -101,11 +102,11 @@ static int mcc_hud_half_bitmap(struct mcc_runtime *r,uint32_t handle,int *half)
     struct bitmap_group *bitmap;
     *half=0;
     if (handle==0xFFFFFFFFu) return 1;
-    if ((handle&0xFFFF)>=r->report.tag_count) return 0;
+    if ((handle&0xFFFF)>=r->report.tag_count) return mcc_diagnostic_fail(r,"bitmap reference %08lx is outside the tag table",(unsigned long)handle);
     entry=(uint32_t *)(r->tag_index+(handle&0xFFFF)*32);
-    if (entry[0]!='bitm' || entry[3]!=handle) return 0;
+    if (entry[0]!='bitm' || entry[3]!=handle) return mcc_diagnostic_fail(r,"reference %08lx does not identify a bitmap tag",(unsigned long)handle);
     bitmap=mcc_runtime_pointer(r,entry[5],sizeof(*bitmap));
-    if (!bitmap) return 0;
+    if (!bitmap) return mcc_diagnostic_fail(r,"referenced bitmap header is outside loaded data");
     *half=(bitmap->flags&(0x10|0x80))!=0;
     return 1;
 }
@@ -155,7 +156,8 @@ static int mcc_hud_items(struct mcc_runtime *r,unsigned char *definition,uint32_
     uint32_t i,count;
     unsigned char *items=mcc_hud_block(r,definition+16,stride,&count);
     int half;
-    if (!items || !mcc_hud_half_bitmap(r,mcc_hud_word(definition+12),&half)) return 0;
+    if (!items) return mcc_diagnostic_fail(r,"HUD overlay items block is outside loaded tag data");
+    if (!mcc_hud_half_bitmap(r,mcc_hud_word(definition+12),&half)) return 0;
     for (i=0;i<count;i++) {
         struct hud_placement_definition *placement=(void *)(items+i*stride);
         mcc_hud_scale(placement,half);placement->pad=marker;
@@ -176,11 +178,11 @@ static int mcc_hud_default(struct mcc_runtime *r,struct hud_globals_definition *
     if (globals->defaults.default_weapon_hud.index!=NONE) return 1;
     if (*empty==UINT32_MAX) {
         /* Native tag lookup uses a signed 16-bit absolute index. */
-        if (count>32767) return 0;
+        if (count>32767) return mcc_diagnostic_fail(r,"cannot add omitted default_weapon_hud: tag count exceeds the signed 16-bit index limit");
         index=mcc_runtime_allocate(r,(count+1)*32);
         hud=mcc_runtime_allocate(r,sizeof(*hud));
         owned_name=mcc_runtime_allocate(r,sizeof(name));
-        if (!index || !hud || !owned_name) return 0;
+        if (!index || !hud || !owned_name) return mcc_diagnostic_fail(r,"not enough tag memory for the omitted default_weapon_hud");
         memcpy(index,r->tag_index,count*32);
         memcpy(owned_name,name,sizeof(name));
         hud->parent_hud.group_tag='wphi';hud->parent_hud.index=NONE;
@@ -205,52 +207,80 @@ static int mcc_hud_convert(struct mcc_runtime *r,struct mcc_hud_plan const *plan
         short marker=i<plan->tag_count && plan->frames[i]==1 ? MCC_HUD_NATIVE_FRAME : 0;
         unsigned char *p,*block;
         if (i<plan->tag_count && plan->frames[i]==2) continue;
+        mcc_diagnostic_tag(r,entry[3]);
+        mcc_diagnostic_at(r,"HUD layout");
         if (entry[0]=='unhi') {
             static unsigned const elements[]={0x24,0x8C,0xF4,0x17C,0x1E4,0x26C,0x2D4};
             p=mcc_runtime_pointer(r,entry[5],0x56C);
-            if (!p) return 0;
+            if (!p) return mcc_diagnostic_fail(r,"HUD tag header is outside loaded data");
             memcpy(p+2,&marker,2);
-            for (n=0;n<NUMBEROF(elements);n++) if (!mcc_hud_bitmap_element(r,p+elements[n],marker)) return 0;
+            for (n=0;n<NUMBEROF(elements);n++) {
+                static char const *const names[]={"background","shield_panel.background","shield_panel.meter","health_panel.background","health_panel.meter","motion_sensor.background","motion_sensor.foreground"};
+                mcc_diagnostic_at(r,"%s.bitmap",names[n]);
+                if (!mcc_hud_bitmap_element(r,p+elements[n],marker)) return 0;
+            }
             mcc_hud_offset((void *)(p+0x35C)); /* radar blip anchor */
             ((struct hud_placement_definition *)(p+0x35C))->pad=marker;
+            mcc_diagnostic_at(r,"auxiliary_overlays");
             block=mcc_hud_block(r,p+0x3A4,0x84,&count);
-            if (!block) return 0;
-            for (n=0;n<count;n++) if (!mcc_hud_bitmap_element(r,block+n*0x84,marker)) return 0;
-            block=mcc_hud_block(r,p+0x3CC,0x144,&count);
-            if (!block) return 0;
+            if (!block) return mcc_diagnostic_fail(r,"HUD block count or address is outside loaded tag data");
             for (n=0;n<count;n++) {
-                if (!mcc_hud_bitmap_element(r,block+n*0x144+0x14,marker) ||
-                    !mcc_hud_bitmap_element(r,block+n*0x144+0x7C,marker)) return 0;
+                mcc_diagnostic_at(r,"auxiliary_overlays[%lu].bitmap",(unsigned long)n);
+                if (!mcc_hud_bitmap_element(r,block+n*0x84,marker)) return 0;
+            }
+            mcc_diagnostic_at(r,"auxiliary_meters");
+            block=mcc_hud_block(r,p+0x3CC,0x144,&count);
+            if (!block) return mcc_diagnostic_fail(r,"HUD block count or address is outside loaded tag data");
+            for (n=0;n<count;n++) {
+                mcc_diagnostic_at(r,"auxiliary_meters[%lu].background.bitmap",(unsigned long)n);
+                if (!mcc_hud_bitmap_element(r,block+n*0x144+0x14,marker)) return 0;
+                mcc_diagnostic_at(r,"auxiliary_meters[%lu].meter.bitmap",(unsigned long)n);
+                if (!mcc_hud_bitmap_element(r,block+n*0x144+0x7C,marker)) return 0;
             }
         } else if (entry[0]=='wphi') {
             unsigned k;
             p=mcc_runtime_pointer(r,entry[5],0x17C);
-            if (!p) return 0;
+            if (!p) return mcc_diagnostic_fail(r,"HUD tag header is outside loaded data");
             memcpy(p+0x3E,&marker,2);
             for (k=0;k<2;k++) {
+                mcc_diagnostic_at(r,"%s_elements",k ? "meter" : "static");
                 block=mcc_hud_block(r,p+0x60+k*12,0xB4,&count);
-                if (!block) return 0;
-                for (n=0;n<count;n++) if (!mcc_hud_bitmap_element(r,block+n*0xB4+0x24,marker)) return 0;
+                if (!block) return mcc_diagnostic_fail(r,"HUD block count or address is outside loaded tag data");
+                for (n=0;n<count;n++) {
+                    mcc_diagnostic_at(r,"%s_elements[%lu].bitmap",k ? "meter" : "static",(unsigned long)n);
+                    if (!mcc_hud_bitmap_element(r,block+n*0xB4+0x24,marker)) return 0;
+                }
+                mcc_diagnostic_at(r,"%s_overlays",k ? "screen" : "crosshair");
                 block=mcc_hud_block(r,p+0x84+k*12,0x68,&count);
-                if (!block) return 0;
-                for (n=0;n<count;n++) if (!mcc_hud_items(r,block+n*0x68+0x24,k ? 0x88 : 0x6C,k ? marker : 0)) return 0;
+                if (!block) return mcc_diagnostic_fail(r,"HUD block count or address is outside loaded tag data");
+                for (n=0;n<count;n++) {
+                    mcc_diagnostic_at(r,"%s_overlays[%lu]",k ? "screen" : "crosshair",(unsigned long)n);
+                    if (!mcc_hud_items(r,block+n*0x68+0x24,k ? 0x88 : 0x6C,k ? marker : 0)) return 0;
+                }
             }
+            mcc_diagnostic_at(r,"number_elements");
             block=mcc_hud_block(r,p+0x78,0xA0,&count);
-            if (!block) return 0;
+            if (!block) return mcc_diagnostic_fail(r,"HUD block count or address is outside loaded tag data");
             for (n=0;n<count;n++) {
                 struct hud_placement_definition *placement=(void *)(block+n*0xA0+0x24);
                 mcc_hud_offset(placement);placement->pad=marker;
             }
         } else if (entry[0]=='grhi') {
             p=mcc_runtime_pointer(r,entry[5],0x1F8);
-            if (!p || !mcc_hud_bitmap_element(r,p+0x24,marker) || !mcc_hud_bitmap_element(r,p+0x8C,marker) ||
-                !mcc_hud_items(r,p+0x14C,0x88,marker)) return 0;
+            if (!p) return mcc_diagnostic_fail(r,"grenade HUD header is outside loaded data");
+            mcc_diagnostic_at(r,"background.bitmap");
+            if (!mcc_hud_bitmap_element(r,p+0x24,marker)) return 0;
+            mcc_diagnostic_at(r,"total_grenades.background.bitmap");
+            if (!mcc_hud_bitmap_element(r,p+0x8C,marker)) return 0;
+            mcc_diagnostic_at(r,"overlays");
+            if (!mcc_hud_items(r,p+0x14C,0x88,marker)) return 0;
             memcpy(p+2,&marker,2);
             mcc_hud_offset((void *)(p+0xF4));
             ((struct hud_placement_definition *)(p+0xF4))->pad=marker;
         } else if (entry[0]=='hudg') {
             struct hud_globals_definition *globals=mcc_runtime_pointer(r,entry[5],sizeof(*globals));
-            if (!globals || !mcc_hud_default(r,globals,&empty)) return 0;
+            if (!globals) return mcc_diagnostic_fail(r,"HUD globals header is outside loaded data");
+            if (!mcc_hud_default(r,globals,&empty)) return 0;
             mcc_hud_offset(&globals->messaging.placement);
             mcc_hud_message_frame(&globals->messaging);
             globals->waypoint.top_offset*=0.5f;
@@ -265,12 +295,12 @@ static int mcc_hud_convert(struct mcc_runtime *r,struct mcc_hud_plan const *plan
             /* The number renderer owns bitmap scaling; these are screen
              * advances, not sprite texture coordinates. */
             p=mcc_runtime_pointer(r,entry[5],0x64);
-            if (!p) return 0;
+            if (!p) return mcc_diagnostic_fail(r,"HUD tag header is outside loaded data");
             ((signed char *)p)[0x11]/=2; /* screen_width */
             ((signed char *)p)[0x14]/=2; /* decimal_point_width */
         } else if (entry[0]=='bitm') {
             struct bitmap_group *bitmap=mcc_runtime_pointer(r,entry[5],sizeof(*bitmap));
-            if (!bitmap) return 0;
+            if (!bitmap) return mcc_diagnostic_fail(r,"referenced bitmap header is outside loaded data");
             /* Native number drawing already honors half-HUD-scale; MCC's
              * force-highres spelling has the same effect for these digits. */
             if (bitmap->flags&0x80) bitmap->flags|=0x10;

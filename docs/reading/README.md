@@ -37,3 +37,9 @@ controller, Xbox-menu and disabled-feature paths.
 
 [Xbox audio processing](xbox_audio.md) covers measured HRTF, reverb, resampling,
 levels and their limitations across all map families.
+
+## Optional shield presentation
+
+[Arm shields and the visible overshield](shield_presentation.md) explains the
+first-person displacement limit, remaining-layer colors, retained Shield Color
+and Shield Glow, and presentation state at map boundaries.

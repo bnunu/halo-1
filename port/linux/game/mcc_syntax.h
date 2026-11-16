@@ -14,6 +14,8 @@ struct hs_syntax_node;
 /* Pre-publication validation: the caller owns and bounds the complete blob.
  * This also rejects cycles before the shared compiler follows sibling links. */
 boolean mcc_syntax_graph_valid(struct data_array const *syntax, long bytes);
+boolean mcc_syntax_graph_check(struct data_array const *syntax, long bytes,
+    char const **reason, long *bad_node);
 
 /* -1 for other formats; otherwise whether this active MCC scenario is sound. */
 int mcc_syntax_scenario_valid(struct scenario const *scenario);

@@ -2192,6 +2192,29 @@ static void main_saving_map_private(
 static void main_save_map_private(
 	void)
 {
+	/* port: none while a cinematic can be skipped and the checkpoint its skip
+	goes back to is taken: a script that saves every so often would replace it,
+	and the skip would play the rest of the cinematic again. A save waits until
+	cinematic_skip_stop as one that is not safe would: one with a timeout gives
+	up after as many ticks (a script may wait for game_saving before the
+	cinematic's end), and an unsafe one, which can't wait, at once. A skip lets
+	go of it (main_skip_cinematic) */
+	if (cinematic_port_holds_checkpoints())
+	{
+		long current_tick = game_time_get();
+
+		if (current_tick > main_save_last_tick && main_globals.save_map_timeout)
+			main_globals.ticks_unable_to_save += current_tick-main_save_last_tick;
+		main_save_last_tick = current_tick;
+		if (!main_globals.save_map_safely ||
+			(main_globals.save_map_timeout && main_globals.ticks_unable_to_save > 240))
+		{
+			if (debug_game_save)
+				console_printf(FALSE, "gave up trying to save");
+			main_globals.saving_map = FALSE;
+		}
+		return;
+	}
 	if (!game_time_get_paused())
 	{
 		boolean save_map_safely = main_globals.save_map_safely;

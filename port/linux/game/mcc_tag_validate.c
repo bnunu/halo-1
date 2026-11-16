@@ -54,6 +54,7 @@ struct mcc_validation_context {
     byte *structure;
     long handle;
     char const *field;
+    char path[192];
     boolean rejected;
     boolean geometry_access;
     unsigned long visits;
@@ -209,11 +210,16 @@ static void mcc_problem(struct mcc_validation_context *context, int rejected, ch
         snprintf(mcc_validation.runtime->failure,sizeof(mcc_validation.runtime->failure),
             "Invalid data: tag %08lx, %.24s. See debug.txt.",
             context->handle,context->field ? context->field : "root");
+    if (rejected && mcc_validation.runtime) {
+        mcc_diagnostic_tag(mcc_validation.runtime,mcc_bitmaps_source_handle(mcc_validation.runtime,(uint32_t)context->handle));
+        mcc_diagnostic_at(mcc_validation.runtime,"%s",context->path[0] ? context->path : "root");
+        mcc_diagnostic_fail(mcc_validation.runtime,"%s",message);
+    }
     if (rejected) context->rejected = TRUE;
     else ++mcc_validation.corrections;
     if (rejected || mcc_validation.corrections <= 64) {
         snprintf(text, sizeof(text), "MCC tag %08lx (%s): %s: %s", context->handle,
-            context->field ? context->field : "root", rejected ? "rejected" : "corrected", message);
+            context->path[0] ? context->path : "root", rejected ? "rejected" : "corrected", message);
         tag_validate_report(text);
     }
 }
@@ -604,6 +610,7 @@ static void mcc_fields(struct mcc_validation_context *context, byte *address,
 {
     struct tag_schema_field const *field;
     byte *previous_structure = context->structure;
+    size_t prefix=strlen(context->path);
     if (!schema || schema->size <= 0 || nesting >= MCC_VALIDATION_DEPTH ||
         !mcc_range(context->region, context->length, address, (unsigned long)schema->size)) {
         mcc_problem(context, 1, "schema structure is outside loaded data or excessively nested"); return;
@@ -613,6 +620,7 @@ static void mcc_fields(struct mcc_validation_context *context, byte *address,
         int index;
         uint64_t extent = (uint64_t)(unsigned short)field->size * (unsigned short)field->count;
         context->field = field->name;
+        snprintf(context->path+prefix,sizeof(context->path)-prefix,"%s%s",prefix ? "." : "",field->name ? field->name : "(unnamed field)");
         /* Inline structures may deliberately omit their trailing unused
          * fields; size is still the array stride, not the bytes visited. */
         if (field->type == _tag_schema_struct && field->definition && field->count > 0) {
@@ -626,6 +634,10 @@ static void mcc_fields(struct mcc_validation_context *context, byte *address,
         }
         for (index = 0; index < field->count && !context->rejected; ++index) {
             byte *member = address + field->offset + index * field->size;
+            size_t field_length;
+            snprintf(context->path+prefix,sizeof(context->path)-prefix,"%s%s",prefix ? "." : "",field->name ? field->name : "(unnamed field)");
+            field_length=strlen(context->path);
+            if (field->count>1) snprintf(context->path+field_length,sizeof(context->path)-field_length,"[%d]",index);
             if (field->type == _tag_schema_struct) {
                 mcc_fields(context, member, field->definition, stage, nesting + 1);
             } else if (field->type == _tag_schema_block) {
@@ -702,8 +714,12 @@ static void mcc_fields(struct mcc_validation_context *context, byte *address,
                     if (!block->count) block->address = NULL;
                 } else {
                     long item;
-                    for (item = 0; item < block->count && !context->rejected; ++item)
+                    size_t block_length=strlen(context->path);
+                    for (item = 0; item < block->count && !context->rejected; ++item) {
+                        snprintf(context->path+block_length,sizeof(context->path)-block_length,"[%ld]",item);
                         mcc_walk(context, (byte *)block->address + item * element->size, element, stage == 2);
+                    }
+                    context->path[block_length]=0;
                 }
             } else if (field->type == _tag_schema_data || field->type == _tag_schema_file_data) {
                 if (stage == 0) {
@@ -839,6 +855,7 @@ static void mcc_fields(struct mcc_validation_context *context, byte *address,
         }
     }
     context->structure = previous_structure;
+    context->path[prefix]=0;
 }
 
 static void mcc_walk(struct mcc_validation_context *context, byte *address,
@@ -880,13 +897,13 @@ int mcc_tags_validate(struct mcc_runtime *runtime)
     int pass;
     if (!runtime || !runtime->tags || ((uintptr_t)runtime->tags & 3) ||
         runtime->used < sizeof(*header) || runtime->used > runtime->capacity ||
-        runtime->capacity > MCC_VALIDATION_CAPACITY) return 0;
+        runtime->capacity > MCC_VALIDATION_CAPACITY) return mcc_diagnostic_fail(runtime,"tag validation requires an aligned loaded tag region within the MCC capacity");
     mcc_validation_dispose(mcc_validation.runtime);
     mcc_validation.runtime = runtime;
     header = mcc_validation.header = (struct mcc_validation_header *)runtime->tags;
     mcc_validation.claim_bytes = (runtime->capacity + 7) / 8;
     mcc_validation.claims = malloc(mcc_validation.claim_bytes);
-    if (!mcc_validation.claims) return 0;
+    if (!mcc_validation.claims) {mcc_diagnostic_tag(runtime,UINT32_MAX);return mcc_diagnostic_fail(runtime,"not enough memory for tag validation ownership tracking");}
     memset(mcc_validation.claims, 0, mcc_validation.claim_bytes);
     memset(&context, 0, sizeof(context)); context.region = runtime->tags; context.length = runtime->used;
     context.handle = NONE;
@@ -898,7 +915,7 @@ int mcc_tags_validate(struct mcc_runtime *runtime)
     }
     roots=malloc(header->count*sizeof(*roots));
     mcc_validation.aliases=malloc(header->count);
-    if (!roots || !mcc_validation.aliases) {free(roots);return 0;}
+    if (!roots || !mcc_validation.aliases) {free(roots);mcc_diagnostic_tag(runtime,UINT32_MAX);return mcc_diagnostic_fail(runtime,"not enough memory for tag validation root/alias tables");}
     memset(mcc_validation.aliases,0,header->count);
     for (i = 0; i < header->count && !context.rejected; ++i) {
         struct mcc_validation_instance *instance = &header->instances[i];
@@ -943,8 +960,10 @@ int mcc_tags_validate(struct mcc_runtime *runtime)
             if (instance->root && group && group->definition && !mcc_validation.aliases[i])
                 mcc_walk(&context, instance->root, group->definition, pass);
         }
-    if (!mcc_instance(header->scenario) || mcc_instance(header->scenario)->group != 'scnr')
+    if (!mcc_instance(header->scenario) || mcc_instance(header->scenario)->group != 'scnr') {
+        context.handle=header->scenario;context.path[0]=0;
         mcc_problem(&context, 1, "scenario handle does not identify a scenario");
+    }
     return !context.rejected;
 }
 
@@ -955,13 +974,15 @@ int mcc_bsp_validate(struct mcc_runtime *runtime, long handle, void *address, lo
     struct mcc_validation_instance *instance;
     struct tag_schema_group const *schema = mcc_group('sbsp');
     unsigned long first, bit;
+    mcc_diagnostic_tag(runtime,(uint32_t)handle);
+    mcc_diagnostic_at(runtime,"BSP validation");
     if (mcc_validation.runtime != runtime || !mcc_validation.claims || ((uintptr_t)address & 3) ||
         size < (long)sizeof(*header) ||
-        !mcc_range(runtime->tags, runtime->capacity, address, (unsigned long)size)) return 0;
+        !mcc_range(runtime->tags, runtime->capacity, address, (unsigned long)size)) return mcc_diagnostic_fail(runtime,"BSP validation state is missing, or the loaded BSP range is invalid/misaligned");
     first = (unsigned long)((uintptr_t)address - (uintptr_t)runtime->tags);
-    if (first < runtime->used) return 0;
+    if (first < runtime->used) return mcc_diagnostic_fail(runtime,"BSP allocation overlaps loaded tag data");
     instance = mcc_instance(handle);
-    if (!instance || instance->group != 'sbsp' || !schema || !schema->definition) return 0;
+    if (!instance || instance->group != 'sbsp' || !schema || !schema->definition) return mcc_diagnostic_fail(runtime,"BSP handle is stale, has the wrong tag group, or has no validation schema");
     mcc_allocations_dispose();
     for (bit = runtime->used; bit < runtime->capacity; ++bit) mcc_validation.claims[bit >> 3] &= (byte)~(1U << (bit & 7));
     memset(&context, 0, sizeof(context)); context.region = address; context.length = size; context.handle = handle;

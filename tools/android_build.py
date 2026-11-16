@@ -596,6 +596,9 @@ def generate_android_build(n: Writer, sln: Any) -> None:
         LINUX_DIR / "src" / "posix_files.c", LINUX_DIR / "src" / "posix_net.c",
         LINUX_DIR / "src" / "posix_mcc_preview.c",
         LINUX_DIR / "src" / "posix_mcc_share.c",
+        # Workshop items' authors, asked of Steam for the Steam Workshop screen and the guest's lobby
+        # (steam_downloads.c), with the JSON reader that reads Steam's answer
+        LINUX_DIR / "src" / "workshop_authors.c", LINUX_DIR / "src" / "server_json.c",
         # the app reads debug.sample_seconds from config.toml (host_main.c)
         TOML_DIR / "tomlc17.c",
     ]

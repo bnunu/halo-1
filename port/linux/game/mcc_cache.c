@@ -130,6 +130,8 @@ static int mcc_scenario_identity(struct mcc_runtime *runtime, char const *name)
     memcpy(identity + sizeof(MCC_MAPS_LEVEL_PREFIX) - 1,
         name + sizeof(MCC_MAPS_LEVEL_PREFIX) - 1, length + 1);
     address = (uint32_t)(uintptr_t)identity;
+    mcc_diagnostic_tag(runtime,runtime->report.scenario_handle);
+    snprintf(runtime->original_scenario_tag,sizeof(runtime->original_scenario_tag),"%s",runtime->diagnostic.tag);
     memcpy(runtime->tag_index + index * 32 + 16, &address, sizeof(address));
     return TRUE;
 }
@@ -339,10 +341,13 @@ struct cache_file_tag_header *mcc_cache_tags_load(char const *name, void *header
     if (!raw) goto failed;
     status = mcc_cache_load(&runtime->source, raw, identity.tag_data_size, &runtime->report);
     problem = mcc_status_explanation(status);
-    if (status != MCC_CACHE_OK) error(_error_silent,"mcc: %s (tag %lu, location %08lx)",
-        mcc_cache_status_string(status),(unsigned long)runtime->report.problem_tag,
-        (unsigned long)runtime->report.problem_location);
-    if (status != MCC_CACHE_OK) goto failed;
+    if (status != MCC_CACHE_OK) {
+        error(_error_silent,"mcc: '%s', %s: %s; map refused (tag index %lu, reader location 0x%08lx)",
+            name ? name : "(map)",runtime->report.problem_path[0] ? runtime->report.problem_path : "map header",
+            runtime->report.problem_detail,(unsigned long)runtime->report.problem_tag,
+            (unsigned long)runtime->report.problem_location);
+        goto failed;
+    }
     problem = "Its MCC resources could not be selected. See debug.txt for the failing check.";
     if (!mcc_resources_select_paths(runtime,raw,
         mcc_validation_resources(runtime->level_name,resource_paths) ? resource_paths : NULL)) goto failed;
@@ -375,6 +380,7 @@ struct cache_file_tag_header *mcc_cache_tags_load(char const *name, void *header
     if (!mcc_scenario_identity(runtime, name)) goto failed;
     problem = "Its map data could not be converted. Check for an updated map; debug.txt has the failing check.";
     mcc_loading_stage(MCC_LOADING_TAGS);
+    mcc_diagnostic_tag(runtime,UINT32_MAX);
     if (!mcc_hud_bitmaps_prepare(runtime) || !mcc_tags_prepare(runtime)) goto failed;
     mcc_loading_stage(MCC_LOADING_SCRIPTS);
     problem = "Its scripts could not be prepared. Check for an updated map; debug.txt names the failing script check.";
@@ -404,7 +410,12 @@ struct cache_file_tag_header *mcc_cache_tags_load(char const *name, void *header
     /* The cache header checksum feeds native save validation as well as the lobby. */
     memcpy((unsigned char *)header + 0x64, &package_checksum, 4);
     problem = "Not enough memory to prepare its scripts. Close other applications and try again.";
-    if (!mcc_script_threads_prepare()) goto failed;
+    if (!mcc_script_threads_prepare()) {
+        mcc_diagnostic_tag(runtime,runtime->report.scenario_handle);
+        mcc_diagnostic_at(runtime,"script thread storage");
+        mcc_diagnostic_fail(runtime,"not enough memory to allocate script thread state");
+        goto failed;
+    }
     mcc_loaded = TRUE;
     mcc_loading_stage(MCC_LOADING_SCENARIO);
     mcc_bitmaps_prepare_gpu(runtime);

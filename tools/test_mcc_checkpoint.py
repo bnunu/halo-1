@@ -228,6 +228,7 @@ void game_state_call_before_save_procs(void) {}
 void main_stop_time(void) {}
 void main_start_time(void) {}
 void network_coop_checkpoint_saved(void) {checkpoint_notifications++;}
+void cinematic_port_checkpoint(void) {}
 void game_state_note_event(char const *event) {(void)event;}
 int game_state_write_to_file(void) {memcpy(saved,live,sizeof(saved));writes++;return 1;}
 int game_state_write_core(char const *name,void const *data,long size) {

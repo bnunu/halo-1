@@ -91,7 +91,7 @@ jobs:
 
       - name: Test
         run: |
-          python -m pytest -q tools/test_loading_widescreen.py tools/test_loading_chant.py
+          python -m pytest -q tools/test_loading_widescreen.py tools/test_loading_chant.py tools/test_overshield_rendering.py
           python -m pytest -q tools/test_linux_port.py tools/test_android_asm_convert.py tools/test_android_mirror_uploads.py tools/test_android_frame_fences.py tools/test_android_static_geometry.py tools/test_android_render_policy.py tools/test_android_ce_texture_cache.py tools/test_host_watch_hash.py tools/test_touch_menu.py tools/harness tools/test_profile.py tools/stagekit/tests tools/test_net_compare.py tools/test_server_sim.py tools/test_egg.py tools/test_deploy_gametypes.py
           # the dedicated server: --version, and --server without maps refused (exit code 2); its cases with
           # clients need the retail maps, and are skipped
@@ -99,7 +99,7 @@ jobs:
           python tools/test_light_storage.py
           python -m pytest -q \
             tools/test_mcc_local_package.py tools/test_mcc_server.py tools/test_mcc_share_menu.py tools/test_mcc_resource_selection.py tools/test_mcc_identity_candidates.py \
-            tools/test_mcc_cache_format.py tools/test_mcc_projectiles.py tools/test_mcc_tag_validation.py \
+            tools/test_mcc_diagnostics.py tools/test_mcc_cache_format.py tools/test_mcc_projectiles.py tools/test_mcc_tag_validation.py \
             tools/test_mcc_share.py tools/test_mcc_share_rules.py tools/test_mcc_share_stage.py \
             tools/test_mcc_share_storage.py tools/test_mcc_share_metadata.py tools/test_mcc_load_network.py \
             tools/test_checkpoint_epoch.py tools/test_coop_checkpoint.py tools/test_coop_checkpoint_recovery.py \
@@ -255,7 +255,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install pytest
-          python -m pytest -q tools/test_mcc_geometry.py tools/test_mcc_projectiles.py
+          python -m pytest -q tools/test_mcc_diagnostics.py tools/test_mcc_cache_format.py tools/test_mcc_tag_validation.py tools/test_mcc_geometry.py tools/test_mcc_projectiles.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test light storage

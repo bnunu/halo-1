@@ -202,3 +202,18 @@ def test_optional_real_mcc_map(report_tool):
     assert code == 0, report
     assert int(report["tag_count"]) > 0
     assert int(report["bsps"]) > 0
+
+
+@pytest.mark.parametrize("kind,field,path", [
+    ("bitm", "bitmaps[0].pixels", "res.bitmap"),
+    ("snd!", "pitch_ranges[0]", "res.sound"),
+])
+def test_bad_payload_range_names_authoring_tag_and_element(report_tool, tmp_path, kind, field, path):
+    data = resource_dependency_map(kind, external=0, size=0x100000)
+    source = tmp_path / "bad-payload.map"
+    source.write_bytes(data)
+    code, report = audit(report_tool, source)
+    assert code != 0
+    assert report["problem_path"] == path
+    assert field in report["problem_detail"]
+    assert "leave the map file" in report["problem_detail"]

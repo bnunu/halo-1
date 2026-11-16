@@ -263,23 +263,6 @@ boolean viewmodel_is_visible(void)
 	return visible;
 }
 
-/* ---------- whether the energy shield's flare is drawn on the arms */
-
-boolean viewmodel_shield_is_visible(void)
-{
-	static boolean initialized, visible;
-	static unsigned long read_at;
-	unsigned long changes = config_changes();
-
-	if (!initialized || read_at != changes)
-	{
-		visible = config_boolean("display.viewmodel_shield") != 0;
-		initialized = TRUE;
-		read_at = changes;
-	}
-	return visible;
-}
-
 boolean viewmodel_draws_geometry(boolean first_person)
 {
 	return !first_person || viewmodel_is_visible();
