@@ -17,6 +17,8 @@ short mcc_maps_find(char const *level_name);
 char const *mcc_maps_level_name(short index);
 wchar_t const *mcc_maps_name(short index);
 wchar_t const *mcc_maps_description(short index);
+/* the Steam Workshop item a map is from (decimal digits); "" for none */
+char const *mcc_maps_item_id(short index);
 boolean mcc_maps_campaign(short index);
 boolean mcc_maps_level_campaign(char const *level_name);
 /* 0 standalone/disabled, 1 next mission, 2 completed, -1 unavailable next

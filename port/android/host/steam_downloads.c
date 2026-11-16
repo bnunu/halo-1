@@ -37,6 +37,7 @@ buffers on purpose, the way snprintf is made) */
 #include "steam_seal.h"
 #include "host_mcc_hash.h"
 #include "posix.h"
+#include "workshop_authors.h"
 
 #include <pthread.h>
 #include <stdio.h>
@@ -2614,6 +2615,8 @@ static struct
 	char states[SNAPSHOT_ROWS][48];
 	char title[128];
 	char text[1600];
+	/* the chosen Workshop item's author, once Steam has said (workshop_authors.c) */
+	char author[WORKSHOP_AUTHORS_NAME_SIZE];
 	uint64_t picture_key;
 	uint32_t picture[PREVIEW_SIDE * PREVIEW_SIDE];
 	/* the text to type, taken from the model once */
@@ -2627,6 +2630,7 @@ int steam_downloads_poll(void)
 	int index, i;
 	struct steam_workshop_file const *file = NULL;
 	struct preview *preview;
+	uint64_t author_item = 0;
 
 	if (pthread_mutex_trylock(&steam.state_lock) != 0)
 		return 0;
@@ -2644,9 +2648,20 @@ int steam_downloads_poll(void)
 	details_build(steam.chosen, snapshot.title, (int)sizeof(snapshot.title), snapshot.text, (int)sizeof(snapshot.text));
 	switch (row_kind(steam.chosen, &index))
 	{
-	case ROW_ITEM: file = &steam.items[index]; break;
-	case ROW_PACKAGE: file = steam.packages[index].file.id ? &steam.packages[index].file : NULL; break;
+	case ROW_ITEM: file = &steam.items[index]; author_item = file->id; break;
+	case ROW_PACKAGE:
+		file = steam.packages[index].file.id ? &steam.packages[index].file : NULL;
+		author_item = steam.packages[index].id;
+		break;
 	default: break;
+	}
+	snapshot.author[0] = 0;
+	if (author_item)
+	{
+		char id[24];
+
+		snprintf(id, sizeof(id), "%llu", (unsigned long long)author_item);
+		workshop_authors_get(id, snapshot.author, (int)sizeof(snapshot.author));
 	}
 	if (file && (preview = preview_find(file->id)) != NULL && preview->state == 1 && preview->pixels)
 	{
@@ -2693,11 +2708,13 @@ void steam_downloads_row(int place, char *name, int name_size, char *state, int 
 	snprintf(state, (size_t)state_size, "%s", snapshot.states[at]);
 }
 
-void steam_downloads_details(int place, char *title, int title_size, char *text, int text_size)
+void steam_downloads_details(int place, char *title, int title_size, char *text, int text_size, char *author,
+	int author_size)
 {
 	(void)place;
 	snprintf(title, (size_t)title_size, "%s", snapshot.title);
 	snprintf(text, (size_t)text_size, "%s", snapshot.text);
+	snprintf(author, (size_t)author_size, "%s", snapshot.author);
 }
 
 int steam_downloads_text_wanted(char *initial, int initial_size, int *secret)
@@ -2787,9 +2804,11 @@ void host_steam_row(int place, unsigned int name, int name_size, unsigned int st
 	steam_downloads_row(place, GUEST_POINTER(name), name_size, GUEST_POINTER(state), state_size);
 }
 
-void host_steam_details(int place, unsigned int title, int title_size, unsigned int text, int text_size)
+void host_steam_details(int place, unsigned int title, int title_size, unsigned int text, int text_size,
+	unsigned int author, int author_size)
 {
-	steam_downloads_details(place, GUEST_POINTER(title), title_size, GUEST_POINTER(text), text_size);
+	steam_downloads_details(place, GUEST_POINTER(title), title_size, GUEST_POINTER(text), text_size,
+		GUEST_POINTER(author), author_size);
 }
 
 void host_steam_choose(int place)
@@ -2946,4 +2965,9 @@ int host_steam_take_rescan(void)
 	steam.rescan = 0;
 	pthread_mutex_unlock(&steam.state_lock);
 	return rescan;
+}
+
+int host_steam_author(unsigned int item_id, unsigned int name, int name_size)
+{
+	return workshop_authors_get((char const *)GUEST_POINTER(item_id), (char *)GUEST_POINTER(name), name_size);
 }

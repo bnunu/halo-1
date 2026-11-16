@@ -21,6 +21,12 @@ void host_logf(int priority, const char *format, ...)
 	fputc('\n', stderr);
 }
 
+/* (port/linux/src/workshop_authors.c's log, as it is built outside Android here) */
+void platform_log(const char *format, ...)
+{
+	(void)format;
+}
+
 int update_https_request(const char *method, const char *url, const char *headers, const void *body,
 	unsigned long body_size, unsigned long maximum, struct update_response *response, char *error, int error_size)
 {

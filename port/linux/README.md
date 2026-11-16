@@ -737,6 +737,22 @@ See [MCC maps](../../docs/mcc_maps.md) for supported formats, resources and limi
 [MCC previews](../../docs/reading/mcc_level_previews.md) for menu discovery, and
 [browser imports](../../docs/reading/browser_imports.md) for browser storage.
 
+A Steam Workshop map shows its publisher: the Steam name of the account that
+published the item, who may not be the map's original maker.
+
+- The lobby: "Publisher:" and the name under the map's name, cut short with
+  "..." to stay one line. A player still downloading the map sees it too, and
+  so does the lobby of a game under way before joining it, when this machine
+  has the map.
+- The MCC map lists (multiplayer and campaign): "Publisher" and the name under
+  the map's description, which is cut short above them, and under a Workshop
+  item's folder. A collection's folder holds several makers' maps and shows
+  none.
+
+Steam is asked once a run, without signing in, so the name shows a moment
+after the map is shown, and not at all offline or in the web build (Steam
+does not answer a web page's requests).
+
 All map families use network version 44 (camera mode 32745); older peers
 cannot join, including OpenCE protocol 43 peers. MCC content identity, sharing
 consent and load-progress checks remain separate from the existing Xbox/CE paths;
