@@ -250,8 +250,7 @@ enum
 	/* a menu or a cinematic is up: the overlay hides and lets the fingers
 	through to the menus' pointer above */
 	_touch_scene_menus = 1 << 1,
-	/* input.touch_controls: "on" and "off" (none: "auto", shown when the
-	device has a touchscreen and no controller) */
+	/* input.touch_controls: "on" and "off" (neither for "auto") */
 	_touch_scene_on = 1 << 2,
 	_touch_scene_off = 1 << 3,
 };
@@ -290,7 +289,7 @@ int touch_input_screen_buttons(void)
 	int devices = host_touch_devices();
 	int setting = touch_controls_setting();
 
-	/* (TouchControls.java's shown(), but for the scene) */
+	/* Auto keeps the controller prompts in cinematics and after games. */
 	if (setting == _touch_scene_off || !(devices & TOUCH_DEVICE_TOUCHSCREEN))
 		return FALSE;
 	return setting == _touch_scene_on || !(devices & TOUCH_DEVICE_CONTROLLER);

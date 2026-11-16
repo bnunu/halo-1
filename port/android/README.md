@@ -275,18 +275,13 @@ as the phone turns, never inverted). The setting `input.touch_aim_assist`
 turns the aim assist off. "Look sensitivity" sets how far a swipe turns;
 the mouse settings do not apply.
 
-The touch controls show only in a game. In the menus and during
-cinematics they hide, and the touchscreen operates the menus as described
-above. They also hide when a controller is connected, for example the
-built-in controller of a handheld. A device without a touchscreen (a TV)
-never shows them. The setting `input.touch_controls` changes this (refer
-to "Settings").
-
-Moving a controller stick or pressing a controller button hides the toolbar.
-Touch the screen to bring it back. The toolbar stays visible while editing
-the layout. On handhelds with built-in controls, such as the AYN Odin 2
-Portal, set `input.touch_controls` to `"on"` to use the overlay's gyroscope
-aiming and device vibration alongside the controller.
+The touch overlay is available during gameplay on a touchscreen. With
+`input.touch_controls = "auto"` (the default), a connected controller
+starts with the overlay hidden. The first tap reveals it, and moving a stick
+or pressing a controller button hides it again. Enabled device gyro and
+vibration work while it is hidden. This also works with built-in controllers,
+such as the AYN Odin 2 Portal. In `"on"` mode, controller input hides only
+the toolbar. The toolbar stays visible while editing the layout.
 
 The buttons at the top of the screen:
 
@@ -347,7 +342,7 @@ These settings are only for Android:
 | Setting | Function |
 | --- | --- |
 | `input.touch_aim_assist` | `true` (the default): the touch controls' swipe aiming gets the aim assist of a controller (the aim slows over a target and follows a moving one). `false`: none, as with a mouse; the bullets' own autoaim stays. |
-| `input.touch_controls` | The touch controls in a game. `"auto"` (the default): shown on a touchscreen while no controller is connected. `"on"`: also shown with a controller. `"off"`: never shown. A device without a touchscreen never shows them. The carnage report's CONTINUE and LEAVE buttons follow the same rule (otherwise it shows its A and B prompt), and so does a cinematic's SKIP button (otherwise any tap skips it). The menus take taps in any case. |
+| `input.touch_controls` | `"auto"` (the default): show the overlay when using touch and hide it when using a controller. `"on"`: keep gameplay touch buttons visible with a controller, unless hidden with **Hide**. `"off"`: disable the gameplay overlay and its device gyro and vibration. The menus take taps in all modes. With `"auto"` and a controller connected, or with `"off"`, cinematics and the carnage report use their controller prompts. |
 | `display.screen_width` | The number of columns of the 480-line picture. `0` (the default): the shape of the display (1068 on a 20:9 phone). `640`: the 4:3 shape of the Xbox. |
 | `display.stats_log` | `false` (the default): `true` writes a line a second to the log with the frame rate, the mode, the map, the renderer and the size of the 3D view, for a bug report or to compare two builds. |
 | `display.resolution_scaling` | Also Linux's, with another default on Android. `"original"` (the default): the game draws the 480 lines of the Xbox, which the display scales up. `"native"`: the game draws at the display's resolution (1080 lines on a 1080p phone). `"75%"`, `"50%"` or `"25%"`: that part of the display's resolution each way, scaled up: less for the GPU to draw, for more frames a second and less heat. Video Setup's Resolution Scaling sets it, from the next frame. |
