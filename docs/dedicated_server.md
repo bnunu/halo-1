@@ -248,7 +248,8 @@ these settings, which `sv_settings` and `GET /api/settings` list:
 `server.name`, `server.max_players`, `server.min_players`,
 `server.password`, `server.public`, `server.rotation_fallback`,
 `server.lobby_seconds`, `server.postgame_seconds`, `server.empty_seconds`,
-`server.idle_minutes`, `server.team_start`, `server.team_switch`,
+`server.idle_minutes`, `server.team_start`, `server.one_team_ends_game`,
+`server.team_switch`,
 `server.team_switch_cooldown_seconds`, `server.motd`,
 `server.frame_rate`, `server.web_password`,
 `server.web_moderator_password`, `server.log_format`,
@@ -943,6 +944,13 @@ teams instead (if it has one); it is checked when the lobby opens and
 again when its countdown would begin. With no entry left, the server
 stops with exit code 3 (2 when no rotation map is there), or plays
 `bloodgulch:slayer` with `server.rotation_fallback`.
+
+A team game goes on while only one team's players are in it: one that
+starts while the other team's players still load the map, or that they
+leave. It ends at its score or time limit, or when a team's players are
+all out of lives. `server.one_team_ends_game = true` ends it as soon as
+only one team's players are in it, as the Xbox game's does (and a game a
+player hosts, by `network.one_team_ends_game`).
 
 ## Gametype files
 

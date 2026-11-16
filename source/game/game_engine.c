@@ -5725,6 +5725,39 @@ void game_engine_playlist_next(
 	return;
 }
 
+/* port: whether a team game ends as soon as only one team's players are in
+it, the Xbox game's rule: a dedicated server's server.one_team_ends_game (off
+by default), a player's host's network.one_team_ends_game (on) */
+static boolean game_engine_one_team_ends_game(
+	void)
+{
+	return halo_server_mode() ?
+		config_boolean("server.one_team_ends_game") :
+		config_boolean("network.one_team_ends_game");
+}
+
+/* port: whether players of more than one team are in the game, living, dead
+or out of lives (game_engine_one_team_ends_game) */
+static boolean game_engine_multiple_teams_playing(
+	void)
+{
+	struct data_iterator iterator;
+	struct player_datum *player;
+	long team_index = NONE;
+
+	data_iterator_new(&iterator, player_data);
+	while ((player = (struct player_datum *)data_iterator_next(&iterator)) != NULL)
+	{
+		if (player->quit_out_of_game)
+			continue;
+		if (team_index != NONE && player->team_index != team_index)
+			return TRUE;
+		team_index = player->team_index;
+	}
+
+	return FALSE;
+}
+
 boolean game_engine_should_end_game(
 	void)
 {
@@ -5733,8 +5766,14 @@ boolean game_engine_should_end_game(
 	/* port: Infection's round ends by its own rules (infection.c) */
 	if (infection_enabled())
 		return FALSE;
-	if (game_engine && !multiple_teams_alive())
+	/* port: without the rule (game_engine_one_team_ends_game), a game only
+	one team's players are in goes on: the others still loading as it
+	started, or gone. One whose other team is out of lives still ends */
+	if (game_engine && !multiple_teams_alive() &&
+		(game_engine_one_team_ends_game() || game_engine_multiple_teams_playing()))
+	{
 		should_end_game = TRUE;
+	}
 	/* port: the gametype's time limit (game_variant_options) */
 	if (game_engine && game_variant_options_get()->time_limit > 0 &&
 		game_time_get() >= game_variant_options_get()->time_limit * 60L * TICKS_PER_SECOND)

@@ -374,6 +374,9 @@ def default_settings():
         _setting("server.team_start", "string", "one", "A team game: \"one\" starts with one team's players, "
                  "\"both\" waits for a player on each team, \"skip\" skips team games while one player waits.",
                  "HALO_SERVER_TEAM_START", choices=["one", "both", "skip"]),
+        _setting("server.one_team_ends_game", "boolean", False, "true: a team game ends as soon as only one team's "
+                 "players are in it, as the Xbox game's does. false: it goes on to its score or time limit.",
+                 "HALO_SERVER_ONE_TEAM_ENDS_GAME"),
         _setting("server.team_switch", "boolean", True, "A player in a team game may say \"!switch\" in the chat to "
                  "change teams (not in Infection; with auto team balance, only to the smaller team).",
                  "HALO_SERVER_TEAM_SWITCH"),
