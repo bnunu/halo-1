@@ -53,6 +53,7 @@ struct tag_data { long size; unsigned long pad; long file_offset; void *address;
 struct tag_reference { unsigned long group_tag; char *name; long name_length; long index; };
 #endif
 """)
+    (directory / "errors.h").write_text("#define _error_silent 0\nvoid error(int,const char *,...);\n")
     binary = directory / ("validation.exe" if os.name == "nt" else "validation")
     allocator = directory / "allocator.c"
     allocator.write_text('''
@@ -81,7 +82,7 @@ void validation_free(void *p) {
     command = [compiler, *target, "-std=gnu99", "-O1", "-g", "-Wall", "-Wextra", "-Werror",
                "-Wno-multichar", "-fsanitize=undefined", "-fsanitize-trap=undefined",
                f"-I{directory}", f"-I{GAME}", str(GAME / "mcc_tag_validate.c"),
-               str(GAME / "tag_validate.c"), str(ROOT / "tools/harness/tests/mcc_tag_validation.c"), str(allocator),
+               str(GAME / "tag_validate.c"), str(GAME / "mcc_diagnostics.c"), str(ROOT / "tools/harness/tests/mcc_tag_validation.c"), str(allocator),
                "-o", str(binary)]
     if hud:
         declarations = []
@@ -200,3 +201,12 @@ def test_hud_conversion_preserves_validation(hud_validation_tool, case):
 def test_mcc_validation(validation_tool, case):
     result = subprocess.run([str(validation_tool), case], capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_rejected_nested_field_has_authoring_path(validation_tool):
+    result = subprocess.run([str(validation_tool), "nested_data"], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "scenario.scenario" in result.stdout
+    assert "children[0]" in result.stdout
+    assert "children[0].data" in result.stdout
+    assert "data overlaps another allocation" in result.stdout

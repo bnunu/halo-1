@@ -2,6 +2,8 @@
  * Public format references and observed-fixture details: docs/mcc_maps.md. */
 #include "mcc_cache_format.h"
 #include <stdlib.h>
+#include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 
 #define MCC_FOURCC(a,b,c,d) (((uint32_t)(a)<<24)|((uint32_t)(b)<<16)|((uint32_t)(c)<<8)|(uint32_t)(d))
@@ -19,8 +21,42 @@ static uint32_t mcc_u32(void const *p) {
 static int mcc_range(uint64_t offset, uint64_t bytes, uint64_t limit) {
     return offset <= limit && bytes <= limit - offset;
 }
+static enum mcc_cache_status mcc_detail(struct mcc_cache_report *r,
+    enum mcc_cache_status status, char const *format, ...) {
+    va_list args;
+    va_start(args,format);
+    vsnprintf(r->problem_detail,sizeof(r->problem_detail),format,args);
+    va_end(args);
+    return status;
+}
+
+static void mcc_cache_context(void *data,struct mcc_cache_report *r,uint32_t index) {
+    unsigned char *entry;
+    uint32_t address,group;
+    char const *name,*suffix;
+    r->problem_tag=index;
+    r->problem_detail[0]=0;
+    snprintf(r->problem_path,sizeof(r->problem_path),"(tag path unavailable)");
+    if (index>=r->tag_count || !mcc_range(40+(uint64_t)index*32,32,r->identity.tag_data_size)) return;
+    entry=(unsigned char *)data+40+index*32;
+    address=mcc_u32(entry+16);group=mcc_u32(entry);
+    name=mcc_cache_pointer(data,r,address,1);
+    if (!name || !memchr(name,0,r->identity.tag_data_size-(address-r->tag_base))) return;
+    suffix=group==MCC_FOURCC('b','i','t','m') ? "bitmap" : group==MCC_FOURCC('s','n','d','!') ? "sound" :
+        group==MCC_SCENARIO ? "scenario" : group==MCC_BSP ? "scenario_structure_bsp" : NULL;
+    if (suffix) snprintf(r->problem_path,sizeof(r->problem_path),"%.255s.%s",name,suffix);
+    else snprintf(r->problem_path,sizeof(r->problem_path),"%.255s [group %c%c%c%c]",name,
+        (int)(group>>24)&255,(int)(group>>16)&255,(int)(group>>8)&255,(int)group&255);
+}
+
 static enum mcc_cache_status mcc_fail(struct mcc_cache_report *r,
     enum mcc_cache_status status, uint32_t location) {
+    if (!r->problem_detail[0]) snprintf(r->problem_detail,sizeof(r->problem_detail),"%s",mcc_cache_status_string(status));
+    {
+        size_t i;
+        for (i=0;r->problem_path[i];i++) if ((unsigned char)r->problem_path[i]<32 || r->problem_path[i]==127) r->problem_path[i]='?';
+        for (i=0;r->problem_detail[i];i++) if ((unsigned char)r->problem_detail[i]<32 || r->problem_detail[i]==127) r->problem_detail[i]='?';
+    }
     r->status = status;
     r->problem_location = location;
     return status;
@@ -89,13 +125,14 @@ static enum mcc_cache_status mcc_check_bsp(struct mcc_cache_source const *source
         !mcc_range(b->file_offset, b->size, r->identity.file_length) ||
         b->address < r->tag_base ||
         !mcc_range(b->address-r->tag_base, b->size, MCC_CACHE_TAG_CAPACITY) ||
-        b->address-r->tag_base < r->identity.tag_data_size) return MCC_CACHE_BAD_BSP;
+        b->address-r->tag_base < r->identity.tag_data_size) return mcc_detail(r,MCC_CACHE_BAD_BSP,"BSP file range or linked address is invalid (offset 0x%08lx, size %lu, address 0x%08lx)",(unsigned long)b->file_offset,(unsigned long)b->size,(unsigned long)b->address);
     data = (uint8_t *)malloc(b->size);
-    if (!data) return MCC_CACHE_NO_MEMORY;
+    if (!data) return mcc_detail(r,MCC_CACHE_NO_MEMORY,"not enough memory to inspect BSP (%lu bytes)",(unsigned long)b->size);
     if (!source->read(source->context,b->file_offset,b->size,data)) {
-        status = MCC_CACHE_READ_FAILED;
+        status = mcc_detail(r,MCC_CACHE_READ_FAILED,"BSP could not be read at file offset 0x%08lx (%lu bytes)",(unsigned long)b->file_offset,(unsigned long)b->size);
         goto done;
     }
+    mcc_detail(r,MCC_CACHE_BAD_BSP,"BSP header signature or vertex file range is invalid");
     b->structure_address = mcc_u32(data);
     /* Version 13 stores uncompressed environment/lightmap vertices in a
      * separate file section, named by the first pair after the BSP pointer. */
@@ -104,23 +141,25 @@ static enum mcc_cache_status mcc_check_bsp(struct mcc_cache_source const *source
     if (mcc_u32(data+0x14) != MCC_BSP ||
         !mcc_range(b->vertex_file_offset,b->vertex_bytes,r->identity.file_length)) goto done;
     structure = mcc_bsp_pointer(data,b,b->structure_address,0x288);
-    if (!structure) goto done;
+    if (!structure) {mcc_detail(r,MCC_CACHE_BAD_BSP,"BSP root is outside its loaded data");goto done;}
     count = mcc_u32(structure+0x104);
-    if (count > b->size/0x20) goto done;
+    if (count > b->size/0x20) {mcc_detail(r,MCC_CACHE_BAD_BSP,"lightmaps count %lu exceeds BSP size",(unsigned long)count);goto done;}
     lightmaps = mcc_bsp_pointer(data,b,mcc_u32(structure+0x108),count*0x20);
-    if (count && !lightmaps) goto done;
+    if (count && !lightmaps) {mcc_detail(r,MCC_CACHE_BAD_BSP,"lightmaps block is outside BSP data");goto done;}
     for (i=0;i<count;i++) {
         uint8_t *lm = lightmaps+i*0x20, *materials;
         uint32_t j, material_count = mcc_u32(lm+0x14);
-        if (material_count > b->size/0x100) goto done;
+        if (material_count > b->size/0x100) {mcc_detail(r,MCC_CACHE_BAD_BSP,"lightmaps[%lu].materials count %lu exceeds BSP size",(unsigned long)i,(unsigned long)material_count);goto done;}
         materials = mcc_bsp_pointer(data,b,mcc_u32(lm+0x18),material_count*0x100);
-        if (material_count && !materials) goto done;
+        if (material_count && !materials) {mcc_detail(r,MCC_CACHE_BAD_BSP,"lightmaps[%lu].materials block is outside BSP data",(unsigned long)i);goto done;}
         for (j=0;j<material_count;j++) {
             uint8_t const *m = materials+j*0x100;
             uint32_t rendered = mcc_u32(m+0xB4), lit = mcc_u32(m+0xC8);
             if (!mcc_range(mcc_u32(m+0xB8),(uint64_t)rendered*56,b->vertex_bytes) ||
                 !mcc_range(mcc_u32(m+0xCC),(uint64_t)lit*20,b->vertex_bytes) ||
-                (lit && lit != rendered)) goto done;
+                (lit && lit != rendered)) {
+                mcc_detail(r,MCC_CACHE_BAD_BSP,"lightmaps[%lu].materials[%lu]: vertex ranges leave the stream or lightmap vertex count %lu differs from rendered count %lu",(unsigned long)i,(unsigned long)j,(unsigned long)lit,(unsigned long)rendered);goto done;
+            }
             r->bsp_material_count++;
         }
     }
@@ -140,41 +179,41 @@ static enum mcc_cache_status mcc_check_assets(void *data, struct mcc_cache_repor
     if (group == MCC_FOURCC('b','i','t','m')) {
         uint8_t *bitmaps;
         tag = mcc_cache_pointer(data,r,address,0x6C);
-        if (!tag) return MCC_CACHE_BAD_BITMAP;
+        if (!tag) return mcc_detail(r,MCC_CACHE_BAD_BITMAP,"bitmap header at 0x%08lx is outside tag data",(unsigned long)address);
         count = mcc_u32(tag+0x60);
         bitmaps = mcc_block(data,r,tag+0x60,0x30);
-        if (!bitmaps) return MCC_CACHE_BAD_BITMAP;
+        if (!bitmaps) return mcc_detail(r,MCC_CACHE_BAD_BITMAP,"bitmaps block (count %lu) is outside tag data",(unsigned long)count);
         for (i=0;i<count;i++) {
             uint8_t *b = bitmaps+i*0x30;
             uint16_t format = mcc_u16(b+0xC), flags = mcc_u16(b+0xE);
             if (!mcc_u16(b+4) || !mcc_u16(b+6) || !mcc_u16(b+8) || format>18)
-                return MCC_CACHE_BAD_BITMAP;
+                return mcc_detail(r,MCC_CACHE_BAD_BITMAP,"bitmaps[%lu]: invalid dimensions %u x %u x %u or unsupported format %u (maximum 18)",(unsigned long)i,mcc_u16(b+4),mcc_u16(b+6),mcc_u16(b+8),format);
             if (flags & 0x100) {
                 r->external_bitmap_count++;
                 ref.type=1;ref.first=i;ref.offset=mcc_u32(b+0x18);ref.bytes=mcc_u32(b+0x1C);
                 if (visit && !visit(context,&ref)) return MCC_CACHE_BAD_BITMAP;
             }
             else if (!mcc_range(mcc_u32(b+0x18),mcc_u32(b+0x1C),r->identity.file_length))
-                return MCC_CACHE_BAD_BITMAP;
+                return mcc_detail(r,MCC_CACHE_BAD_BITMAP,"bitmaps[%lu].pixels: offset 0x%08lx and size %lu leave the map file",(unsigned long)i,(unsigned long)mcc_u32(b+0x18),(unsigned long)mcc_u32(b+0x1C));
             /* Tags that share one bitmap group count its bitmaps again; a map
              * can hold no more distinct ones than its tag data has room for,
              * which also bounds the texture table built from this count. */
-            if (++r->bitmap_count>r->identity.tag_data_size/0x30) return MCC_CACHE_BAD_BITMAP;
+            if (++r->bitmap_count>r->identity.tag_data_size/0x30) return mcc_detail(r,MCC_CACHE_BAD_BITMAP,"bitmap count exceeds the number of descriptors that can fit in tag data");
             if (format==18) r->bc7_bitmap_count++;
         }
     }
     if (group == MCC_FOURCC('s','n','d','!')) {
         uint8_t *ranges;
         tag = mcc_cache_pointer(data,r,address,0xA4);
-        if (!tag) return MCC_CACHE_BAD_SOUND;
+        if (!tag) return mcc_detail(r,MCC_CACHE_BAD_SOUND,"sound header at 0x%08lx is outside tag data",(unsigned long)address);
         count = mcc_u32(tag+0x98);
         ranges = mcc_block(data,r,tag+0x98,0x48);
-        if (!ranges) return MCC_CACHE_BAD_SOUND;
+        if (!ranges) return mcc_detail(r,MCC_CACHE_BAD_SOUND,"pitch_ranges block (count %lu) is outside tag data",(unsigned long)count);
         for (i=0;i<count;i++) {
             uint8_t *pr = ranges+i*0x48, *permutations;
             uint32_t j, n = mcc_u32(pr+0x3C);
             permutations = mcc_block(data,r,pr+0x3C,0x7C);
-            if (!permutations) return MCC_CACHE_BAD_SOUND;
+            if (!permutations) return mcc_detail(r,MCC_CACHE_BAD_SOUND,"pitch_ranges[%lu] '%.32s'.permutations: block count %lu is outside tag data",(unsigned long)i,(char const *)pr,(unsigned long)n);
             for (j=0;j<n;j++) {
                 uint8_t *p = permutations+j*0x7C;
                 /* tag_data flags bit zero selects the external sounds map. */
@@ -186,7 +225,7 @@ static enum mcc_cache_status mcc_check_assets(void *data, struct mcc_cache_repor
                     }
                 }
                 else if (!mcc_range(mcc_u32(p+0x48),mcc_u32(p+0x40),r->identity.file_length))
-                    return MCC_CACHE_BAD_SOUND;
+                    return mcc_detail(r,MCC_CACHE_BAD_SOUND,"pitch_ranges[%lu] '%.32s'.permutations[%lu] '%.32s'.samples: offset 0x%08lx and size %lu leave the map file",(unsigned long)i,(char const *)pr,(unsigned long)j,(char const *)p,(unsigned long)mcc_u32(p+0x48),(unsigned long)mcc_u32(p+0x40));
                 r->sound_permutation_count++;
             }
         }
@@ -249,7 +288,7 @@ enum mcc_cache_status mcc_cache_load(struct mcc_cache_source const *source,
         uint8_t *entry=tags+0x28+i*0x20;
         uint32_t group=mcc_u32(entry), address=mcc_u32(entry+0x14), name_address=mcc_u32(entry+0x10);
         char *name=mcc_cache_pointer(data,r,name_address,1);
-        r->problem_tag=i;
+        mcc_cache_context(data,r,i);
         if ((mcc_u32(entry+0xC)&0xFFFF)!=i || !name ||
             !memchr(name,0,r->identity.tag_data_size-(name_address-r->tag_base)))
             return mcc_fail(r,MCC_CACHE_BAD_TAG,index_address+i*0x20);
@@ -261,7 +300,7 @@ enum mcc_cache_status mcc_cache_load(struct mcc_cache_source const *source,
         status=mcc_check_assets(data,r,group,address,name,NULL,NULL);
         if (status) return mcc_fail(r,status,address);
     }
-    r->problem_tag=r->scenario_handle&0xFFFF;
+    mcc_cache_context(data,r,r->scenario_handle&0xFFFF);
     {
         uint8_t *entry=tags+0x28+r->problem_tag*0x20;
         if (mcc_u32(entry)!=MCC_SCENARIO || mcc_u32(entry+0xC)!=r->scenario_handle)
@@ -277,7 +316,10 @@ enum mcc_cache_status mcc_cache_load(struct mcc_cache_source const *source,
         uint8_t *syntax=mcc_cache_pointer(data,r,mcc_u32(scenario+0x480),syntax_size);
         uint8_t *scripts=mcc_block(data,r,scenario+0x49C,0x5C);
         if ((syntax_size && (!syntax || syntax_size<0x38 || (syntax_size-0x38)%0x14)) || !scripts ||
-            !mcc_block(data,r,scenario+0x4A8,0x5C)) return mcc_fail(r,MCC_CACHE_BAD_SCRIPT,0);
+            !mcc_block(data,r,scenario+0x4A8,0x5C)) {
+            mcc_detail(r,MCC_CACHE_BAD_SCRIPT,"hs_syntax_data has an invalid size/range, or hs_scripts/hs_globals blocks leave tag data (syntax bytes %lu)",(unsigned long)syntax_size);
+            return mcc_fail(r,MCC_CACHE_BAD_SCRIPT,0);
+        }
         if (syntax_size) r->script_node_count=(syntax_size-0x38)/0x14;
         for (i=0;i<r->script_count;i++) {
             if (mcc_u32(scripts+i*0x5C+0x50)) r->parameterized_script_count++;
@@ -285,14 +327,16 @@ enum mcc_cache_status mcc_cache_load(struct mcc_cache_source const *source,
     }
     r->bsp_count=mcc_u32(scenario+0x5A4);
     bsp_refs=mcc_block(data,r,scenario+0x5A4,0x20);
-    if (!r->bsp_count || r->bsp_count>MCC_CACHE_MAX_BSPS || !bsp_refs)
+    if (!r->bsp_count || r->bsp_count>MCC_CACHE_MAX_BSPS || !bsp_refs) {
+        mcc_detail(r,MCC_CACHE_BAD_BSP,"structure_bsps: count %lu must be 1..%u and the reference block must lie inside tag data",(unsigned long)r->bsp_count,MCC_CACHE_MAX_BSPS);
         return mcc_fail(r,MCC_CACHE_BAD_BSP,0);
+    }
     for (i=0;i<r->bsp_count;i++) {
         uint8_t *ref=bsp_refs+i*0x20;
         struct mcc_cache_bsp *b=&r->bsps[i];
         b->file_offset=mcc_u32(ref); b->size=mcc_u32(ref+4);
         b->address=mcc_u32(ref+8); b->tag_handle=mcc_u32(ref+0x1C);
-        r->problem_tag=b->tag_handle&0xFFFF;
+        mcc_cache_context(data,r,b->tag_handle&0xFFFF);
         if (r->problem_tag>=r->tag_count ||
             mcc_u32(tags+0x28+r->problem_tag*0x20)!=MCC_BSP ||
             mcc_u32(tags+0x34+r->problem_tag*0x20)!=b->tag_handle)
@@ -302,6 +346,7 @@ enum mcc_cache_status mcc_cache_load(struct mcc_cache_source const *source,
         if (b->size>r->largest_bsp_bytes) r->largest_bsp_bytes=b->size;
     }
     r->problem_tag=UINT32_MAX;
+    r->problem_path[0]=r->problem_detail[0]=0;
     r->status=MCC_CACHE_OK;
     return MCC_CACHE_OK;
 }

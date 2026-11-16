@@ -340,20 +340,28 @@ int mcc_scripts_prepare(struct mcc_runtime *runtime)
     char const *strings;
     long i, missing = 0;
     short developer=NONE, score=NONE, speed=NONE, scratch[6]={NONE,NONE,NONE,NONE,NONE,NONE};
-    long scratch_strings=NONE;
+    long scratch_strings=NONE,bad_node;
+    char const *syntax_reason;
     static char const scratch_names[6][17]={"__mcc_scratch_f0","__mcc_scratch_f1",
         "__mcc_scratch_f2","__mcc_scratch_f3","__mcc_scratch_f4","__mcc_scratch_f5"};
+    mcc_diagnostic_tag(runtime,runtime->report.scenario_handle);
+    mcc_diagnostic_at(runtime,"scripts");
     memcpy(&address, runtime->tag_index + (runtime->report.scenario_handle & 0xFFFFu) * 32 + 20, 4);
     scenario = mcc_runtime_pointer(runtime, address, sizeof(*scenario));
-    if (!scenario) return FALSE;
-    if (!scenario->hs_syntax_data.size) return runtime->report.parameterized_script_count == 0;
+    if (!scenario) return mcc_diagnostic_fail(runtime,"scenario header is outside loaded data");
+    if (!scenario->hs_syntax_data.size) return runtime->report.parameterized_script_count == 0 ? TRUE :
+        mcc_diagnostic_fail(runtime,"parameterized scripts have no syntax data");
     syntax = mcc_runtime_pointer(runtime, (uint32_t)(uintptr_t)scenario->hs_syntax_data.address,
         (uint32_t)scenario->hs_syntax_data.size);
     strings = mcc_runtime_pointer(runtime, (uint32_t)(uintptr_t)scenario->hs_string_constants.address,
         (uint32_t)scenario->hs_string_constants.size);
-    if (!syntax || !strings || !mcc_syntax_graph_valid(syntax, scenario->hs_syntax_data.size)) {
-        error(_error_silent, "mcc: invalid script syntax header or graph (MCC capacity: %d nodes)", MCC_SYNTAX_CAPACITY);
-        return FALSE;
+    if (!syntax || !strings) return mcc_diagnostic_fail(runtime,"script syntax or string data is outside loaded memory");
+    if (!mcc_syntax_graph_check(syntax,scenario->hs_syntax_data.size,&syntax_reason,&bad_node)) {
+        if (bad_node!=NONE) {
+            struct hs_syntax_node const *bad=(struct hs_syntax_node const *)(syntax+1)+bad_node;
+            mcc_diagnostic_at(runtime,"syntax_nodes[%ld] (source offset %ld, string offset %ld)",bad_node,(long)bad->source_offset,(long)bad->string_offset);
+        }
+        return mcc_diagnostic_fail(runtime,"%s (capacity %d nodes)",syntax_reason,MCC_SYNTAX_CAPACITY);
     }
     nodes = (struct hs_syntax_node *)(syntax + 1);
     syntax->data = nodes;
@@ -362,14 +370,15 @@ int mcc_scripts_prepare(struct mcc_runtime *runtime)
         char const *name = NULL;
         short index = NONE;
         if (!node->datum_header) continue;
+        mcc_diagnostic_at(runtime,"syntax_nodes[%ld] (source offset %ld, string offset %ld)",i,(long)node->source_offset,(long)node->string_offset);
         if (!(node->flags & 3)) {
             uint32_t child = (uint32_t)node->data & 0xFFFFu;
             if (child >= (uint32_t)syntax->count || !nodes[child].datum_header ||
                 (uint16_t)nodes[child].datum_header != (uint16_t)((uint32_t)node->data >> 16) ||
                 nodes[child].type != _hs_function_name)
-                return FALSE;
+                return mcc_diagnostic_fail(runtime,"function call references an invalid function-name node (handle %08lx)",(unsigned long)node->data);
             name = mcc_script_string(strings, scenario->hs_string_constants.size, nodes[child].string_offset);
-            if (!name) return FALSE;
+            if (!name) return mcc_diagnostic_fail(runtime,"script name is outside the string table or has no terminator");
             /* These status queries describe disabled, unimplemented skulls.
              * They are read-only constants, not writable legacy globals. */
             if (!csstrcasecmp(name,"set")) {
@@ -383,11 +392,10 @@ int mcc_scripts_prepare(struct mcc_runtime *runtime)
                      * never discard a disable request or computed value. */
                     if (value && (value->flags&7)==1 && value->type==_hs_type_boolean &&
                         value->constant_type==_hs_type_boolean && value->boolean_value && value->next_node_index==NONE) {
-                        if (!mcc_boolean_result(node,TRUE)) return FALSE;
+                        if (!mcc_boolean_result(node,TRUE)) return mcc_diagnostic_fail(runtime,"literal enable cannot be converted to requested result type %d",node->type);
                         continue;
                     }
-                    error(_error_silent,"mcc: %s supports only a literal enable (syntax node %ld)",target_name,i);
-                    return FALSE;
+                    return mcc_diagnostic_fail(runtime,"%s supports only a literal enable; computed values and disabling are unsupported",target_name);
                 }
                 if (target && (target->flags & 1) && mcc_disabled_skull(
                     mcc_script_string(strings,scenario->hs_string_constants.size,target->string_offset))) {
@@ -398,24 +406,23 @@ int mcc_scripts_prepare(struct mcc_runtime *runtime)
                     if (value && (value->flags&7)==1 && value->type==_hs_type_boolean &&
                         value->constant_type==_hs_type_boolean && !value->boolean_value &&
                         value->next_node_index==NONE) {
-                        if (!mcc_boolean_result(node,FALSE)) return FALSE;
+                        if (!mcc_boolean_result(node,FALSE)) return mcc_diagnostic_fail(runtime,"literal disable cannot be converted to requested result type %d",node->type);
                         continue;
                     }
-                    error(_error_silent,"mcc: unsupported skull assignment to %s (syntax node %ld); only a literal disable is supported",target_name,i);
-                    return FALSE;
+                    return mcc_diagnostic_fail(runtime,"unsupported skull assignment to %s; only a literal disable is supported",target_name);
                 }
             }
             index = mcc_script_resolve(name, TRUE);
             if (index != NONE) node->function_index = nodes[child].function_index = index;
         } else if ((node->flags & 5) == 5 && ((uint16_t)node->data & 0x8000)) {
             name = mcc_script_string(strings, scenario->hs_string_constants.size, node->string_offset);
-            if (!name) return FALSE;
+            if (!name) return mcc_diagnostic_fail(runtime,"script name is outside the string table or has no terminator");
             if (!csstrcasecmp(name,"object_prediction") || !csstrcasecmp(name,"breadcrumbs_navpoints_enabled_override")) {
-                if (node->type!=_hs_type_boolean) return FALSE;
+                if (node->type!=_hs_type_boolean) return mcc_diagnostic_fail(runtime,"global %s requires boolean type; received type %d",name,node->type);
                 node->flags&=~4;node->constant_type=_hs_type_boolean;node->data=TRUE;continue;
             }
             if (mcc_disabled_skull(name)) {
-                if (node->type != _hs_type_boolean) return FALSE;
+                if (node->type != _hs_type_boolean) return mcc_diagnostic_fail(runtime,"skull global %s requires boolean type; received type %d",name,node->type);
                 node->flags &= ~4;
                 node->constant_type = _hs_type_boolean;
                 node->data = FALSE;
@@ -424,8 +431,7 @@ int mcc_scripts_prepare(struct mcc_runtime *runtime)
             if (!csstrcasecmp(name,"game_speed_value")) {
                 if (speed==NONE) speed=mcc_local_global(runtime,scenario,syntax,name,_hs_type_real);
                 if (speed==NONE) {
-                    error(_error_silent,"mcc: no scenario storage for game_speed_value");
-                    return FALSE;
+                    return mcc_diagnostic_fail(runtime,"no scenario storage for global game_speed_value (global/node capacity or allocation exhausted)");
                 }
                 node->data=speed;
                 continue;
@@ -435,8 +441,7 @@ int mcc_scripts_prepare(struct mcc_runtime *runtime)
             if (!csstrcasecmp(name,"debug_score")) {
                 if (score==NONE) score=mcc_local_global(runtime,scenario,syntax,name,_hs_type_long_integer);
                 if (score==NONE) {
-                    error(_error_silent,"mcc: no scenario storage for debug_score");
-                    return FALSE;
+                    return mcc_diagnostic_fail(runtime,"no scenario storage for global debug_score (global/node capacity or allocation exhausted)");
                 }
                 node->data=score;
                 continue;
@@ -444,8 +449,7 @@ int mcc_scripts_prepare(struct mcc_runtime *runtime)
             if (!csstrcasecmp(name,"developer_mode")) {
                 if (developer==NONE) developer=mcc_local_global(runtime,scenario,syntax,"developer_mode",_hs_type_short_integer);
                 if (developer==NONE) {
-                    error(_error_silent,"mcc: no scenario storage for developer_mode");
-                    return FALSE;
+                    return mcc_diagnostic_fail(runtime,"no scenario storage for global developer_mode (global/node capacity or allocation exhausted)");
                 }
                 node->data=developer;
                 continue;
@@ -457,10 +461,10 @@ int mcc_scripts_prepare(struct mcc_runtime *runtime)
                 unsigned slot=(unsigned)(name[1]-'0');
                 if (scratch_strings==NONE) {
                     char *expanded;
-                    if (scenario->hs_string_constants.size<1024) return FALSE;
+                    if (scenario->hs_string_constants.size<1024) return mcc_diagnostic_fail(runtime,"script strings lack the required 1024-byte console source reserve");
                     expanded=mcc_runtime_allocate(runtime,
                         (uint32_t)scenario->hs_string_constants.size+sizeof(scratch_names));
-                    if (!expanded) return FALSE;
+                    if (!expanded) return mcc_diagnostic_fail(runtime,"not enough tag memory to expand scratch-global names");
                     /* The final 1 KiB belongs to console source, not map strings. */
                     scratch_strings=scenario->hs_string_constants.size-1024;
                     memcpy(expanded,strings,(unsigned long)scratch_strings);
@@ -470,7 +474,7 @@ int mcc_scripts_prepare(struct mcc_runtime *runtime)
                     scenario->hs_string_constants.size+=sizeof(scratch_names);
                 }
                 if (scratch[slot]==NONE) scratch[slot]=mcc_local_global(runtime,scenario,syntax,scratch_names[slot],_hs_type_real);
-                if (scratch[slot]==NONE) return FALSE;
+                if (scratch[slot]==NONE) return mcc_diagnostic_fail(runtime,"no scenario storage for scratch global %s",name);
                 node->data=scratch[slot];node->string_offset=scratch_strings+slot*sizeof(scratch_names[0]);
                 continue;
             }
@@ -481,7 +485,7 @@ int mcc_scripts_prepare(struct mcc_runtime *runtime)
         if (name && index == NONE) {
             if (!runtime->failure[0]) snprintf(runtime->failure,sizeof(runtime->failure),
                 "Unsupported script name: %.24s. See debug.txt.",name);
-            if (missing < 16) error(_error_silent, "mcc: unsupported script function or global '%s'", name);
+            if (missing < 16) mcc_diagnostic_fail(runtime,"unsupported script function or global '%s'",name);
             ++missing;
         }
     }
