@@ -63,6 +63,7 @@ static void game_state_revert(void){reverts++;}
 static void game_state_call_before_save_procs(void){}
 static void main_stop_time(void){}
 static void main_start_time(void){}
+static void cinematic_port_checkpoint(void){}
 static boolean game_state_write_to_file(void){return save_succeeds;}
 static void game_state_note_event(char const *note){(void)note;}
 /* The unrelated state reset by the actual new-game lifecycle entry point. */

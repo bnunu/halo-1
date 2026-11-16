@@ -52,6 +52,11 @@ void cinematic_skip_start(
 	void);
 void cinematic_skip_stop(
 	void);
+/* port: the checkpoint a skip goes back to, which no other replaces */
+void cinematic_port_checkpoint(
+	void);
+boolean cinematic_port_holds_checkpoints(
+	void);
 void cinematic_dispose_from_old_map(
 	void);
 void cinematic_start(
