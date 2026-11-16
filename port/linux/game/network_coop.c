@@ -2914,6 +2914,25 @@ static void send_nav_point(
 	event->reals[0] = vertical_offset;
 }
 
+/* host: whether a nav point is on an object that is gone or dead, which a
+player's HUD drops (hud_update_nav_point_local_player). It is kept, not
+forgotten: the list is outside the checkpoint, and a revert brings the
+object back with the script that marked it already past. */
+static boolean host_nav_point_object_dead(
+	short index)
+{
+	struct object_datum *object;
+
+	if (host_hud_state.nav_points[index].kind != _coop_nav_point_team_object &&
+		host_hud_state.nav_points[index].kind != _coop_nav_point_unit_object)
+	{
+		return FALSE;
+	}
+	object = object_try_and_get(host_hud_state.nav_points[index].marker);
+
+	return !object || TEST_FLAG(object->object.damage_flags, _object_dead_bit);
+}
+
 void network_coop_note_nav_point(
 	short kind,
 	short nav_index,
@@ -2942,9 +2961,19 @@ void network_coop_note_nav_point(
 	}
 	if (index == host_hud_state.nav_point_count)
 	{
+		/* (full: one on a dead object makes way, the dead kept but never sent) */
 		if (index == MAXIMUM_NAV_POINTS)
-			return;
-		host_hud_state.nav_point_count++;
+		{
+			for (index = 0; index < host_hud_state.nav_point_count && !host_nav_point_object_dead(index); index++)
+			{
+			}
+			if (index == host_hud_state.nav_point_count)
+				return;
+		}
+		else
+		{
+			host_hud_state.nav_point_count++;
+		}
 	}
 	host_hud_state.nav_points[index].kind = kind;
 	host_hud_state.nav_points[index].nav_index = nav_index;
@@ -2974,6 +3003,11 @@ static void host_send_hud_state(
 	}
 	for (index = 0; index < host_hud_state.nav_point_count; index++)
 	{
+		/* (not one on a dead object: a script rarely takes one off a dead
+		enemy, and resent, it flashed up on every client until the client
+		dropped it again) */
+		if (host_nav_point_object_dead(index))
+			continue;
 		send_nav_point(host_hud_state.nav_points[index].kind, host_hud_state.nav_points[index].nav_index,
 			host_hud_state.nav_points[index].target, host_hud_state.nav_points[index].marker,
 			host_hud_state.nav_points[index].vertical_offset);
