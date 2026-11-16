@@ -2974,6 +2974,21 @@ static void host_send_hud_state(
 	}
 	for (index = 0; index < host_hud_state.nav_point_count; index++)
 	{
+		/* (a nav point on an object that is gone or dead is forgotten, as a
+		player's HUD forgets it, hud_update_nav_point_local_player: a script
+		rarely takes one off a dead enemy, and resent, it flashed up on every
+		client each time until the client dropped it again) */
+		if (host_hud_state.nav_points[index].kind == _coop_nav_point_team_object ||
+			host_hud_state.nav_points[index].kind == _coop_nav_point_unit_object)
+		{
+			struct object_datum *object = object_try_and_get(host_hud_state.nav_points[index].marker);
+
+			if (!object || TEST_FLAG(object->object.damage_flags, _object_dead_bit))
+			{
+				host_hud_state.nav_points[index--] = host_hud_state.nav_points[--host_hud_state.nav_point_count];
+				continue;
+			}
+		}
 		send_nav_point(host_hud_state.nav_points[index].kind, host_hud_state.nav_points[index].nav_index,
 			host_hud_state.nav_points[index].target, host_hud_state.nav_points[index].marker,
 			host_hud_state.nav_points[index].vertical_offset);
