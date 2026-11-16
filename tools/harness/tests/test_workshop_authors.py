@@ -12,14 +12,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from harness import CHECK_FAILED, build, mutated, read, run  # noqa: E402
 
 CASES = [
-    "creator", "creator-other-item", "creator-refused", "name-cdata", "name-escaped", "name-controls", "name-long",
+    "creator", "creator-other-item", "creator-refused", "name-cdata", "name-escaped", "name-controls", "name-invalid",
+    "name-long",
     "name-missing", "ask", "retry", "ids-refused", "full-while-asking",
 ]
 
 JSMN = '#include "../../third_party/jsmn/jsmn.h"'
 
-# one thread's pthread.h: no locks needed, and no thread started (the case asks in its stead)
-PTHREAD = """typedef int pthread_mutex_t, pthread_cond_t, pthread_t;
+# one thread's pthread.h: no locks needed, and no thread started (the case asks in its stead). Its types have names
+# of their own: the C library's headers (glibc's) may have declared the real ones already
+PTHREAD = """typedef int test_pthread_mutex_t, test_pthread_cond_t, test_pthread_t;
+#define pthread_mutex_t test_pthread_mutex_t
+#define pthread_cond_t test_pthread_cond_t
+#define pthread_t test_pthread_t
 #define PTHREAD_MUTEX_INITIALIZER 0
 #define PTHREAD_COND_INITIALIZER 0
 #define pthread_mutex_lock(lock) ((void)(lock))
@@ -37,6 +42,10 @@ NEGATIVE_CONTROLS = {
                           "creator-refused"),
     "controls-kept": (("|| first < 0x20 || first == 0x7F)", ")"), "name-controls"),
     "broken-characters-kept": (("if (!size || taken < size ||", "if ("), "name-controls"),
+    "overlong-kept": (("value < smallest[size] || ", ""), "name-invalid"),
+    "surrogates-kept": (("(value >= 0xD800 && value <= 0xDFFF) || ", ""), "name-invalid"),
+    "past-unicode-kept": ((" || value > 0x10FFFF))", "))"), "name-invalid"),
+    "c1-controls-kept": (("{ 0, 0, 0xA0, 0x800, 0x10000 }", "{ 0, 0, 0x80, 0x800, 0x10000 }"), "name-invalid"),
     "entities-unread": (("plain && first == '&' &&", "0 &&"), "name-escaped"),
     "ends-untrimmed": (("\twhile (used && name[used - 1] == ' ')\n\t\tused--;\n", ""), "name-cdata"),
     "retried-at-once": (("time(NULL) - authors.items[index].failed_at >= RETRY_SECONDS", "1"), "retry"),

@@ -1,5 +1,5 @@
 /* A Workshop map's author in the map lists' panel (mcc_menu_text.c's
-mcc_menu_text_draw and author_text): "Author" and the name, two lines under
+mcc_menu_text_draw and author_text): "Publisher" and the name, two lines under
 the map's description in mp_map_right_data (146 by 136 pixels: 6 lines of
 small_ui, 20 pixels apart, 17 high), the description cut short with "..."
 above them and a long name cut to one line. Drawn in a font of fixed widths:
@@ -110,10 +110,10 @@ static wchar_t const *draw(long tag,short index,wchar_t const *description,char 
  return drawn;
 }
 
-/* the drawn text's last lines: "Author" and the name, the line before the description's */
+/* the drawn text's last lines: "Publisher" and the name, the line before the description's */
 static wchar_t const *author_lines(wchar_t const *text)
 {
- wchar_t const *at=wcsstr(text,L"Author\r");
+ wchar_t const *at=wcsstr(text,L"Publisher\r");
  CHECK(at,"no author drawn: \"%ls\"",text);
  CHECK(at==text||at[-1]=='\r',"the author is not on a line of its own: \"%ls\"",text);
  return at;
@@ -131,7 +131,7 @@ int main(int argc,char **argv)
  if(!strcmp(name,"short"))
  {
   text=draw(DATA_TAG,MAP,L"A small map.","altis94");
-  CHECK(!wcscmp(text,L"A small map.\rAuthor\raltis94"),"drew \"%ls\"",text);
+  CHECK(!wcscmp(text,L"A small map.\rPublisher\raltis94"),"drew \"%ls\"",text);
   CHECK(!strcmp(asked_item,"3629556661"),"asked Steam about %s",asked_item);
  }
  else if(!strcmp(name,"long"))
@@ -140,7 +140,7 @@ int main(int argc,char **argv)
   wchar_t const *author;
   text=draw(DATA_TAG,MAP,LONG_DESCRIPTION,"altis94");
   author=author_lines(text);
-  CHECK(!wcscmp(author,L"Author\raltis94"),"the author's lines are \"%ls\"",author);
+  CHECK(!wcscmp(author,L"Publisher\raltis94"),"the author's lines are \"%ls\"",author);
   CHECK(lines_of(text)==6,"%d lines drawn: \"%ls\"",lines_of(text),text);
   CHECK(author-text>=4&&!wcsncmp(author-4,L"...\r",4),"the description is not cut with \"...\": \"%ls\"",text);
   {
@@ -154,7 +154,7 @@ int main(int argc,char **argv)
  {
   /* before Steam has said (or for a map that is no Workshop item): the description as before, 6 lines */
   text=draw(DATA_TAG,MAP,LONG_DESCRIPTION,NULL);
-  CHECK(!wcsstr(text,L"Author"),"an author drawn: \"%ls\"",text);
+  CHECK(!wcsstr(text,L"Publisher"),"an author drawn: \"%ls\"",text);
   CHECK(lines_of(text)==6,"%d lines drawn: \"%ls\"",lines_of(text),text);
  }
  else if(!strcmp(name,"other-field"))
@@ -168,22 +168,22 @@ int main(int argc,char **argv)
   wchar_t const *author;
   text=draw(DATA_TAG,MAP,L"A small map.","A Very Long Steam Name Indeed");
   author=author_lines(text);
-  CHECK(!wcscmp(author,L"Author\rA Very Long Steam..."),"the author's lines are \"%ls\"",author);
+  CHECK(!wcscmp(author,L"Publisher\rA Very Long Steam..."),"the author's lines are \"%ls\"",author);
   /* wide letters sooner */
   text=draw(DATA_TAG,MAP,L"A small map.","WWWWWWWWWWWWWWW");
   author=author_lines(text);
-  CHECK(!wcscmp(author,L"Author\rWWWWWWWWWW..."),"the author's lines are \"%ls\"",author);
+  CHECK(!wcscmp(author,L"Publisher\rWWWWWWWWWW..."),"the author's lines are \"%ls\"",author);
  }
  else if(!strcmp(name,"no-description"))
  {
   text=draw(DATA_TAG,MAP,L"","altis94");
-  CHECK(!wcscmp(text,L"Author\raltis94"),"drew \"%ls\"",text);
+  CHECK(!wcscmp(text,L"Publisher\raltis94"),"drew \"%ls\"",text);
  }
  else if(!strcmp(name,"characters"))
  {
   /* UTF-8 to the menus' UTF-16: a character beyond it a ? */
   text=draw(DATA_TAG,MAP,L"A small map.","J\xC3\xBCrgen \xF0\x9F\x98\x80");
-  CHECK(!wcscmp(author_lines(text),L"Author\rJ\x00FCrgen ?"),"drew \"%ls\"",text);
+  CHECK(!wcscmp(author_lines(text),L"Publisher\rJ\x00FCrgen ?"),"drew \"%ls\"",text);
  }
  else
  {

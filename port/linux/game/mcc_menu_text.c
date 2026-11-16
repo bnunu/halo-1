@@ -80,7 +80,8 @@ static int text_height(wchar_t const *text)
 enum { AUTHOR_TEXT_SIZE=WORKSHOP_AUTHORS_NAME_SIZE+16 };
 
 /* A Workshop map's author under its description in the map lists' panel
- * (workshop_authors.c), once Steam has said: "Author", then the name on one
+ * (workshop_authors.c), once Steam has said: "Publisher" (the account that
+ * published the item), then the name on one
  * line, cut short with "..." to fit the width in the current font. 0 for
  * none. UTF-8 to the menus' UTF-16, a character it cannot hold a ?. */
 static int author_text(long tag, short index, int width, wchar_t text[AUTHOR_TEXT_SIZE])
@@ -92,7 +93,7 @@ static int author_text(long tag, short index, int width, wchar_t text[AUTHOR_TEX
     name=tag_get_name(tag); leaf=strrchr(name,'\\'); leaf=leaf ? leaf+1 : name;
     if (strcmp(leaf,"mp_map_right_data")) return 0;
     if (!workshop_authors_get(mcc_maps_item_id((short)(index-MCC_MAPS_FIRST_DISPLAY_INDEX)),author,sizeof(author))) return 0;
-    for (used=0; "Author\r"[used]; used++) text[used]="Author\r"[used];
+    for (used=0; "Publisher\r"[used]; used++) text[used]="Publisher\r"[used];
     start=used;
     for (at=author; *at && used<AUTHOR_TEXT_SIZE-4; ) {
         unsigned char first=(unsigned char)*at++;

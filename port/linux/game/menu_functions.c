@@ -1291,7 +1291,7 @@ static void mcc_folder_help_text(struct mcc_map_browser const *browser, wchar_t 
 		return;
 	}
 	mods_wide_text(author, wide, NUMBEROF(wide));
-	text_append(help, size, L"\r\nAuthor\r\n");
+	text_append(help, size, L"\r\nPublisher\r\n");
 	text_append(help, size, wide);
 }
 
@@ -6826,13 +6826,13 @@ static void steam_update(struct widget_instance *list)
 			mods_wide_text(wrapped, wide, NUMBEROF(wide));
 			text_set_length(named(details, "steam_details_name", 0), wide, NUMBEROF(wide));
 			wrapped[0] = 0;
-			/* (an item's author under its description, which is cut short to leave the author's two lines) */
+			/* (an item's author, its publisher, under its description, which is cut short to leave its two lines) */
 			if (author[0])
 			{
 				short lines = mods_wrap(text, wrapped, sizeof(wrapped), _mod_details_text, STEAM_DETAILS_LINES - 2, 0);
-				char heading[sizeof(author) + 8];
+				char heading[sizeof(author) + 16];
 
-				snprintf(heading, sizeof(heading), "Author\n%s", author);
+				snprintf(heading, sizeof(heading), "Publisher\n%s", author);
 				mods_wrap(heading, wrapped, sizeof(wrapped), _mod_details_text, lines + 2, lines);
 			}
 			else
@@ -7185,7 +7185,7 @@ static boolean lobby_author_line(char const map_name[128], wchar_t *line, short 
 	{
 		wide[kept] = 0;
 		line[0] = 0;
-		text_append(line, size, L"Author: ");
+		text_append(line, size, L"Publisher: ");
 		text_append(line, size, wide);
 		if (kept < length)
 			text_append(line, size, L"...");

@@ -22,10 +22,10 @@ Steam's own client downloads Workshop items and the game finds them in place
   - Downloads the three shared resource maps from Halo: CE Anniversary's depot
     (976733) into `mcc_maps/_shared/singleplayer` and `mcc_maps/_shared/multiplayer`.
   - Lists the Workshop packages in `mcc_maps`, and updates or removes them.
-    Each one's details end with its author.
+    Each one's details end with its publisher.
 - **BROWSE WORKSHOP:** the Halo 1 Workshop, 20 items at a time. You can search,
   sort and filter by type, and each item shows its preview picture, decoded
-  by Android (`HaloActivity.steamPreview`), and its author under its
+  by Android (`HaloActivity.steamPreview`), and its publisher under its
   description.
   - Installing an item builds it in `mcc_staging/steam_<id>`, then moves it into
     `mcc_maps/<id>/` whole, replacing an older copy.
@@ -37,9 +37,10 @@ Steam's own client downloads Workshop items and the game finds them in place
   be reached, the sign-in is forgotten on the device only. The screen then says
   that Steam's own settings can deauthorize it.
 
-## Authors
+## Publishers
 
-An item's author is the Steam name of the account that published it. Nothing
+An item's publisher is the Steam name of the account that published it, who
+may not be the original maker of what it holds ("Publisher" on the screens). Nothing
 on the card names it, so the app's host asks Steam the first time an item is
 shown in a run (`port/linux/src/workshop_authors.c`): the item's creator from
 the public Web API (`ISteamRemoteStorage/GetPublishedFileDetails`, which needs

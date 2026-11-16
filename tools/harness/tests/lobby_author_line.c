@@ -1,5 +1,5 @@
 /* The lobby's author line (menu_functions.c's lobby_author_line and
-lobby_line_fits): "Author: " and a Workshop map's author, one line of the
+lobby_line_fits): "Publisher: " and a Workshop map's author, one line of the
 lobby's game data box, which holds 7 and a dedicated server's game already
 fills. A name too wide for the box is cut short with "...", measured in the
 box's font once it has been drawn, counted before. No line for a map that is
@@ -101,7 +101,7 @@ int main(int argc,char **argv)
  if(!strcmp(name,"line"))
  {
   lobby_data_box.font=7;lobby_data_box.width=146;
-  expect("mcc_maps\\3629556661\\c10_flood","altis94",L"Author: altis94");
+  expect("mcc_maps\\3629556661\\c10_flood","altis94",L"Publisher: altis94");
   CHECK(!strcmp(asked_item,"3629556661"),"asked Steam about %s",asked_item);
  }
  else if(!strcmp(name,"host-item"))
@@ -109,10 +109,10 @@ int main(int argc,char **argv)
   /* the host's game names its item: that one, not this machine's copy's */
   lobby_data_box.font=7;lobby_data_box.width=146;
   wire_has_item=1;
-  expect("mcc_maps\\3629556661\\c10_flood","altis94",L"Author: altis94");
+  expect("mcc_maps\\3629556661\\c10_flood","altis94",L"Publisher: altis94");
   CHECK(!strcmp(asked_item,"2899894797"),"asked Steam about %s",asked_item);
   /* a joiner without the map has its item from the host */
-  expect("mcc_maps\\unknown\\map","altis94",L"Author: altis94");
+  expect("mcc_maps\\unknown\\map","altis94",L"Publisher: altis94");
  }
  else if(!strcmp(name,"none"))
  {
@@ -124,20 +124,20 @@ int main(int argc,char **argv)
  }
  else if(!strcmp(name,"cut"))
  {
-  /* 146 - 8 = 138 pixels, 19 characters: "Author: " (8), 8 of the name and "..." */
+  /* 146 - 8 = 138 pixels, 19 characters: "Publisher: " (11), 5 of the name and "..." */
   lobby_data_box.font=7;lobby_data_box.width=146;
-  expect("mcc_maps\\3629556661\\c10_flood","A Very Long Steam Name",L"Author: A Very L...");
+  expect("mcc_maps\\3629556661\\c10_flood","A Very Long Steam Name",L"Publisher: A Ver...");
   /* wide letters are cut sooner */
-  expect("mcc_maps\\3629556661\\c10_flood","WWWWWWWWWW",L"Author: WWWWW...");
+  expect("mcc_maps\\3629556661\\c10_flood","WWWWWWWWWW",L"Publisher: WWW...");
   /* the most that fits (133 pixels): whole */
-  expect("mcc_maps\\3629556661\\c10_flood","abcdefghijk",L"Author: abcdefghijk");
+  expect("mcc_maps\\3629556661\\c10_flood","abcdefgh",L"Publisher: abcdefgh");
  }
  else if(!strcmp(name,"counted"))
  {
   /* before the box is drawn: counted, 18 characters at most */
   lobby_data_box.font=NONE;
-  expect("mcc_maps\\3629556661\\c10_flood","altis94",L"Author: altis94");
-  expect("mcc_maps\\3629556661\\c10_flood","A Very Long Steam Name",L"Author: A Very ...");
+  expect("mcc_maps\\3629556661\\c10_flood","altis94",L"Publisher: altis94");
+  expect("mcc_maps\\3629556661\\c10_flood","A Very Long Steam Name",L"Publisher: A Ve...");
  }
  else
  {

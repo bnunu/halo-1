@@ -72,6 +72,9 @@ int workshop_authors_read_name(const char *text, int length, char name[WORKSHOP_
 {
 	static const char *const entities[][2] = { { "&amp;", "&" }, { "&lt;", "<" }, { "&gt;", ">" },
 		{ "&quot;", "\"" }, { "&apos;", "'" } };
+	/* the smallest value a character of this many bytes holds: one smaller has a shorter form (overlong). Two bytes
+	from U+00A0: U+0080 to U+009F are the C1 control characters */
+	static const unsigned long smallest[] = { 0, 0, 0xA0, 0x800, 0x10000 };
 	const char *at, *end;
 	int used = 0, plain;
 
@@ -107,9 +110,13 @@ int workshop_authors_read_name(const char *text, int length, char name[WORKSHOP_
 		}
 		if (size > 1)
 		{
+			unsigned long value = first & (0x7F >> size);
+
 			for (taken = 1; taken < size && at + taken < end && ((unsigned char)at[taken] & 0xC0) == 0x80; taken++)
-			{
-			}
+				value = (value << 6) | ((unsigned char)at[taken] & 0x3F);
+			/* (a whole Unicode scalar value in its shortest form: not overlong, a surrogate or past U+10FFFF) */
+			if (taken == size && (value < smallest[size] || (value >= 0xD800 && value <= 0xDFFF) || value > 0x10FFFF))
+				size = 0;
 		}
 		at += taken;
 		/* (a broken character, and control characters, which would break the texts' lines, are left out) */

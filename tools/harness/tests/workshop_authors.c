@@ -166,6 +166,20 @@ int main(int argc, char **argv)
 		CHECK(!strcmp(name, "Abc\xC3\x85\xE2\x98\x83" "de"), "cleaned name '%s'", name);
 		CHECK(!name_of("<steamID><![CDATA[\r\n\t]]></steamID>", name) && !name[0], "only controls: '%s'", name);
 	}
+	else if (!strcmp(test, "name-invalid"))
+	{
+		/* (only whole Unicode scalar values in their shortest form: overlong forms (a line break as E0 80 8A or
+		F0 80 80 8A, "/" as C0 AF), surrogates (ED A0 80, ED BF BF), values past U+10FFFF (F4 90 80 80, F5 80 80 80)
+		and the C1 control characters (C2 85, a line break, and C2 9F) left out; the largest of each length kept:
+		U+07FF, U+D7FF, U+FFFF, U+10FFFF, and U+00A0, the smallest of two bytes) */
+		CHECK(name_of("<steamID><![CDATA[a\xE0\x80\x8A" "b\xF0\x80\x80\x8A" "c\xC0\xAF" "d\xED\xA0\x80" "e\xED\xBF\xBF"
+			"f\xF4\x90\x80\x80" "g\xF5\x80\x80\x80" "h\xC2\x85" "i\xC2\x9F" "j\xDF\xBF\xED\x9F\xBF\xEF\xBF\xBF"
+			"\xF4\x8F\xBF\xBF\xC2\xA0" "k]]></steamID>", name), "no name");
+		CHECK(!strcmp(name, "abcdefghij\xDF\xBF\xED\x9F\xBF\xEF\xBF\xBF\xF4\x8F\xBF\xBF\xC2\xA0" "k"), "cleaned name '%s'",
+			name);
+		CHECK(!name_of("<steamID><![CDATA[\xE0\x80\x8A\xED\xA0\x80]]></steamID>", name) && !name[0],
+			"only invalid characters: '%s'", name);
+	}
 	else if (!strcmp(test, "name-long"))
 	{
 		char text[400];

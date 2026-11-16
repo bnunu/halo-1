@@ -1,5 +1,5 @@
 /* The help under a folder of the MCC map lists (menu_functions.c's
-mcc_folder_help_text): a Workshop item's folder's ends with "Author" and its
+mcc_folder_help_text): a Workshop item's folder's ends with "Publisher" and its
 author's name, once Steam has said; a collection's folder holds the items of
 many makers and has none, nor has a map's row. */
 #include <stdarg.h>
@@ -72,7 +72,7 @@ int main(int argc,char **argv)
  top();
  if(!strcmp(name,"item"))
  {
-  expect(1,"altis94",L"Open folder to\r\nchoose a map.\r\nAuthor\r\naltis94");
+  expect(1,"altis94",L"Open folder to\r\nchoose a map.\r\nPublisher\r\naltis94");
   CHECK(!strcmp(asked_item,"3629556661"),"asked Steam about %s",asked_item);
  }
  else if(!strcmp(name,"not-yet"))
@@ -102,7 +102,7 @@ int main(int argc,char **argv)
   browser.chosen=1;
   steam_author=longest;
   mcc_folder_help_text(&browser,text,NUMBEROF(text));
-  CHECK(wcslen(text)==wcslen(L"Open folder to\r\nchoose a map.\r\nAuthor\r\n")+sizeof(longest)-1,
+  CHECK(wcslen(text)==wcslen(L"Open folder to\r\nchoose a map.\r\nPublisher\r\n")+sizeof(longest)-1,
    "a name of %d characters made %d: cut short",(int)sizeof(longest)-1,(int)wcslen(text));
  }
  else
