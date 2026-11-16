@@ -1,7 +1,7 @@
 /*
 OVERSHIELD_EFFECT.C
 
-The overshield, as this machine draws it (Video Setup > Graphics >
+The overshield, as this machine draws it (Video Setup > Extra Effects >
 Overshield, display.overshield_effect; off, the game's own):
 
 - As it charges, the shield's flare rises up the body from the feet to the
@@ -10,10 +10,10 @@ Overshield, display.overshield_effect; off, the game's own):
   a full shield, or 3 seconds when the shield was down (the charge's from
   nothing); from any other shield, 2. Meanwhile the shield's own flares
   (its hits, its recharge) are not drawn over it.
-- The flare's energy moves at 30% of its speed, in the overshield's own
-  color (the powerup's), whatever shield color its player chose.
-- On the first-person arms (with display.viewmodel_shield) it comes up as
-  the rise reaches them, and stays.
+- The flare's energy moves at 30% of its speed. Above 200% shield it is
+  green; the remaining layer through 200% is reddish-pink.
+- On the first-person arms (with display.viewmodel_shield,
+  viewmodel_shield.c) it comes up as the rise passes them, and stays.
 - A hit on it plays what a hit on an Elite's shield plays (the hitting
   projectile's own effect for an Elite's energy shield: its sound, sparks
   and light), when the map has it.
@@ -31,6 +31,7 @@ from below its lowest node to above its highest.
 
 #include "cseries.h"
 #include "real_math.h"
+#include "overshield_effect.h"
 #include "objects/objects.h"
 #include "objects/object_definitions.h"
 #include "models/model_definitions.h"
@@ -46,13 +47,11 @@ from below its lowest node to above its highest.
 #include "sound/sound_definitions.h"
 #include "objects/light_definitions.h"
 #include "network_shield_effects.h"
-
-/* port/linux/game/view_fov.c */
-boolean viewmodel_shield_is_visible(void);
+#include <string.h>
 
 enum
 {
-	_shader_type_transparent_plasma_glow = 10, /* (shader_get_and_verify_type's plasma, as shield_glow.c has it) */
+	_shader_type_transparent_plasma_glow = 10, /* shader_get_and_verify_type's plasma */
 	OVERSHIELD_EFFECT_MAXIMUM = 16,
 	OVERSHIELD_EFFECT_MODELS = 8,
 };
@@ -67,15 +66,18 @@ from a down one (the charge's own times: 2 and 3 of shield a second) */
 #define OVERSHIELD_EFFECT_ENERGY_SPEED 0.3f
 /* the soft edge, as a share of the body's height */
 #define OVERSHIELD_EFFECT_EDGE 0.12f
-/* where on the rise the arms come up, and over how much of it */
+/* where on the rise the arms come up (the chest and shoulders: the rise
+counts from the edge below the feet to the edge over the head), and over
+how much of it */
 #define OVERSHIELD_EFFECT_ARMS_START 0.55f
 #define OVERSHIELD_EFFECT_ARMS_LENGTH 0.3f
 /* effects.c's _effect_definition_must_be_deterministic_bit, of an effect
 definition's flags (its enum is effects.c's own) */
 #define EFFECT_MUST_BE_DETERMINISTIC_BIT 1
 
-/* the overshield's color: the powerup's */
+/* Remaining overshield layers: inner reddish-pink, outer green. */
 static real_rgb_color const overshield_effect_rgb = { 0.992f, 0.306f, 0.455f }; /* (253, 78, 116) */
+static real_rgb_color const overshield_effect_outer_rgb = { 0.306f, 0.992f, 0.455f }; /* (78, 253, 116) */
 
 /* the plasma shader's fields after its header (rasterizer_xbox_plasma_energy.c's) */
 struct overshield_effect_plasma
@@ -90,10 +92,13 @@ struct overshield_effect
 	real start; /* the game's seconds (render_interpolation_game_time_sec) */
 	real rise;
 	real last_seen;
+	real shield_vitality; /* current layer, shared by body and arms */
 	/* the values the unit's modifier shader is drawn with, its intensity's
-	full: one copy for the body, one for the arms */
+	full */
 	real body_values[4];
-	real arms_values[4];
+	/* the first-person arms' copy, which viewmodel_shield.c keeps (NULL:
+	none) */
+	real const *arms_values;
 	/* this frame's: how far up (0..1, eased), and the model's heights */
 	real progress;
 	real bottom;
@@ -118,24 +123,43 @@ static short overshield_effect_next_model = 0;
 int config_boolean(const char *name);
 unsigned long config_changes(void);
 
+/* Model tags and queued draw identities never cross a map or light-array reset. */
+void overshield_effect_reset(void)
+{
+	short i;
+	memset(overshield_effects, 0, sizeof(overshield_effects));
+	for (i = 0; i < OVERSHIELD_EFFECT_MAXIMUM; i++)
+		overshield_effects[i].unit_index = NONE;
+	memset(overshield_effect_models, 0, sizeof(overshield_effect_models));
+	for (i = 0; i < OVERSHIELD_EFFECT_MODELS; i++)
+		overshield_effect_models[i].model_index = NONE;
+	overshield_effect_next_model = 0;
+	overshield_effects_initialized = TRUE;
+}
+
+static real_rgb_color const *overshield_effect_layer_color(struct overshield_effect const *effect)
+{
+	return effect->shield_vitality > 2.f ? &overshield_effect_outer_rgb : &overshield_effect_rgb;
+}
+
 /* display.overshield_effect; in a network game, the host's
 (network_shield_effects.c) */
-static boolean overshield_effect_enabled(
-	void)
+static boolean overshield_effect_enabled(void)
 {
 	static unsigned long changes = (unsigned long)-1;
-	static boolean enabled = FALSE;
+	static boolean local_enabled = FALSE;
 	short effects = network_shield_effects();
-
-	if (effects != NONE)
-	{
-		changes = (unsigned long)-1;
-		return effects >= _shield_effects_overshield;
-	}
+	boolean enabled;
 	if (changes != config_changes())
 	{
 		changes = config_changes();
-		enabled = config_boolean("display.overshield_effect") != 0;
+		local_enabled = config_boolean("display.overshield_effect") != 0;
+	}
+	enabled = effects != NONE ? effects >= _shield_effects_overshield : local_enabled;
+	if (!enabled && overshield_effects_initialized)
+	{
+		overshield_effect_reset();
+		overshield_effects_initialized = FALSE;
 	}
 	return enabled;
 }
@@ -228,28 +252,24 @@ static struct overshield_effect *overshield_effect_get(
 	real now;
 	short index;
 
+	if (!overshield_effect_enabled())
+		return NULL;
 	if (!overshield_effects_initialized)
-	{
-		for (index = 0; index < OVERSHIELD_EFFECT_MAXIMUM; index++)
-			overshield_effects[index].unit_index = NONE;
-		for (index = 0; index < OVERSHIELD_EFFECT_MODELS; index++)
-			overshield_effect_models[index].model_index = NONE;
-		overshield_effects_initialized = TRUE;
-	}
+		overshield_effect_reset();
 	now = global_frame_parameters.game_time_sec;
 	for (index = 0; index < OVERSHIELD_EFFECT_MAXIMUM; index++)
 	{
 		struct overshield_effect *each = &overshield_effects[index];
 
 		/* (one not looked at for a while: its unit gone, or out of sight) */
-		if (each->unit_index != NONE && (now - each->last_seen > 1.f || now < each->last_seen - 1.f))
+		if (each->unit_index != NONE && (now - each->last_seen > 1.f || now < each->last_seen))
 			each->unit_index = NONE;
 		if (each->unit_index == unit_index)
 			effect = each;
 		else if (each->unit_index == NONE && !free_effect)
 			free_effect = each;
 	}
-	if (!unit || !overshield_effect_enabled())
+	if (!unit)
 		return NULL;
 	charging = TEST_FLAG(unit->object.damage_flags, _object_shield_over_charging_bit);
 	if (TEST_FLAG(unit->object.damage_flags, _object_dead_bit) ||
@@ -267,6 +287,7 @@ static struct overshield_effect *overshield_effect_get(
 			return NULL;
 		effect = free_effect;
 		effect->unit_index = unit_index;
+		effect->arms_values = NULL;
 		effect->rise = charging && shield <= OVERSHIELD_EFFECT_DOWN ?
 			OVERSHIELD_EFFECT_RISE_FROM_DOWN : OVERSHIELD_EFFECT_RISE;
 		/* (seen part of the way through its charge: as far on; seen charged,
@@ -278,6 +299,7 @@ static struct overshield_effect *overshield_effect_get(
 			effect->start = now - MIN(shield - 1.f, effect->rise);
 	}
 	effect->last_seen = now;
+	effect->shield_vitality = unit->object.shield_vitality;
 	{
 		real t = PIN((now - effect->start) / effect->rise, 0.f, 1.f);
 
@@ -299,12 +321,11 @@ boolean overshield_effect_active(
 }
 
 /* the values a unit's modifier shader is drawn with, given its own: with an
-overshield, a copy whose intensity is full (on the body, or the arms) that
+overshield, a copy whose intensity is full on the body that
 overshield_effect_draw knows again; otherwise its own */
 real const *overshield_effect_values(
 	long unit_index,
-	real const *values,
-	boolean arms)
+	real const *values)
 {
 	struct overshield_effect *effect;
 	short source;
@@ -316,70 +337,92 @@ real const *overshield_effect_values(
 	source = effect ? overshield_effect_intensity_source(unit_index) : NONE;
 	if (!effect || source == NONE)
 		return values;
-	copy = arms ? effect->arms_values : effect->body_values;
+	copy = effect->body_values;
 	csmemcpy(copy, values, sizeof(effect->body_values));
-	if (arms)
+	copy[source] = 1.f;
+	if (!overshield_effect_model_heights(
+		object_definition_get(object_get(unit_index)->definition_index)->object.model.index,
+		&effect->bottom, &effect->top))
 	{
-		copy[source] = PIN((effect->progress - OVERSHIELD_EFFECT_ARMS_START) / OVERSHIELD_EFFECT_ARMS_LENGTH, 0.f, 1.f);
-	}
-	else
-	{
-		copy[source] = 1.f;
-		if (!overshield_effect_model_heights(
-			object_definition_get(object_get(unit_index)->definition_index)->object.model.index,
-			&effect->bottom, &effect->top))
-		{
-			effect->bottom = effect->top = 0.f;
-		}
+		effect->bottom = effect->top = 0.f;
 	}
 	return copy;
 }
 
-/* a plasma shader drawn with values from overshield_effect_values: the
-speed its energy moves at, and the height it fades above on its model (the
-fade's inverse softness and height: 0 and 0 for none); FALSE for values not
-from it */
+/* the values a unit's first-person arms' modifier shader is drawn with,
+given its own, written to arms (viewmodel_shield.c's copy): with an
+overshield, its intensity coming up as the rise passes the arms, and TRUE
+(overshield_effect_draw then knows arms again); otherwise FALSE, and arms
+not written */
+boolean overshield_effect_arms_values(
+	long unit_index,
+	real const *values,
+	real *arms)
+{
+	struct overshield_effect *effect;
+	short source;
+	short index;
+
+	/* (another unit's overshield no longer draws on these arms) */
+	for (index = 0; index < OVERSHIELD_EFFECT_MAXIMUM; index++)
+	{
+		if (overshield_effects[index].arms_values == arms)
+			overshield_effects[index].arms_values = NULL;
+	}
+	if (!values || !overshield_effect_enabled())
+		return FALSE;
+	effect = overshield_effect_get(unit_index);
+	source = effect ? overshield_effect_intensity_source(unit_index) : NONE;
+	if (!effect || source == NONE)
+		return FALSE;
+	csmemcpy(arms, values, sizeof(effect->body_values));
+	arms[source] = PIN((effect->progress - OVERSHIELD_EFFECT_ARMS_START) / OVERSHIELD_EFFECT_ARMS_LENGTH, 0.f, 1.f);
+	effect->arms_values = arms;
+	return TRUE;
+}
+
+/* Queued body and arms draws share the same identity and activation rules. */
+static struct overshield_effect const *overshield_effect_find_values(real const *values)
+{
+	short index;
+	if (!values || !overshield_effect_enabled())
+		return NULL;
+	for (index = 0; index < OVERSHIELD_EFFECT_MAXIMUM; index++)
+	{
+		struct overshield_effect const *effect = &overshield_effects[index];
+		if (effect->unit_index != NONE && (values == effect->body_values || values == effect->arms_values))
+			return effect;
+	}
+	return NULL;
+}
+
+/* a plasma shader drawn with values from overshield_effect_values (or
+overshield_effect_arms_values, with no fade): the speed its energy moves
+at, and the height it fades above on its model (the fade's inverse softness
+and height: 0 and 0 for none); FALSE for values not from it */
 boolean overshield_effect_draw(
 	real const *values,
 	real *energy_speed,
 	real *inverse_softness,
 	real *height)
 {
-	short index;
-
-	if (!values)
+	struct overshield_effect const *effect = overshield_effect_find_values(values);
+	if (!effect)
 		return FALSE;
-	for (index = 0; index < OVERSHIELD_EFFECT_MAXIMUM; index++)
+	*energy_speed = OVERSHIELD_EFFECT_ENERGY_SPEED;
+	*inverse_softness = 0.f;
+	*height = 0.f;
+	/* (the arms come up whole: they are not on the body's heights) */
+	if (values == effect->body_values && effect->top > effect->bottom && effect->progress < 1.f)
 	{
-		struct overshield_effect const *effect = &overshield_effects[index];
+		real edge = OVERSHIELD_EFFECT_EDGE * (effect->top - effect->bottom);
 
-		if (effect->unit_index == NONE || (values != effect->body_values && values != effect->arms_values))
-			continue;
-		*energy_speed = OVERSHIELD_EFFECT_ENERGY_SPEED;
-		*inverse_softness = 0.f;
-		*height = 0.f;
-		if (values == effect->body_values && effect->top > effect->bottom && effect->progress < 1.f)
-		{
-			real edge = OVERSHIELD_EFFECT_EDGE * (effect->top - effect->bottom);
-
-			/* (from all of the edge below the feet to all of it above the
-			head) */
-			*inverse_softness = 1.f / edge;
-			*height = effect->bottom + (effect->top - effect->bottom + edge) * effect->progress;
-		}
-		return TRUE;
+		/* (from all of the edge below the feet to all of it above the
+		head) */
+		*inverse_softness = 1.f / edge;
+		*height = effect->bottom + (effect->top - effect->bottom + edge) * effect->progress;
 	}
-	return FALSE;
-}
-
-/* the unit's overshield's flare, for its glow (shield_glow.c): 0..1, or
-NONE (-1) for no overshield */
-real overshield_effect_flare(
-	long unit_index)
-{
-	struct overshield_effect *effect = overshield_effect_get(unit_index);
-
-	return effect ? effect->progress : -1.f;
+	return TRUE;
 }
 
 /* whether an effect a hit on an overshield may play in place of its own:
@@ -422,22 +465,42 @@ boolean overshield_effect_hit_effect_allowed(
 }
 
 /* the color a plasma shader drawn with values from overshield_effect_values
-is drawn in, the overshield's own; FALSE for values not from it */
+(or overshield_effect_arms_values) is drawn in, the overshield's own; FALSE
+for values not from it */
 boolean overshield_effect_color(
 	real const *values,
-	real_rgb_color *color)
+	real_rgb_color *perpendicular,
+	real_rgb_color *parallel)
 {
-	real energy_speed, inverse_softness, height;
+	struct overshield_effect const *effect = overshield_effect_find_values(values);
+	real peak;
+	real perpendicular_brightness;
+	real parallel_brightness;
+	real_rgb_color const *color;
 
-	if (!overshield_effect_draw(values, &energy_speed, &inverse_softness, &height))
+	if (!effect)
 		return FALSE;
-	*color = overshield_effect_rgb;
+	color = overshield_effect_layer_color(effect);
+	/* Keep the shader's brightness while using the overshield effect's hue. */
+	peak = MAX(color->red, MAX(color->green, color->blue));
+	perpendicular_brightness = MAX(perpendicular->red, MAX(perpendicular->green, perpendicular->blue));
+	parallel_brightness = MAX(parallel->red, MAX(parallel->green, parallel->blue));
+	perpendicular->red = color->red / peak * perpendicular_brightness;
+	perpendicular->green = color->green / peak * perpendicular_brightness;
+	perpendicular->blue = color->blue / peak * perpendicular_brightness;
+	parallel->red = color->red / peak * parallel_brightness;
+	parallel->green = color->green / peak * parallel_brightness;
+	parallel->blue = color->blue / peak * parallel_brightness;
 	return TRUE;
 }
 
-/* the overshield's color, for its glow */
-real_rgb_color const *overshield_effect_glow_color(
-	void)
+/* One sample supplies both layer hue and visible charge coverage to lighting. */
+boolean overshield_effect_light_sample(long unit_index, real_rgb_color *color, real *coverage)
 {
-	return &overshield_effect_rgb;
+	struct overshield_effect *effect = overshield_effect_get(unit_index);
+	if (!effect)
+		return FALSE;
+	*color = *overshield_effect_layer_color(effect);
+	*coverage = effect->progress;
+	return TRUE;
 }

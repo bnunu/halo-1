@@ -91,7 +91,7 @@ jobs:
 
       - name: Test
         run: |
-          python -m pytest -q tools/test_loading_widescreen.py tools/test_loading_chant.py
+          python -m pytest -q tools/test_loading_widescreen.py tools/test_loading_chant.py tools/test_overshield_rendering.py
           python -m pytest -q tools/test_linux_port.py tools/test_android_asm_convert.py tools/test_android_mirror_uploads.py tools/test_android_frame_fences.py tools/test_android_static_geometry.py tools/test_android_render_policy.py tools/test_android_ce_texture_cache.py tools/test_host_watch_hash.py tools/test_touch_menu.py tools/harness tools/test_profile.py tools/stagekit/tests tools/test_net_compare.py tools/test_server_sim.py tools/test_egg.py tools/test_deploy_gametypes.py
           # the dedicated server: --version, and --server without maps refused (exit code 2); its cases with
           # clients need the retail maps, and are skipped
