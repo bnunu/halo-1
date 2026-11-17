@@ -7734,6 +7734,15 @@ static void unit_ready_desired_weapon(
 	long desired_weapon_index = unit_get_desired_weapon_index(unit_index);
 	long current_weapon_index = unit_get_current_weapon_index(unit_index);
 
+	/* port: a current weapon the unit does not carry is cleared, not put away.
+	On a co-op client it can be one the host's updates already took away. */
+	if (current_weapon_index!=NONE &&
+		object_get(current_weapon_index)->object.parent_object_index!=unit_index)
+	{
+		unit->unit.current_weapon_index = NONE;
+		current_weapon_index = NONE;
+	}
+
 	if (current_weapon_index!=NONE && weapon_put_away(current_weapon_index, immediate))
 	{
 		object_detach(current_weapon_index);
