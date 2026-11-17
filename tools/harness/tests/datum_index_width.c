@@ -2,6 +2,11 @@
 #include "harness.h"
 #undef UNSIGNED_LONG_MAX
 #undef DATUM_INDEX_TO_ABSOLUTE_INDEX
+/* The Windows runtime headers define names also used by the game's limits enum. */
+#undef LONG_MAX
+#undef LONG_MIN
+#undef CHAR_MAX
+#undef CHAR_MIN
 #include "under_test.inc"
 
 /* a printf-style callee: a long, then a string */
@@ -23,7 +28,9 @@ int main(int argc, char **argv)
 	char const *case_name = argc == 2 ? argv[1] : "";
 	long datum_index = (long)0x80011234UL;
 
-	CASE("size")
+	CASE("wide-enum")
+		return sizeof(UNSIGNED_SHORT_MAX) > sizeof(long) ? 0 : 2;
+	else CASE("size")
 		CHECK(sizeof(DATUM_INDEX_TO_ABSOLUTE_INDEX(datum_index)) == sizeof(long), "%u bytes",
 			(unsigned)sizeof(DATUM_INDEX_TO_ABSOLUTE_INDEX(datum_index)));
 	else CASE("varargs")

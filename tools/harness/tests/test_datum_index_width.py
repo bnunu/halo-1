@@ -29,6 +29,11 @@ def test_width(case):
 
 @pytest.mark.parametrize("case", CASES)
 def test_negative_control(case):
+    # The MSVC ABI keeps the enum at 32 bits; removing the cast is harmless there.
+    status, output = run(build("datum_index_width", generated()), "wide-enum")
+    if status == 2:
+        pytest.skip("the target ABI does not widen the integer limits enum")
+    assert status == 0, output
     # the macro without the cast
     fault = ("((long)((datum_index)&UNSIGNED_SHORT_MAX))", "((datum_index)&UNSIGNED_SHORT_MAX)")
     status, output = run(build("datum_index_width", generated(fault)), case)
