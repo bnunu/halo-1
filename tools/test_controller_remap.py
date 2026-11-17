@@ -556,7 +556,8 @@ def test_chat_owner_identity_and_per_port_hold_over(tmp_path):
 #define csmemset memset
 #define DATUM_INDEX_TO_ABSOLUTE_INDEX(p) ((p)&65535)
 typedef int boolean;
-static struct {boolean active,physical;short channel,controller;long player;char text[256];} chat_input;
+static struct {boolean active,physical,system_keyboard;short channel,controller;long player;char text[256];} chat_input;
+static int halo_chat_system_keyboard(int show){(void)show;return 0;}
 static short chat_scroll;
 static struct {int open;unsigned long opening_buttons;} chat_keyboard;
 static struct {short local_player_index;} players[4]={{0},{1},{2},{3}};

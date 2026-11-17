@@ -269,7 +269,8 @@ grenades switched with the left bumper (the flashlight moves to X).
 | while typing a chat line: to everyone, the team or the vehicle, in turn | Tab |
 
 With a controller, or the touch controls' D-pad, D-pad Up opens the text
-chat's on-screen keyboard (refer to "Text chat").
+chat's on-screen keyboard (on Android's touch controls, Android's own
+keyboard; refer to "Text chat").
 
 Always: \` opens the developer console, F12 releases or captures the mouse,
 F11 changes between fullscreen and window. Screenshot (default F10,
@@ -1027,11 +1028,13 @@ the key, X deletes, Y switches capitals, D-pad Up and Down change who the
 line is to (all the players, your team, your vehicle), Start sends the
 line, and B closes the keyboard (the button that closed it does nothing in
 the game until you let it go). Its last row has Aa (capitals), #+= (the
-symbols), space, DEL and SEND. On a touchscreen (Android, and a browser on
-a phone or tablet), the touch controls' D-pad Up opens it, a tap on a key
-types it, and a tap anywhere else closes it: the touch controls hide while
-it is up. While the keyboard is up the controller and the touch controls
-move nothing in the game. The face buttons are the same places on
+symbols), space, DEL and SEND. In a browser on a phone or tablet, the touch
+controls' D-pad Up opens it, a tap on a key types it, and a tap anywhere
+else closes it: the touch controls hide while it is up. On Android, the
+touch controls' D-pad Up brings up Android's own keyboard instead: Enter
+sends the line, and back or a tap above the keyboard cancels it (the touch
+controls hide while it is up too). While either keyboard is up the
+controller and the touch controls move nothing in the game. The face buttons are the same places on
 other controllers (on a PlayStation controller: Cross types, Square
 deletes, Triangle switches capitals, Circle closes).
 
