@@ -47,6 +47,8 @@ static long _texture_cache_bitmap_get_hardware_format(struct bitmap_data const *
 	CHECK(bitmap, "the marker's bitmap read through NULL");
 	return 1;
 }
+/* Xbox and Custom Edition bitmap units are unchanged by MCC scaling. */
+static real mcc_hud_bitmap_scale(long bitmap_tag_index) { return 1.0f; }
 static long fast_ftol(real value) { return (long)value; }
 static void interface_draw_bitmap(struct bitmap_data const *bitmap, point2d const *position,
 	real_rectangle2d const *clip, real scale, real rotation, real alpha)
