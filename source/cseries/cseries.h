@@ -168,7 +168,11 @@ semicolon). */
 #define VALID_INDEX(index, count) (index>=0 && index<count)
 
 #define DATUM_INDEX_NEW(absolute_index, salt) ((absolute_index) | ((salt)<<SHORT_BITS))
-#define DATUM_INDEX_TO_ABSOLUTE_INDEX(datum_index) ((datum_index)&UNSIGNED_SHORT_MAX)
+/* port: cast to long, 4 bytes as on the Xbox.
+UNSIGNED_LONG_MAX does not fit in an int,
+so clang and gcc make all constants of the limits enum long long.
+Without the cast, the index shifts the arguments after it in a printf-style call. */
+#define DATUM_INDEX_TO_ABSOLUTE_INDEX(datum_index) ((long)((datum_index)&UNSIGNED_SHORT_MAX))
 #define DATUM_INDEX_TO_IDENTIFIER(datum_index) ((datum_index)>>SHORT_BITS)
 
 /* ---------- fixed math */
