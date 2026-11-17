@@ -664,6 +664,7 @@ struct widget_instance;
 #include "networking/network_client_manager.h"
 #include "networking/network_connection.h"
 #include "networking/network_game_globals.h"
+#include "networking/network_game_manager.h" /* port: struct network_game */
 #include "networking/network_server_manager.h"
 #include "network_coop.h" /* port: port/linux/game/network_coop.c */
 #include "touch_postgame.h" /* port: port/linux/game/touch_postgame.c */
@@ -4805,6 +4806,16 @@ void display_error_damaged_media(
 	return;
 }
 
+/* port: whether this machine hosts network co-op on a campaign level */
+static boolean ui_network_server_hosting_cooperative(
+	void)
+{
+	struct network_game *game = network_game_get_game();
+
+	return global_network_game_server_get() && game && !game->variant.game_engine_index &&
+		custom_edition_maps_level_campaign(game->map.name);
+}
+
 void network_game_reset_to_pregame_ui(
 	void)
 {
@@ -4846,7 +4857,9 @@ void network_game_reset_to_pregame_ui(
 	}
 	else
 	{
-		if (global_network_game_server_get())
+		/* port: network_game_server_port_cooperative_won has already set up a co-op host's next level.
+		The host gets the same lobby as a client, and its START NOW starts that level. */
+		if (global_network_game_server_get() && !ui_network_server_hosting_cooperative())
 		{
 			network_game_server_pause_countdown(global_network_game_server_get(), TRUE);
 			/* port: with the PC version's menus, theirs (port/linux/game/menu_tags.c) */
