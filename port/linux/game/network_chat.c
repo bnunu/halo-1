@@ -5,10 +5,14 @@ The text chat of network games (port/linux/NETCODE.md), as the PC version
 had it: T (controls.chat) starts a line to everyone, Y (controls.team_chat)
 one to the player's team; Tab, while typing, turns it to everyone, the team
 or the vehicle in turn; Enter sends it, Escape lets it go. A controller's
-D-pad Up (the touch controls' too) opens an on-screen keyboard instead,
-whose keys the stick moves through and A types, a tap types (the
+D-pad Up (a browser's touch controls' too) opens an on-screen keyboard
+instead, whose keys the stick moves through and A types, a tap types (the
 touchscreen), and the controller then drives nothing else (xinput_sdl.c's
-halo_chat_pad_buttons, halo_chat_taps). The lines are
+halo_chat_pad_buttons, halo_chat_taps). On Android the touch controls'
+D-pad Up brings up Android's own keyboard instead
+(halo_chat_system_keyboard), whose keys come as a keyboard's; back or a tap
+elsewhere lets the line go, and the touch controls hide meanwhile, as for
+the chat's keyboard. The lines are
 drawn above the motion sensor, at half the HUD font's size, each with its
 player's name in their team's colour, the host's name white, wrapped to a
 column a little over half the view wide, and fade after a while; where the
@@ -334,6 +338,8 @@ static struct
 	short channel, controller;
 	long player;
 	boolean physical;
+	/* typed on the system's keyboard (Android's), not the chat's own */
+	boolean system_keyboard;
 	char text[CHAT_TEXT_SIZE];
 } chat_input;
 
@@ -1929,6 +1935,9 @@ static void chat_input_begin(
 static void chat_input_end(
 	void)
 {
+	if (chat_input.system_keyboard)
+		halo_chat_system_keyboard(FALSE);
+	chat_input.system_keyboard = FALSE;
 	chat_input.active = FALSE;
 	chat_keyboard.open = FALSE;
 	chat_keyboard.opening_buttons = 0;
@@ -2053,10 +2062,48 @@ static void chat_keyboard_update(
 	}
 }
 
+/* a line begun with D-pad Up, a controller's (physical) or the touch
+controls': typed on Android's keyboard where it comes up for the touch
+controls, else on the chat's own */
+static void chat_keyboard_begin(
+	boolean physical)
+{
+	chat_keyboard.opening_buttons = physical ? halo_chat_pad_buttons_for_port(chat_input.controller) :
+		halo_chat_pad_buttons();
+	chat_keyboard.held = 0;
+	if (!physical && halo_chat_system_keyboard(TRUE))
+	{
+		chat_input.system_keyboard = TRUE;
+		error(_error_log, "chat: the system's keyboard opened");
+		return;
+	}
+	chat_keyboard.open = TRUE;
+	error(_error_log, "chat: the on-screen keyboard opened");
+	chat_keyboard.row = 1;
+	chat_keyboard.column = 0;
+	chat_keyboard.shift = FALSE;
+	chat_keyboard.symbols = FALSE;
+	chat_keyboard.repeat_at = 0;
+}
+
+/* the system's keyboard's line: its keys come as a keyboard's
+(network_chat_update), its Enter sends it; closed with back, or a tap
+elsewhere, lets it go (the touch controls, B among them, hide meanwhile:
+touch_input.c) */
+static void chat_system_keyboard_update(
+	void)
+{
+	float x;
+	float y;
+
+	if (halo_chat_system_keyboard_lost() || halo_chat_taps(&x, &y))
+		chat_input_end();
+}
+
 unsigned char network_chat_keyboard_open(
 	void)
 {
-	return chat_input.active && chat_keyboard.open;
+	return chat_input.active && (chat_keyboard.open || chat_input.system_keyboard);
 }
 
 /* whether the chat is out of sight: a menu up (the pause menu, however it
@@ -2207,16 +2254,7 @@ void network_chat_update(
 			{
 				chat_input_begin(requested_channel, requested_port, requested_port != NONE);
 				if (!chat_input.active) return;
-				chat_keyboard.opening_buttons = requested_port != NONE ?
-					halo_chat_pad_buttons_for_port(chat_input.controller) : halo_chat_pad_buttons();
-				chat_keyboard.held = 0;
-				chat_keyboard.open = TRUE;
-				error(_error_log, "chat: the on-screen keyboard opened");
-				chat_keyboard.row = 1;
-				chat_keyboard.column = 0;
-				chat_keyboard.shift = FALSE;
-				chat_keyboard.symbols = FALSE;
-				chat_keyboard.repeat_at = 0;
+				chat_keyboard_begin(requested_port != NONE);
 			}
 		}
 		return;
@@ -2227,6 +2265,8 @@ void network_chat_update(
 		return;
 	if (chat_keyboard.open)
 		chat_keyboard_update(pad_pressed, pad);
+	else if (chat_input.system_keyboard)
+		chat_system_keyboard_update();
 	while (chat_input.active && input_get_key(&key))
 	{
 		switch (key.key_code)
@@ -2284,7 +2324,7 @@ void network_chat_update(
 
 short network_chat_controller(void)
 {
-	return chat_input.active && chat_keyboard.open ? chat_input.controller : NONE;
+	return chat_input.active && (chat_keyboard.open || chat_input.system_keyboard) ? chat_input.controller : NONE;
 }
 
 boolean network_chat_typing(

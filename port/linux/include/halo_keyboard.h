@@ -97,6 +97,13 @@ int halo_chat_taps(float *x, float *y);
 then goes at the top left: on Android, and in a browser once its touch
 controls have been used */
 int halo_chat_touch_layout(void);
+/* a chat line begun on the touch controls typed on the system's keyboard
+(Android's, where the touch controls show) instead of the chat's own: it is
+brought up (show) or let go, and whether it came; FALSE elsewhere */
+int halo_chat_system_keyboard(int show);
+/* whether that keyboard went while the line was still typed (closed with
+back) or never came: the line is let go */
+int halo_chat_system_keyboard_lost(void);
 /* the mouse wheel's notches turned while a chat line is typed, since the
 last call (up positive): they scroll the lines, not the weapons */
 int halo_chat_wheel_steps(void);

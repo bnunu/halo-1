@@ -231,6 +231,15 @@ Bluetooth or USB keyboard types into the names in the same way, with or
 without Android's keyboard (`port/linux/src/sdl_platform.c`, "the system's
 on-screen keyboard").
 
+In a network game, the touch controls' D-pad Up brings up Android's keyboard
+to type a text chat line to all the players: Enter sends the line, and back
+(or a tap on the game above the keyboard) cancels it. The touch controls
+hide while it is up. As for a name, the line is typed as a visible password
+(so that Android's keyboard offers no suggestions), and only ASCII letters,
+numbers and symbols type into it. A controller's D-pad Up opens the chat's own
+on-screen keyboard instead, which the controller drives
+(`port/linux/README.md`, "Text chat").
+
 After a multiplayer game, the carnage report shows buttons in place of its
 prompt at the bottom: the host's CONTINUE goes on to the next game (PICK
 GAME), as A does, and LEAVE leaves the game, as B does (the host's LEAVE
@@ -254,7 +263,7 @@ controller for player 1. With the default buttons of the profile:
 | Crouch, Zoom | left and right stick clicks |
 | Light, Gren. type | white, black |
 | Pause, Back | start, back |
-| Up, Down, Left, Right | D-pad (in a network game, Up opens the text chat's keyboard) |
+| Up, Down, Left, Right | D-pad (in a network game, Up brings up Android's keyboard for a text chat line) |
 
 The names on the buttons follow the profile's "Button layout" (Settings >
 Gamepads): with "Swap triggers", the right trigger's button says "Grenade".

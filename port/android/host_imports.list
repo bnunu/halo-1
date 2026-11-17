@@ -31,6 +31,7 @@ host_sdl_gl_set_swap_interval
 host_sdl_gl_swap_window
 host_sdl_poll_event
 host_sdl_text_input
+host_sdl_text_input_active
 host_sdl_set_clipboard_text
 host_sdl_get_clipboard_text
 host_sdl_show_toast

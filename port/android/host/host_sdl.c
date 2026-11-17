@@ -212,9 +212,9 @@ int host_sdl_poll_event(void *event)
 	return 1;
 }
 
-/* ---------- text input (Android's keyboard while a name is typed:
-sdl_platform.c). What it types arrives as key events, which the guest reads;
-its text events are not (their text is a pointer) */
+/* ---------- text input (Android's keyboard while a name or a chat line is
+typed: sdl_platform.c). What it types arrives as key events, which the guest
+reads; its text events are not (their text is a pointer) */
 
 int host_sdl_text_input(uint32_t window, int type)
 {
@@ -235,6 +235,15 @@ int host_sdl_text_input(uint32_t window, int type)
 	SDL_StartTextInputWithProperties(object, properties);
 	SDL_DestroyProperties(properties);
 	return SDL_TextInputActive(object) ? 1 : 0;
+}
+
+/* (SDL's SDLDummyEdit stops it when back closes Android's keyboard; the
+keyboard's own hide key goes unseen) */
+int host_sdl_text_input_active(uint32_t window)
+{
+	SDL_Window *object = handle_get(window, _handle_window);
+
+	return object && SDL_TextInputActive(object) ? 1 : 0;
 }
 
 /* ---------- gamepads */

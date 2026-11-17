@@ -298,6 +298,30 @@ int halo_chat_touch_layout(void)
 #endif
 }
 
+int halo_chat_system_keyboard(int show)
+{
+#ifdef HALO_ANDROID
+	/* (with a controller and no touch controls, Android's keyboard would not
+	come up: the chat's own keyboard, which the controller drives) */
+	if (show && !touch_input_screen_buttons())
+		return FALSE;
+	platform_screen_keyboard(show != 0, FALSE);
+	return show != 0;
+#else
+	(void)show;
+	return FALSE;
+#endif
+}
+
+int halo_chat_system_keyboard_lost(void)
+{
+#ifdef HALO_ANDROID
+	return platform_screen_keyboard_lost();
+#else
+	return FALSE;
+#endif
+}
+
 /* the first controller's buttons held as the on-screen keyboard closed (the
 B that closed it, the Start or the A that sent the line), which the game
 gets none of till each is let go: it would see a new press of it, a pause
