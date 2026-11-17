@@ -43,9 +43,9 @@ import java.util.Locale;
  *
  * It shows only in a game, never at the main menu, over a menu (which
  * takes taps itself, port/linux/src/touch_input.c) or during a cinematic,
- * only on a touchscreen, and with input.touch_controls = "auto" only while
- * no controller is connected. While it is not shown it lets every finger
- * through to the game.
+ * only on a touchscreen. With input.touch_controls = "auto", the overlay
+ * hides on controller input and returns on touch. Device gyro and rumble
+ * can operate with the overlay hidden.
  */
 public final class TouchControls extends View implements SensorEventListener, InputManager.InputDeviceListener {
     /** what a finger holds besides a control: the view swipe */
@@ -75,6 +75,8 @@ public final class TouchControls extends View implements SensorEventListener, In
     private static final float SLOP = 10;
     /** the move stick's dead zone and its touch area beyond its circle */
     private static final float STICK_DEAD_ZONE = 0.12f;
+    /** ignore controller drift when deciding whether to hide the toolbar */
+    private static final float CONTROLLER_TOOLBAR_DEAD_ZONE = 0.20f;
     private static final float STICK_REACH = 1.28f;
     private static final float STICK_KNOB_RADIUS = 24;
     /** a floating stick goes where a thumb lands in this part of the display (from the lower left) */
@@ -180,6 +182,8 @@ public final class TouchControls extends View implements SensorEventListener, In
     private float sensitivity = 1f;
     /** the controls removed by the toolbar's Hide, until its Touch */
     private boolean hidden;
+    /** the connected controller takes precedence until the next screen touch */
+    private boolean controllerActive;
     private boolean editing;
     /** the option dialogs open (one opens before the last one's dismissal is told) */
     private int openDialogs;
@@ -214,7 +218,7 @@ public final class TouchControls extends View implements SensorEventListener, In
     private boolean controllerConnected;
     private boolean touchscreen;
     private boolean deviceInputActive;
-    /** the controls are on screen: shown() for SHOW_DELAY_MS */
+    /** touch input, gyro and rumble are available in the current scene */
     private boolean showing;
     private long shownSince = -1;
     private boolean gyroRegistered;
@@ -368,21 +372,14 @@ public final class TouchControls extends View implements SensorEventListener, In
 
     // ---------- when the controls show
 
-    /**
-     * whether the controls belong on screen: in a game (no menu or
-     * cinematic), never without a touchscreen, and with
-     * input.touch_controls = "auto" only while no controller is connected
-     */
-    private boolean shown() {
-        if ((scene & SCENE_KNOWN) == 0 || (scene & (SCENE_MENUS | SCENE_OFF)) != 0 || !touchscreen)
-            return false;
-        return (scene & SCENE_ON) != 0 || !controllerConnected;
+    private boolean overlayVisible() {
+        return !controllerActive || (scene & SCENE_ON) != 0;
     }
 
-    /** shows the controls once shown() has held for SHOW_DELAY_MS; hides them at once */
+    /** enables touch features once gameplay has held for SHOW_DELAY_MS */
     private void updateShowing() {
         boolean show = false;
-        if (!shown()) {
+        if (!touchscreen || (scene & SCENE_KNOWN) == 0 || (scene & (SCENE_MENUS | SCENE_OFF)) != 0) {
             shownSince = -1;
         } else {
             long now = SystemClock.uptimeMillis();
@@ -420,9 +417,12 @@ public final class TouchControls extends View implements SensorEventListener, In
             if (!device.isVirtual() && touchSource)
                 touch = true;
         }
-        controllerConnected = controller;
+        if (controllerConnected != controller) {
+            controllerConnected = controller;
+            setControllerActive(controller);
+        }
         touchscreen = touch;
-        // (the game's own touchscreen buttons follow the same rule: touch_input.c)
+        // The game uses these for its cinematic and postgame prompts.
         nativeDevices(touch, controller);
         updateShowing();
     }
@@ -446,13 +446,50 @@ public final class TouchControls extends View implements SensorEventListener, In
         reset();
         this.hidden = hidden;
         preferences.edit().putBoolean(KEY_HIDDEN, hidden).apply();
-        updateSensors();
+    }
+
+    void controllerUsed() {
+        if (!editing && openDialogs == 0)
+            setControllerActive(true);
+    }
+
+    void controllerMoved(MotionEvent event) {
+        if (controllerActive || editing || openDialogs > 0)
+            return;
+        InputDevice device = event.getDevice();
+        if (device == null)
+            return;
+        for (InputDevice.MotionRange range : device.getMotionRanges()) {
+            if (!event.isFromSource(range.getSource())
+                    || (range.getSource() & InputDevice.SOURCE_CLASS_JOYSTICK) == 0)
+                continue;
+            // Sticks and hats rest at zero; unsigned triggers rest at their minimum.
+            float neutral = Math.max(0f, range.getMin());
+            float travel = Math.max(neutral - range.getMin(), range.getMax() - neutral);
+            float deadZone = Math.max(range.getFlat(), travel * CONTROLLER_TOOLBAR_DEAD_ZONE);
+            if (Math.abs(event.getAxisValue(range.getAxis()) - neutral) > deadZone) {
+                controllerUsed();
+                return;
+            }
+        }
+    }
+
+    private void setControllerActive(boolean active) {
+        if (controllerActive == active)
+            return;
+        controllerActive = active;
+        if (!overlayVisible())
+            releaseTouches();
+        else {
+            toolbarFingers.clear();
+            invalidate();
+        }
     }
 
     // ---------- the controller state the game reads
 
     /** lets go of every finger and sends a released controller */
-    public void reset() {
+    private void releaseTouches() {
         dragPointer = -1;
         dragControl = -1;
         owners.clear();
@@ -460,11 +497,15 @@ public final class TouchControls extends View implements SensorEventListener, In
         toolbarFingers.clear();
         lookPointer = -1;
         stickFloating = false;
-        gyroAim.reset();
-        nativeLookReset();
         Arrays.fill(axes, 0);
         publish();
         invalidate();
+    }
+
+    public void reset() {
+        gyroAim.reset();
+        nativeLookReset();
+        releaseTouches();
     }
 
     private void publish() {
@@ -534,10 +575,11 @@ public final class TouchControls extends View implements SensorEventListener, In
 
     /** what is under a point (logical units): a toolbar item, a control, or NOTHING */
     private int hit(float x, float y) {
-        if (inside(x, y, optionsX(), optionsY(), toolbarRadius(OPTIONS_RADIUS)))
+        if ((!controllerActive || editing)
+                && inside(x, y, optionsX(), optionsY(), toolbarRadius(OPTIONS_RADIUS)))
             return TOOLBAR_OPTIONS;
         if (!editing) {
-            if (inside(x, y, logicalWidth / 2, toolbarY(), toolbarRadius(TOOLBAR_RADIUS)))
+            if (!controllerActive && inside(x, y, logicalWidth / 2, toolbarY(), toolbarRadius(TOOLBAR_RADIUS)))
                 return TOOLBAR_TOGGLE;
             return hidden ? NOTHING : hitControl(x, y);
         }
@@ -595,6 +637,22 @@ public final class TouchControls extends View implements SensorEventListener, In
                 reset();
             return true;
         }
+        if (controllerActive && !editing
+                && (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN)
+                && (event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN) || event.isFromSource(InputDevice.SOURCE_STYLUS))) {
+            boolean wasVisible = overlayVisible();
+            setControllerActive(false);
+            // The first touch only reveals an overlay that was fully hidden.
+            if (!wasVisible)
+                return true;
+            int index = event.getActionIndex();
+            int target = hit(logical(event.getX(index)), logical(event.getY(index)));
+            // The touch that reveals an invisible toolbar button does not activate it.
+            if (target == TOOLBAR_OPTIONS || target == TOOLBAR_TOGGLE)
+                return true;
+        }
+        if (!overlayVisible() && !editing)
+            return true;
         if (editing)
             editTouch(event);
         else
@@ -1164,7 +1222,7 @@ public final class TouchControls extends View implements SensorEventListener, In
     // ---------- the gyroscope and the vibration
 
     private void updateSensors() {
-        boolean needed = deviceInputActive && showing && !hidden && layout.gyroscopeEnabled && gyroscope != null;
+        boolean needed = deviceInputActive && showing && layout.gyroscopeEnabled && gyroscope != null;
         if (needed && !gyroRegistered) {
             gyroAim.reset();
             gyroRegistered = sensors.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME);
@@ -1177,7 +1235,7 @@ public final class TouchControls extends View implements SensorEventListener, In
 
     @Override
     public void onSensorChanged(SensorEvent event) {
-        if (!deviceInputActive || !showing || hidden || !layout.gyroscopeEnabled || editing || openDialogs > 0) {
+        if (!deviceInputActive || !showing || !layout.gyroscopeEnabled || editing || openDialogs > 0) {
             gyroAim.reset();
             return;
         }
@@ -1194,11 +1252,11 @@ public final class TouchControls extends View implements SensorEventListener, In
     public void onAccuracyChanged(Sensor sensor, int accuracy) {
     }
 
-    /** the phone vibrates as port 0's controller would, while the controls show */
+    /** the phone vibrates as port 0's controller would during gameplay */
     private void updateRumble() {
         if (vibrator == null || !vibrator.hasVibrator())
             return;
-        boolean active = showing && !hidden && layout.rumbleEnabled && !editing && openDialogs == 0;
+        boolean active = showing && layout.rumbleEnabled && !editing && openDialogs == 0;
         int amplitude = active ? nativeRumble() : 0;
         if (amplitude == 0) {
             cancelRumble();
@@ -1292,7 +1350,7 @@ public final class TouchControls extends View implements SensorEventListener, In
 
     @Override
     protected void onDraw(Canvas canvas) {
-        if (!showing && !editing)
+        if (!editing && (!showing || !overlayVisible()))
             return;
         canvas.save();
         canvas.scale(scale, scale);
@@ -1307,7 +1365,8 @@ public final class TouchControls extends View implements SensorEventListener, In
                     held(i) || dragControl == i, Math.min(textSize, 16), layout.opacity);
             }
         }
-        drawToolbar(canvas);
+        if (!controllerActive || editing)
+            drawToolbar(canvas);
         canvas.restore();
     }
 }
