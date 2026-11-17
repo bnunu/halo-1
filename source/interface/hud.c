@@ -934,7 +934,8 @@ static void hud_draw_friendly_indicator(
 			interface_get_tag_index(_interface_bitmap_multiplayer_hud),
 			0,
 			0);
-		if (_texture_cache_bitmap_get_hardware_format(bitmap, FALSE, TRUE))
+		/* port: no marker if the map's globals have no multiplayer HUD bitmap */
+		if (bitmap && _texture_cache_bitmap_get_hardware_format(bitmap, FALSE, TRUE))
 		{
 			position.x =
 				(short)fast_ftol(screen_position.x) - render.camera.viewport_bounds.x0;

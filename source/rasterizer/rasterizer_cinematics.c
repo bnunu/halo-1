@@ -361,17 +361,22 @@ struct rasterizer_cinematic_screen_effect_parameters *rasterizer_screen_effect_g
 		}
 		else
 		{
+			parameters = &cinematic_screen_effect_globals->parameters;
+			/* port: the blur and the video effect only work with one window.
+			In split screen the views get the effect without them, instead of the Xbox's fatal error.
+			This happens with a script's effect outside a cutscene,
+			or with a co-op client's effect one tick before its cutscene switches to one window. */
 			if (main_get_window_count() > 1)
 			{
-				display_assert(
-					"### FATAL_ERROR screen effects can't use convolution when main_get_window_count>1\r\nmaybe you forgot to turn off the cinematic screen effect?",
-					"c:\\halo\\SOURCE\\rasterizer\\rasterizer_cinematics.c",
-					336,
-					TRUE);
-				system_exit(-1);
-			}
+				static struct rasterizer_cinematic_screen_effect_parameters split_screen_parameters;
 
-			parameters = &cinematic_screen_effect_globals->parameters;
+				split_screen_parameters = *parameters;
+				split_screen_parameters.convolution_radius = 0.0f;
+				split_screen_parameters.convolution_type = 0;
+				split_screen_parameters.convolution_extra_passes = 0;
+				split_screen_parameters.video_on = FALSE;
+				parameters = &split_screen_parameters;
+			}
 		}
 
 		if (parameters->filter_light_enhancement_intensity <= _real_epsilon &&

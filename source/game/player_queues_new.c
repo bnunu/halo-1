@@ -451,7 +451,10 @@ void update_server_next_update(
 		(its network lost, until the host drops it) stands still, its
 		buttons and trigger let go, where it faces: its last input held
 		would walk it off a ledge, or empty its weapon. (A datagram or two
-		lost is not that: the last input is held a third of a second.) */
+		lost is not that: the last input is held a third of a second.)
+		Its one-shot buttons stay pressed. Holding them does nothing, but if
+		they were released here, each one the player still holds when its
+		input comes back would fire a second time. */
 		if (update_server_distributed_inputs[queue_index].valid &&
 			game_time_initialized() &&
 			game_time_get() - update_server_distributed_inputs[queue_index].received_time >
@@ -462,7 +465,7 @@ void update_server_next_update(
 			action->throttle.i = 0.f;
 			action->throttle.j = 0.f;
 			action->primary_trigger = 0.f;
-			action->control_flags = 0;
+			action->control_flags &= LATCHED_CONTROL_FLAGS;
 		}
 		update->update.action_count += 1;
 	}
