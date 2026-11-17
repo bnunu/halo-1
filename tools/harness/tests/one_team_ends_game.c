@@ -119,6 +119,30 @@ int main(int argc, char **argv)
 		add(1, FALSE, TRUE);
 		CHECK(game_engine_should_end_game(), "a game whose other team was out of lives went on");
 	}
+	CASE("sole-team-out-of-lives")
+	{
+		/* the rule off: only red's players, all out of lives (no one left
+		who can play) */
+		host_one_team_ends = FALSE;
+		add(0, FALSE, TRUE);
+		add(0, FALSE, TRUE);
+		add(0, FALSE, TRUE);
+		CHECK(game_engine_should_end_game(), "a game whose only team was out of lives went on");
+	}
+	CASE("out-of-lives-after-quit")
+	{
+		/* a dedicated server's default: blue's players quit, then red's all
+		ran out of lives */
+		server_mode = TRUE;
+		add(0, FALSE, TRUE);
+		add(1, TRUE, FALSE);
+		add(0, FALSE, TRUE);
+		people[1].quit_out_of_game = TRUE;
+		CHECK(game_engine_should_end_game(), "a game its other team left and its own ran out of lives went on");
+		/* (one of red still to respawn: it goes on) */
+		people[2].out_of_lives = FALSE;
+		CHECK(!game_engine_should_end_game(), "a game with a player left to respawn ended");
+	}
 	CASE("both-teams-go-on")
 	{
 		/* either way: both teams playing, one of them all dead and respawning */

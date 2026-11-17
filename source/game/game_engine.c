@@ -5758,6 +5758,32 @@ static boolean game_engine_multiple_teams_playing(
 	return FALSE;
 }
 
+/* (defined below) */
+static boolean game_engine_player_is_odd_man_out(long player_index);
+
+/* port: whether any player in the game can still play: living, or waiting
+to respawn with lives left (multiple_teams_alive's test) */
+static boolean game_engine_any_player_alive(
+	void)
+{
+	struct data_iterator iterator;
+	struct player_datum *player;
+
+	data_iterator_new(&iterator, player_data);
+	while ((player = (struct player_datum *)data_iterator_next(&iterator)) != NULL)
+	{
+		if (!player->quit_out_of_game &&
+			(player->unit_index != NONE ||
+				(!game_engine_player_is_odd_man_out(iterator.datum_index) &&
+					!game_engine_player_is_out_of_lives(iterator.datum_index))))
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
 boolean game_engine_should_end_game(
 	void)
 {
@@ -5768,9 +5794,12 @@ boolean game_engine_should_end_game(
 		return FALSE;
 	/* port: without the rule (game_engine_one_team_ends_game), a game only
 	one team's players are in goes on: the others still loading as it
-	started, or gone. One whose other team is out of lives still ends */
+	started, or gone. One whose other team is out of lives still ends, and
+	so does one where no player can play any more (the only team out of
+	lives) */
 	if (game_engine && !multiple_teams_alive() &&
-		(game_engine_one_team_ends_game() || game_engine_multiple_teams_playing()))
+		(game_engine_one_team_ends_game() || game_engine_multiple_teams_playing() ||
+			!game_engine_any_player_alive()))
 	{
 		should_end_game = TRUE;
 	}
