@@ -710,6 +710,13 @@ static const struct config_setting config_settings[] =
 		"Hosting: let the players vote to end the game (\"!endgame\" in the chat;\n"
 		"F1 votes yes, F2 no), counted as a vote to kick. The game ends with its\n"
 		"scores, as sv_end_game ends it." },
+	{ "network.one_team_ends_game", _config_boolean, "true", "HALO_NET_ONE_TEAM_ENDS_GAME", _environment_value,
+		_platform_all,
+		"Hosting: a team game ends as soon as only one team's players are in it\n"
+		"(the Xbox game's rule): one that starts before the other team's players\n"
+		"have loaded, or that they leave. false: it goes on to its score or time\n"
+		"limit; a team out of lives still ends it. A dedicated server goes by\n"
+		"server.one_team_ends_game." },
 	{ "network.votekick_minutes", _config_integer, "5", "HALO_NET_VOTEKICK_MINUTES", _environment_value,
 		_platform_all,
 		"Hosting: the minutes a player must have played on this server to start\n"
@@ -931,6 +938,12 @@ static const struct config_setting config_settings[] =
 		"A team game: \"one\" starts with one team's players (the next joiners\n"
 		"balance), \"both\" waits for a player on each team, \"skip\" skips team\n"
 		"games while one player waits." },
+	{ "server.one_team_ends_game", _config_boolean, "false", "HALO_SERVER_ONE_TEAM_ENDS_GAME", _environment_value,
+		_platform_server,
+		"true: a team game ends as soon as only one team's players are in it, as\n"
+		"the Xbox game's does: one that starts while the other team's players\n"
+		"still load the map, or that they leave. false: it goes on to its score\n"
+		"or time limit; a team out of lives still ends it." },
 	{ "server.team_switch", _config_boolean, "true", "HALO_SERVER_TEAM_SWITCH", _environment_value,
 		_platform_server,
 		"A player in a team game may say \"!switch\" (or \"!team\") in the chat to\n"
