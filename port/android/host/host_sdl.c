@@ -14,8 +14,11 @@ so the audio callback is handed to a thread that has one.
 #include "host.h"
 
 #include <SDL3/SDL.h>
+#include <dlfcn.h>
 #include <pthread.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
 
 #define HANDLE_COUNT 256
 
@@ -191,11 +194,91 @@ int host_sdl_gl_set_swap_interval(int interval)
 	return SDL_GL_SetSwapInterval(interval);
 }
 
+/* ---------- the performance hint (Android 13 and later)
+
+The game draws each frame on one thread, which the scheduler moves between the
+big cores; each core then looks half idle to the CPU governor, which kept them
+at a third to a half of their clock in a fight (a Pixel 6a: 850-1430 of 2802
+MHz, 40 fps). A performance hint session tells the system the thread's work
+each frame and the time a frame has (one refresh), so the clocks rise to meet
+it. The work is the time between two swaps, less the swap itself. Looked up at
+run time: the app runs from Android 9, where the functions are not there and
+nothing changes. */
+
+typedef struct APerformanceHintManager APerformanceHintManager;
+typedef struct APerformanceHintSession APerformanceHintSession;
+
+static struct
+{
+	APerformanceHintManager *(*get_manager)(void);
+	APerformanceHintSession *(*create_session)(APerformanceHintManager *, const int32_t *, size_t, int64_t);
+	int (*report_actual_work_duration)(APerformanceHintSession *, int64_t);
+} performance_hint;
+
+static APerformanceHintSession *hint_session;
+static pid_t hint_thread;
+static int hint_tried;
+static int64_t hint_swap_end;
+
+static int64_t monotonic_nanoseconds(void)
+{
+	struct timespec now;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return (int64_t)now.tv_sec * 1000000000LL + now.tv_nsec;
+}
+
+/* (the first swap's thread: the one that draws; a refresh's time, the target) */
+static void performance_hint_start(SDL_Window *window)
+{
+	void *library;
+	APerformanceHintManager *manager;
+	const SDL_DisplayMode *mode;
+	int32_t thread;
+	int64_t target;
+
+	hint_tried = 1;
+	library = dlopen("libandroid.so", RTLD_NOW);
+	if (!library)
+		return;
+	performance_hint.get_manager = (APerformanceHintManager *(*)(void))dlsym(library, "APerformanceHint_getManager");
+	performance_hint.create_session = (APerformanceHintSession *(*)(APerformanceHintManager *, const int32_t *, size_t,
+		int64_t))dlsym(library, "APerformanceHint_createSession");
+	performance_hint.report_actual_work_duration = (int (*)(APerformanceHintSession *, int64_t))dlsym(library,
+		"APerformanceHint_reportActualWorkDuration");
+	if (!performance_hint.get_manager || !performance_hint.create_session ||
+		!performance_hint.report_actual_work_duration)
+	{
+		host_logf(HOST_LOG_INFO, "performance hint: not on this Android version");
+		return;
+	}
+	manager = performance_hint.get_manager();
+	mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+	target = mode && mode->refresh_rate > 0.0f ? (int64_t)(1e9 / mode->refresh_rate) : 16666667LL;
+	thread = (int32_t)gettid();
+	hint_session = manager ? performance_hint.create_session(manager, &thread, 1, target) : NULL;
+	hint_thread = (pid_t)thread;
+	host_logf(HOST_LOG_INFO, "performance hint: %s for thread %d, %.2f ms a frame",
+		hint_session ? "session" : "no session", (int)thread, (double)target / 1e6);
+}
+
 int host_sdl_gl_swap_window(uint32_t window)
 {
 	SDL_Window *object = handle_get(window, _handle_window);
+	int64_t swap_start;
+	int result;
 
-	return object ? SDL_GL_SwapWindow(object) : 0;
+	if (!object)
+		return 0;
+	if (!hint_tried)
+		performance_hint_start(object);
+	swap_start = monotonic_nanoseconds();
+	/* (the drawing thread's frames only; the first has no start) */
+	if (hint_session && hint_swap_end && gettid() == hint_thread && swap_start > hint_swap_end)
+		performance_hint.report_actual_work_duration(hint_session, swap_start - hint_swap_end);
+	result = SDL_GL_SwapWindow(object);
+	hint_swap_end = monotonic_nanoseconds();
+	return result;
 }
 
 /* ---------- events */
