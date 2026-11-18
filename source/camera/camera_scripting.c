@@ -295,7 +295,8 @@ void scripted_camera_set(
 	/* port: and are a new shot, drawn as one (render_interpolation.c), unless
 	the camera is already there */
 	if (camera_time <= 0 &&
-		(camera_script_globals.mode != _camera_script_mode_point ||
+		(camera_script_globals.timer > 0.f ||
+		camera_script_globals.mode != _camera_script_mode_point ||
 		camera_script_globals.camera_point_index != camera_point_index ||
 		camera_script_globals.relative_object_index != relative_object_index))
 	{

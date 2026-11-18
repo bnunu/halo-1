@@ -814,7 +814,8 @@ Each frame shows the world between the last two ticks
   airbrakes as it falls, and the whole pod, with the camera that follows it,
   had stepped once a tick.
 - A cut the scripts make (a cinematic's camera set to another point at
-  once, an animated camera started, the scripted camera turned on or off)
+  once, a timed move finished immediately, an animated camera started,
+  the scripted camera turned on or off)
   starts a new shot: for that tick the camera and every object are drawn as
   the tick left them, as the Xbox drew them. Mixed, the camera swept from
   one shot to the next when they were too close to tell for a cut (the

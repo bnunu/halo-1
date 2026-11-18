@@ -174,6 +174,16 @@ int main(int argc, char **argv)
 		CHECK(interpolation_cuts == 4, "co-op's camera each tick: %d", interpolation_cuts);
 		return 0;
 	}
+	CASE("finish-camera-move")
+	{
+		scripted_camera_set(5, 120, 9);
+		CHECK(!interpolation_cuts, "a timed move started as a cut");
+		scripted_camera_set(5, 0, 9);
+		CHECK(interpolation_cuts == 1, "finishing a timed move did not cut");
+		scripted_camera_set(5, 0, 9);
+		CHECK(interpolation_cuts == 1, "a settled camera cut twice");
+		return 0;
+	}
 	CASE("lifecycle")
 	{
 		for (player = 0; player < 4; player++)

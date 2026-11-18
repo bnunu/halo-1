@@ -7,7 +7,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from harness import CHECK_FAILED, build, function, mutated, read, run
 
-CASES = ["motion", "coop-camera-motion", "cuts", "interpolation-cuts", "lifecycle", "followed-unit", "rigid-body"]
+CASES = ["motion", "coop-camera-motion", "cuts", "interpolation-cuts", "finish-camera-move", "lifecycle", "followed-unit", "rigid-body"]
 
 
 def generated(fault=None):
