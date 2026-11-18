@@ -200,13 +200,18 @@ The game draws each frame on one thread, which the scheduler moves between the
 big cores; each core then looks half idle to the CPU governor, which kept them
 at a third to a half of their clock in a fight (a Pixel 6a: 850-1430 of 2802
 MHz, 40 fps). A performance hint session tells the system the thread's work
-each frame and the time a frame has (one refresh), so the clocks rise to meet
-it. The work is the time between two swaps, less the swap itself. The target
+each frame and the time a frame has, so the clocks rise to meet it. The time
+a frame has is one refresh, or with the game's frame limiter (display.max_fps,
+vsync off) its interval where that is longer: 60 frames a second on a 120 Hz
+display has 16.7 ms, not 8.3, and a limit above the refresh rate is not
+boosted for, the display showing no more. The work is from the frame's start
+(the swap's end, or once the limiter has slept, host_frame_paced) to the next
+swap; the limiter's sleep is not work. The target
 is HINT_TARGET_SHARE of a refresh, not all of it: the governor answers a
 heavier frame a few frames late, and at a whole refresh a fight's spikes
 dropped to the mid 40s. A display's refresh rate can change while the game
-runs (60, 90 and 120 Hz phones switch), so it is read again every
-HINT_REFRESH_CHECK_FRAMES and the target follows. The thread that runs the
+runs (60, 90 and 120 Hz phones switch), and the limit with the settings, so
+they are read again every HINT_REFRESH_CHECK_FRAMES and the target follows. The thread that runs the
 audio callback (audio_thread) has a session of its own: left alone it mixed
 on a mid core at 550-1000 of 2253 MHz, about 8 ms of each 21 ms callback, and
 the game's thread waited for the mixer's lock meanwhile; its work is each
@@ -232,7 +237,10 @@ static struct
 static APerformanceHintSession *hint_session;
 static pid_t hint_thread;
 static int hint_tried;
-static int64_t hint_swap_end;
+/* the drawing thread's frame's start, and the game's frame limiter's
+interval (0: none), host_frame_paced */
+static int64_t hint_frame_start;
+static int64_t hint_limit;
 static int64_t hint_target;
 static unsigned long hint_frames;
 
@@ -249,8 +257,11 @@ static int64_t performance_hint_target(SDL_Window *window)
 {
 	const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
 	double refresh = mode && mode->refresh_rate > 0.0f ? mode->refresh_rate : 60.0;
+	double frame = 1e9 / refresh;
 
-	return (int64_t)(1e9 * HINT_TARGET_SHARE / refresh);
+	if ((double)hint_limit > frame)
+		frame = (double)hint_limit;
+	return (int64_t)(frame * HINT_TARGET_SHARE);
 }
 
 /* the functions, looked up once from whichever thread asks first; the
@@ -303,7 +314,8 @@ static void performance_hint_start(SDL_Window *window)
 	hint_thread = gettid();
 }
 
-/* (every HINT_REFRESH_CHECK_FRAMES: the refresh rate changed, the target with it) */
+/* (every HINT_REFRESH_CHECK_FRAMES: the refresh rate or the limit changed, the
+target with it) */
 static void performance_hint_follow_refresh(SDL_Window *window)
 {
 	int64_t target;
@@ -315,7 +327,7 @@ static void performance_hint_follow_refresh(SDL_Window *window)
 		return;
 	hint_target = target;
 	performance_hint.update_target_work_duration(hint_session, target);
-	host_logf(HOST_LOG_INFO, "performance hint: %.2f ms of work a frame (the refresh rate changed)",
+	host_logf(HOST_LOG_INFO, "performance hint: %.2f ms of work a frame (the refresh rate or the frame limit changed)",
 		(double)target / 1e6);
 }
 
@@ -333,13 +345,24 @@ int host_sdl_gl_swap_window(uint32_t window)
 	/* (the drawing thread's frames only; the first has no start) */
 	if (hint_session && gettid() == hint_thread)
 	{
-		if (hint_swap_end && swap_start > hint_swap_end)
-			performance_hint.report_actual_work_duration(hint_session, swap_start - hint_swap_end);
+		if (hint_frame_start && swap_start > hint_frame_start)
+			performance_hint.report_actual_work_duration(hint_session, swap_start - hint_frame_start);
 		performance_hint_follow_refresh(object);
 	}
 	result = SDL_GL_SwapWindow(object);
-	hint_swap_end = monotonic_nanoseconds();
+	hint_frame_start = monotonic_nanoseconds();
 	return result;
+}
+
+/* the game's frame starts now, after its frame limiter's sleep, which spaces
+frames interval nanoseconds apart (0: no limit; sdl_platform.c's
+platform_video_swap) */
+void host_frame_paced(int64_t interval)
+{
+	if (gettid() != hint_thread)
+		return;
+	hint_frame_start = monotonic_nanoseconds();
+	hint_limit = interval > 0 ? interval : 0;
 }
 
 /* ---------- events */

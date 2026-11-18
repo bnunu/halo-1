@@ -29,6 +29,7 @@ host_sdl_gl_create_context
 host_sdl_gl_make_current
 host_sdl_gl_set_swap_interval
 host_sdl_gl_swap_window
+host_frame_paced
 host_sdl_poll_event
 host_sdl_text_input
 host_sdl_text_input_active
