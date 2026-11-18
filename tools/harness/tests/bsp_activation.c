@@ -27,8 +27,9 @@ static struct scenario_structure_bsp_reference references[] = {{{0}}, {{1}}};
 static struct scenario_datum scenario = {{2, references}}, *global_scenario = &scenario;
 static struct { short structure_bsp_index; } globals, *scenario_globals = &globals;
 static short global_structure_bsp_index;
-static struct collision_bsp collision, *global_collision_bsp;
-static struct structure_bsp bsp = {{1, &collision}}, *global_structure_bsp;
+static struct collision_bsp collisions[2], *global_collision_bsp;
+static struct structure_bsp bsps[] = {{{1, &collisions[0]}}, {{1, &collisions[1]}}};
+static struct structure_bsp *global_structure_bsp;
 static struct bsp3d *global_bsp3d;
 static int refused = NONE;
 static int reconnect_activation = NONE;
@@ -38,10 +39,13 @@ static boolean scenario_structure_bsp_load(struct scenario_structure_bsp_referen
     return reference->structure_bsp.index != refused;
 }
 
-#define structure_bsp_definition_get(index) (&bsp)
+#define structure_bsp_definition_get(index) (&bsps[index])
 
 static void scenario_call_reconnect_to_structure_bsp_procs(void)
 {
+    struct collision_bsp *expected_collision = &collisions[refused == NONE ? 1 : 0];
+    CHECK(global_collision_bsp == expected_collision, "collision BSP at reconnect");
+    CHECK(global_bsp3d == (struct bsp3d *)expected_collision, "collision tree at reconnect");
     reconnect_activation = activation.pvs_activation_type;
 }
 
