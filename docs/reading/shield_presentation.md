@@ -48,7 +48,9 @@ reaches the chest. The completed effect stays green while vitality exceeds
 take precedence over Shield Color only while the overshield effect is active;
 ordinary shields still use OpenCE's existing Shield Color implementation,
 including its faint-gray rendering of black. Shield Glow follows the layer
-when both effects are enabled.
+when both effects are enabled. As active camouflage strengthens,
+`overshield_effect_intensity` fades the added body and arm flares. A shield
+hit can still light the body through the cloak.
 
 The state belongs to this machine's presentation. It is not replicated and
 does not change protocol data or gameplay. The existing host policy remains
