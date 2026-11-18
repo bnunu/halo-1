@@ -616,6 +616,14 @@ void objects_port_set_activating_cluster(
 	object_globals->pvs_activation.cluster_index = cluster_index;
 }
 
+/* port: a scripted camera cluster belongs to one BSP. An object override
+resolves its cluster from the object after reconnection. */
+void objects_clear_activating_cluster(void)
+{
+	if (object_globals->pvs_activation_type == _pvs_activation_cluster)
+		object_pvs_clear();
+}
+
 void object_pvs_clear(void)
 {
 	object_globals->pvs_activation_type = _pvs_activation_normal;
@@ -2425,16 +2433,6 @@ void objects_reconnect_to_structure_bsp(
 	struct object_datum *object;
 
 	struct object_iterator iterator;
-
-	/* port: a cluster the scripts activate objects from (object_pvs_set_camera)
-	is the old bsp's: the players' pvs read that cluster of the new bsp, past
-	its clusters if it has fewer, an assertion's halt
-	(players_compute_combined_pvs). Objects are activated as normal again; an
-	object's (object_pvs_set_object) is found again from the object. */
-	if (object_globals->pvs_activation_type == _pvs_activation_cluster)
-	{
-		object_globals->pvs_activation_type = _pvs_activation_normal;
-	}
 
 	object_iterator_new(&iterator, _object_mask_all, 0);
 	

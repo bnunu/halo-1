@@ -385,6 +385,7 @@ void objects_information_get(struct objects_information *information);
 void object_pvs_set_object(long object_index);
 void object_pvs_set_camera_point(short camera_point_index);
 void object_pvs_clear(void);
+void objects_clear_activating_cluster(void); /* port: scenario_switch_structure_bsp */
 short objects_get_activating_cluster_index(void);
 /* port: makes a cluster active as object_pvs_activate would (NONE: back to
 the players' own), for a network co-op client following the host's

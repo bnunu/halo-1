@@ -1166,12 +1166,15 @@ boolean scenario_switch_structure_bsp(
 			/* port: cache buckets while the newly current bsp's tags are loaded */
 			structure_culling_structure_bsp_loaded();
 
+			/* port: recovery can reinstall the old BSP. Its scripted camera
+			cluster is still valid, but another BSP owns different clusters. */
+			result = structure_bsp_index != old_structure_bsp_index;
 			if (had_old_structure_bsp)
 			{
+				if (result)
+					objects_clear_activating_cluster();
 				scenario_call_reconnect_to_structure_bsp_procs();
 			}
-			/* port: (not when it is the old one, loaded again) */
-			result = structure_bsp_index != old_structure_bsp_index;
 		}
 
 		collision_log_enable(TRUE);
