@@ -206,12 +206,17 @@ is HINT_TARGET_SHARE of a refresh, not all of it: the governor answers a
 heavier frame a few frames late, and at a whole refresh a fight's spikes
 dropped to the mid 40s. A display's refresh rate can change while the game
 runs (60, 90 and 120 Hz phones switch), so it is read again every
-HINT_REFRESH_CHECK_FRAMES and the target follows. Looked up at run time: the
-app runs from Android 9, where the functions are not there and nothing
-changes. */
+HINT_REFRESH_CHECK_FRAMES and the target follows. The thread that runs the
+audio callback (audio_thread) has a session of its own: left alone it mixed
+on a mid core at 550-1000 of 2253 MHz, about 8 ms of each 21 ms callback, and
+the game's thread waited for the mixer's lock meanwhile; its work is each
+callback, its target HINT_AUDIO_TARGET. Looked up at run time: the app runs
+from Android 9, where the functions are not there and nothing changes. */
 
 #define HINT_TARGET_SHARE 0.75
 #define HINT_REFRESH_CHECK_FRAMES 30
+/* the audio callback's work: a fifth of a 1024 frame callback (21 ms) */
+#define HINT_AUDIO_TARGET 4000000LL
 
 typedef struct APerformanceHintManager APerformanceHintManager;
 typedef struct APerformanceHintSession APerformanceHintSession;
@@ -248,15 +253,15 @@ static int64_t performance_hint_target(SDL_Window *window)
 	return (int64_t)(1e9 * HINT_TARGET_SHARE / refresh);
 }
 
-/* (the first swap's thread: the one that draws) */
-static void performance_hint_start(SDL_Window *window)
-{
-	void *library;
-	APerformanceHintManager *manager;
-	int32_t thread;
+/* the functions, looked up once from whichever thread asks first; the
+manager, or NULL where there is none */
+static pthread_once_t hint_loaded = PTHREAD_ONCE_INIT;
+static APerformanceHintManager *hint_manager;
 
-	hint_tried = 1;
-	library = dlopen("libandroid.so", RTLD_NOW);
+static void performance_hint_load(void)
+{
+	void *library = dlopen("libandroid.so", RTLD_NOW);
+
 	if (!library)
 		return;
 	performance_hint.get_manager = (APerformanceHintManager *(*)(void))dlsym(library, "APerformanceHint_getManager");
@@ -272,13 +277,30 @@ static void performance_hint_start(SDL_Window *window)
 		host_logf(HOST_LOG_INFO, "performance hint: not on this Android version");
 		return;
 	}
-	manager = performance_hint.get_manager();
+	hint_manager = performance_hint.get_manager();
+}
+
+/* a session for this thread, or NULL */
+static APerformanceHintSession *performance_hint_session(const char *name, int64_t target)
+{
+	APerformanceHintSession *session;
+	int32_t thread = (int32_t)gettid();
+
+	pthread_once(&hint_loaded, performance_hint_load);
+	session = hint_manager ? performance_hint.create_session(hint_manager, &thread, 1, target) : NULL;
+	if (hint_manager)
+		host_logf(HOST_LOG_INFO, "performance hint: %s for the %s thread %d, %.2f ms of work",
+			session ? "session" : "no session", name, (int)thread, (double)target / 1e6);
+	return session;
+}
+
+/* (the first swap's thread: the one that draws) */
+static void performance_hint_start(SDL_Window *window)
+{
+	hint_tried = 1;
 	hint_target = performance_hint_target(window);
-	thread = (int32_t)gettid();
-	hint_session = manager ? performance_hint.create_session(manager, &thread, 1, hint_target) : NULL;
-	hint_thread = (pid_t)thread;
-	host_logf(HOST_LOG_INFO, "performance hint: %s for thread %d, %.2f ms of work a frame",
-		hint_session ? "session" : "no session", (int)thread, (double)hint_target / 1e6);
+	hint_session = performance_hint_session("drawing", hint_target);
+	hint_thread = gettid();
 }
 
 /* (every HINT_REFRESH_CHECK_FRAMES: the refresh rate changed, the target with it) */
@@ -470,6 +492,10 @@ static __thread struct audio_binding *calling_back;
 static void *audio_thread(void *context)
 {
 	struct audio_binding *binding = context;
+	/* (its performance hint session: the hint above) */
+	APerformanceHintSession *hint_audio = NULL;
+	int hint_tried_audio = 0;
+	int64_t start;
 
 	pthread_mutex_lock(&binding->lock);
 	for (;;)
@@ -483,9 +509,17 @@ static void *audio_thread(void *context)
 		additional = binding->additional;
 		total = binding->total;
 		pthread_mutex_unlock(&binding->lock);
+		if (!hint_tried_audio)
+		{
+			hint_tried_audio = 1;
+			hint_audio = performance_hint_session("audio", HINT_AUDIO_TARGET);
+		}
+		start = monotonic_nanoseconds();
 		calling_back = binding;
 		host_call_guest(binding->callback, binding->userdata, binding->handle, (uint32_t)additional, (uint32_t)total);
 		calling_back = NULL;
+		if (hint_audio)
+			performance_hint.report_actual_work_duration(hint_audio, monotonic_nanoseconds() - start);
 		pthread_mutex_lock(&binding->lock);
 		binding->pending = 0;
 		pthread_cond_signal(&binding->done);
