@@ -434,19 +434,25 @@ static boolean pose_jumps(
 		move.k = latest_local.z - previous_local.z;
 		if (!(move.i * move.i + move.j * move.j + move.k * move.k <= NODE_SNAP_DISTANCE * NODE_SNAP_DISTANCE))
 		{
-			real_vector3d change;
-			real before_squared = moves[node_index].i * moves[node_index].i +
-				moves[node_index].j * moves[node_index].j + moves[node_index].k * moves[node_index].k;
-			/* (the larger of NODE_SNAP_DISTANCE and half the move before, squared) */
-			real allowed_squared = MAX(NODE_SNAP_DISTANCE * NODE_SNAP_DISTANCE, 0.25f * before_squared);
-
-			change.i = move.i - moves[node_index].i;
-			change.j = move.j - moves[node_index].j;
-			change.k = move.k - moves[node_index].k;
-			if (!moves_valid ||
-				!(change.i * change.i + change.j * change.j + change.k * change.k <= allowed_squared))
+			if (!moves_valid)
 			{
 				jumps = TRUE;
+			}
+			else
+			{
+				real_vector3d change;
+				real before_squared = moves[node_index].i * moves[node_index].i +
+					moves[node_index].j * moves[node_index].j + moves[node_index].k * moves[node_index].k;
+				/* (the larger of NODE_SNAP_DISTANCE and half the move before, squared) */
+				real allowed_squared = MAX(NODE_SNAP_DISTANCE * NODE_SNAP_DISTANCE, 0.25f * before_squared);
+
+				change.i = move.i - moves[node_index].i;
+				change.j = move.j - moves[node_index].j;
+				change.k = move.k - moves[node_index].k;
+				if (!(change.i * change.i + change.j * change.j + change.k * change.k <= allowed_squared))
+				{
+					jumps = TRUE;
+				}
 			}
 		}
 		moves[node_index] = move;

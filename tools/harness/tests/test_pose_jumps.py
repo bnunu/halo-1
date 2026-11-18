@@ -13,7 +13,7 @@ from harness import CHECK_FAILED, build, function, mutated, read, run, structure
 CASES = ['still', 'jump', 'steady', 'reversal', 'not a number']
 CONTROLS = [
     # every fast node a jump (the rule before)
-    ('if (!moves_valid ||', 'if (TRUE ||', 'steady'),
+    ('if (!moves_valid)', 'if (TRUE)', 'steady'),
     # the change allowed no more than the snap distance, however fast the node
     ('MAX(NODE_SNAP_DISTANCE * NODE_SNAP_DISTANCE, 0.25f * before_squared)',
      'NODE_SNAP_DISTANCE * NODE_SNAP_DISTANCE', 'steady'),
