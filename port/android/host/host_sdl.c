@@ -201,9 +201,17 @@ big cores; each core then looks half idle to the CPU governor, which kept them
 at a third to a half of their clock in a fight (a Pixel 6a: 850-1430 of 2802
 MHz, 40 fps). A performance hint session tells the system the thread's work
 each frame and the time a frame has (one refresh), so the clocks rise to meet
-it. The work is the time between two swaps, less the swap itself. Looked up at
-run time: the app runs from Android 9, where the functions are not there and
-nothing changes. */
+it. The work is the time between two swaps, less the swap itself. The target
+is HINT_TARGET_SHARE of a refresh, not all of it: the governor answers a
+heavier frame a few frames late, and at a whole refresh a fight's spikes
+dropped to the mid 40s. A display's refresh rate can change while the game
+runs (60, 90 and 120 Hz phones switch), so it is read again every
+HINT_REFRESH_CHECK_FRAMES and the target follows. Looked up at run time: the
+app runs from Android 9, where the functions are not there and nothing
+changes. */
+
+#define HINT_TARGET_SHARE 0.75
+#define HINT_REFRESH_CHECK_FRAMES 30
 
 typedef struct APerformanceHintManager APerformanceHintManager;
 typedef struct APerformanceHintSession APerformanceHintSession;
@@ -212,6 +220,7 @@ static struct
 {
 	APerformanceHintManager *(*get_manager)(void);
 	APerformanceHintSession *(*create_session)(APerformanceHintManager *, const int32_t *, size_t, int64_t);
+	int (*update_target_work_duration)(APerformanceHintSession *, int64_t);
 	int (*report_actual_work_duration)(APerformanceHintSession *, int64_t);
 } performance_hint;
 
@@ -219,6 +228,8 @@ static APerformanceHintSession *hint_session;
 static pid_t hint_thread;
 static int hint_tried;
 static int64_t hint_swap_end;
+static int64_t hint_target;
+static unsigned long hint_frames;
 
 static int64_t monotonic_nanoseconds(void)
 {
@@ -228,14 +239,21 @@ static int64_t monotonic_nanoseconds(void)
 	return (int64_t)now.tv_sec * 1000000000LL + now.tv_nsec;
 }
 
-/* (the first swap's thread: the one that draws; a refresh's time, the target) */
+/* (the target for the window's display's refresh rate now) */
+static int64_t performance_hint_target(SDL_Window *window)
+{
+	const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+	double refresh = mode && mode->refresh_rate > 0.0f ? mode->refresh_rate : 60.0;
+
+	return (int64_t)(1e9 * HINT_TARGET_SHARE / refresh);
+}
+
+/* (the first swap's thread: the one that draws) */
 static void performance_hint_start(SDL_Window *window)
 {
 	void *library;
 	APerformanceHintManager *manager;
-	const SDL_DisplayMode *mode;
 	int32_t thread;
-	int64_t target;
 
 	hint_tried = 1;
 	library = dlopen("libandroid.so", RTLD_NOW);
@@ -244,22 +262,39 @@ static void performance_hint_start(SDL_Window *window)
 	performance_hint.get_manager = (APerformanceHintManager *(*)(void))dlsym(library, "APerformanceHint_getManager");
 	performance_hint.create_session = (APerformanceHintSession *(*)(APerformanceHintManager *, const int32_t *, size_t,
 		int64_t))dlsym(library, "APerformanceHint_createSession");
+	performance_hint.update_target_work_duration = (int (*)(APerformanceHintSession *, int64_t))dlsym(library,
+		"APerformanceHint_updateTargetWorkDuration");
 	performance_hint.report_actual_work_duration = (int (*)(APerformanceHintSession *, int64_t))dlsym(library,
 		"APerformanceHint_reportActualWorkDuration");
 	if (!performance_hint.get_manager || !performance_hint.create_session ||
-		!performance_hint.report_actual_work_duration)
+		!performance_hint.update_target_work_duration || !performance_hint.report_actual_work_duration)
 	{
 		host_logf(HOST_LOG_INFO, "performance hint: not on this Android version");
 		return;
 	}
 	manager = performance_hint.get_manager();
-	mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
-	target = mode && mode->refresh_rate > 0.0f ? (int64_t)(1e9 / mode->refresh_rate) : 16666667LL;
+	hint_target = performance_hint_target(window);
 	thread = (int32_t)gettid();
-	hint_session = manager ? performance_hint.create_session(manager, &thread, 1, target) : NULL;
+	hint_session = manager ? performance_hint.create_session(manager, &thread, 1, hint_target) : NULL;
 	hint_thread = (pid_t)thread;
-	host_logf(HOST_LOG_INFO, "performance hint: %s for thread %d, %.2f ms a frame",
-		hint_session ? "session" : "no session", (int)thread, (double)target / 1e6);
+	host_logf(HOST_LOG_INFO, "performance hint: %s for thread %d, %.2f ms of work a frame",
+		hint_session ? "session" : "no session", (int)thread, (double)hint_target / 1e6);
+}
+
+/* (every HINT_REFRESH_CHECK_FRAMES: the refresh rate changed, the target with it) */
+static void performance_hint_follow_refresh(SDL_Window *window)
+{
+	int64_t target;
+
+	if (++hint_frames % HINT_REFRESH_CHECK_FRAMES)
+		return;
+	target = performance_hint_target(window);
+	if (target == hint_target)
+		return;
+	hint_target = target;
+	performance_hint.update_target_work_duration(hint_session, target);
+	host_logf(HOST_LOG_INFO, "performance hint: %.2f ms of work a frame (the refresh rate changed)",
+		(double)target / 1e6);
 }
 
 int host_sdl_gl_swap_window(uint32_t window)
@@ -274,8 +309,12 @@ int host_sdl_gl_swap_window(uint32_t window)
 		performance_hint_start(object);
 	swap_start = monotonic_nanoseconds();
 	/* (the drawing thread's frames only; the first has no start) */
-	if (hint_session && hint_swap_end && gettid() == hint_thread && swap_start > hint_swap_end)
-		performance_hint.report_actual_work_duration(hint_session, swap_start - hint_swap_end);
+	if (hint_session && gettid() == hint_thread)
+	{
+		if (hint_swap_end && swap_start > hint_swap_end)
+			performance_hint.report_actual_work_duration(hint_session, swap_start - hint_swap_end);
+		performance_hint_follow_refresh(object);
+	}
 	result = SDL_GL_SwapWindow(object);
 	hint_swap_end = monotonic_nanoseconds();
 	return result;
