@@ -989,7 +989,22 @@ real square_root(
 __inline real square_root(
 	real x)
 {
-	return sqrt(x);
+	/* port: in single precision, an instruction on every port. sqrt(x) took
+	the root of x as a double and rounded it back (two conversions and a
+	slower root); a double carries more than twice a float's precision, so
+	that rounded to exactly the float root: the same bits. (sqrtf and
+	__builtin_sqrtf can be a call into the C runtime on 32-bit Windows; the
+	elementwise builtin is always the instruction.) */
+#ifdef __has_builtin
+#if __has_builtin(__builtin_elementwise_sqrt)
+#define REAL_MATH_SQUARE_ROOT_FLOAT
+#endif
+#endif
+#ifdef REAL_MATH_SQUARE_ROOT_FLOAT
+	return __builtin_elementwise_sqrt(x);
+#else
+	return (real)sqrt(x);
+#endif
 }
 #endif
 
