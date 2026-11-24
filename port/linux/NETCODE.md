@@ -27,7 +27,14 @@ with ideas from VALORANT's netcode articles, keeping the 30 Hz tick:
   impulses) with the units' state, those near a client's players every
   tick and others less often; a client drives each unit with the latest
   it has, as it drives a remote player's, until it hears nothing of it for
-  two seconds (`port/linux/game/network_actors.c`).
+  two seconds (`port/linux/game/network_actors.c`). A recording's control
+  goes the same way, a vehicle's too (a cutscene's dropships, and the
+  Falcons that fly their recordings): possessed and kept active as on the
+  host, it keeps that control rather than take its driver's, and updates
+  where a cutscene's camera watches it, far from the players. The host's
+  path still places a vehicle no player drives, but its speed, its wheels'
+  turn and its seat's power, which its rotors, wheels and engine animate
+  by, are what the control makes of them.
 - **Co-op.** A network game on a campaign level with no game engine
   (Create Game's Map screen, its SINGLEPLAYER maps, over LAN and the
   internet) is co-op. Only the host runs the
