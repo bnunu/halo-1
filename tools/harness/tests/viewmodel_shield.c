@@ -56,6 +56,8 @@ static int overshield_setting = 1;
 static boolean overshield_effect_enabled(void) { return overshield_setting; }
 static struct overshield_effect *overshield_effect_get(long unit_index) { return overshield_unit[unit_index]; }
 static short overshield_effect_intensity_source(long unit_index) { (void)unit_index; return 1; }
+/* uncloaked (the cloak's fade is test_overshield_cloak.py's) */
+static real overshield_effect_uncloaked(long unit_index) { (void)unit_index; return 1.f; }
 static int color_setting;
 static real_rgb_color chosen_colors[4];
 static real_rgb_color const *shield_color_colors(long index, real_rgb_color const *colors) { return color_setting ? chosen_colors : colors; }

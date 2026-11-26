@@ -84,7 +84,7 @@ def generated(control=None):
                                                              "OVERSHIELD_EFFECT_ARMS_LENGTH"]] +
                       [structure(overshield, "overshield_effect")])
     code = "\n".join([define(shield, "VIEWMODEL_SHIELD_STAND_OFF"), per_player_state(shield)] +
-                     [function(overshield, name) for name in ["overshield_effect_arms_values",
+                     [function(overshield, name) for name in ["overshield_effect_intensity", "overshield_effect_arms_values",
                                                            "overshield_effect_find_values", "overshield_effect_draw"]] +
                      [function(shield, name) for name in ["viewmodel_shield_enabled", "viewmodel_shield_arms_distance",
                                                           "viewmodel_shield_maximum_offset", "viewmodel_shield_apply",

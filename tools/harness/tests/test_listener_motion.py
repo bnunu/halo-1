@@ -7,7 +7,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from harness import CHECK_FAILED, build, function, mutated, read, run
 
-CASES = ["motion", "coop-camera-motion", "cuts", "lifecycle", "followed-unit", "rigid-body"]
+CASES = ["motion", "coop-camera-motion", "cuts", "interpolation-cuts", "finish-camera-move", "lifecycle", "followed-unit", "rigid-body"]
 
 
 def generated(fault=None):
@@ -49,6 +49,20 @@ def test_lifecycle_wiring():
     for name in ("scripted_camera_set", "scripted_camera_set_animation",
                  "scripted_camera_set_first_person", "scripted_camera_set_dead"):
         assert "sound_listener_motion_reset(NONE)" in function(scripting, name)
+
+
+def test_interpolation_cut_needs_a_change():
+    fault = ("camera_script_globals.mode != _camera_script_mode_point ||", "1 ||")
+    status, output = run(build("listener_motion", generated(fault)), "interpolation-cuts")
+    assert status == CHECK_FAILED, f"a cut to the point the camera is at escaped detection: {output}"
+
+
+def test_interpolation_cut_wiring():
+    scripting = read("source/camera/camera_scripting.c")
+    for name in ("scripted_camera_enable", "scripted_camera_set_animation",
+                 "scripted_camera_set_first_person", "scripted_camera_set_dead", "scripted_camera_set"):
+        assert "render_interpolation_cut();" in function(scripting, name), name
+    assert "render_interpolation_cut" not in function(scripting, "scripted_camera_set_camera_point_relative")
 
 
 def test_coop_camera_updates_must_preserve_motion():

@@ -105,6 +105,31 @@ int main(int argc, char **argv)
 		frame(12, 0.5f, OTHER_WEAPON, GRAPH, 0.4f);
 		expect(0.3f);
 	}
+	/* an animation the game cut to (a melee's start): that tick's pose is
+	drawn as it is, the next blended from it */
+	CASE("cut")
+	{
+		render_interpolation_first_person_cut(0);
+		frame(11, 0.5f, WEAPON, GRAPH, 0.8f);
+		expect(0.8f);
+		frame(11, 0.75f, WEAPON, GRAPH, 0.8f);
+		expect(0.8f);
+		frame(12, 0.5f, WEAPON, GRAPH, 1.0f);
+		expect(0.9f);
+		/* (another player's cut is not this one's) */
+		render_interpolation_first_person_cut(1);
+		frame(13, 0.5f, WEAPON, GRAPH, 1.2f);
+		expect(1.1f);
+	}
+	/* ... between two frames of a tick */
+	CASE("cut within a tick")
+	{
+		frame(11, 0.25f, WEAPON, GRAPH, 0.4f);
+		expect(0.1f);
+		render_interpolation_first_person_cut(0);
+		frame(11, 0.75f, WEAPON, GRAPH, 0.6f);
+		expect(0.6f);
+	}
 	/* the view away from first person for a while */
 	CASE("gap")
 	{

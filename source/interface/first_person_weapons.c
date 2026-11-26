@@ -1082,6 +1082,12 @@ static void first_person_weapon_set_state(
 								local_player_index,
 								interpolation_frame_count);
 						}
+						else
+						{
+							/* port: not blended into, the pose cuts: so is it drawn
+							between ticks (render_interpolation.c) */
+							render_interpolation_first_person_cut(local_player_index);
+						}
 						first_person_weapon->state= new_state;
 						first_person_weapon->state_animation.index= animation_index;
 						first_person_weapon->state_animation.frame_index= 0;

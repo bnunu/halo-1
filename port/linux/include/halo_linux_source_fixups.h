@@ -24,6 +24,8 @@ int halo_interpolation_enabled(void);
 float game_time_get_tick_fraction(void);
 void render_interpolation_tick(void);
 void render_interpolation_reset(void);
+/* the scripts cut to a new shot (camera_scripting.c) */
+void render_interpolation_cut(void);
 void render_interpolation_frame_begin(void);
 void render_interpolation_frame_end(void);
 float render_interpolation_fraction(void);
@@ -34,6 +36,7 @@ struct observer_result const *render_interpolation_camera(short local_player_ind
 	struct observer_result const *observer);
 void render_interpolation_first_person(short local_player_index, long weapon_index, long animation_graph_index,
 	struct real_matrix4x3 *node_matrices, short node_count, struct render_camera const *camera);
+void render_interpolation_first_person_cut(short local_player_index);
 float render_interpolation_game_time_sec(long ticks);
 
 /* whether the map being loaded, by the name it was loaded by, is a

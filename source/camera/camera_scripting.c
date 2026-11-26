@@ -177,6 +177,7 @@ void scripted_camera_enable(
 {
 	camera_script_globals.enabled = enabled;
 	sound_listener_motion_reset(NONE); /* port: entering or leaving a scripted camera is a cut */
+	render_interpolation_cut(); /* port: ... drawn as one (render_interpolation.c) */
 	camera_script_globals.first_update = TRUE;
 	return;
 }
@@ -207,6 +208,7 @@ void scripted_camera_set_animation(
 					camera_script_globals.relative_object_index = NONE;
 					camera_script_globals.mode = _camera_script_mode_animation;
 					sound_listener_motion_reset(NONE); /* port: a new track has no preceding motion sample */
+					render_interpolation_cut(); /* port: nor does its first frame blend from the last shot */
 					camera_script_globals.first_update = TRUE;
 					camera_script_globals.animation_index = animation_index;
 					camera_script_globals.animation_graph_index = animation_graph_index;
@@ -231,6 +233,7 @@ void scripted_camera_set_first_person(
 	{
 		camera_script_globals.mode = _camera_script_mode_first_person;
 		sound_listener_motion_reset(NONE); /* port: camera attachment changes discontinuously */
+		render_interpolation_cut(); /* port: a cut (render_interpolation.c) */
 		camera_script_globals.first_update = TRUE;
 		camera_script_globals.relative_object_index = unit_index;
 	}
@@ -251,6 +254,7 @@ void scripted_camera_set_dead(
 	{
 		camera_script_globals.mode = _camera_script_mode_dead;
 		sound_listener_motion_reset(NONE); /* port: camera attachment changes discontinuously */
+		render_interpolation_cut(); /* port: a cut (render_interpolation.c) */
 		camera_script_globals.first_update = TRUE;
 		camera_script_globals.relative_object_index = unit_index;
 	}
@@ -288,6 +292,16 @@ void scripted_camera_set(
 	/* port: short cuts also need an explicit reset, before the observer moves */
 	if (camera_time <= 0)
 		sound_listener_motion_reset(NONE);
+	/* port: and are a new shot, drawn as one (render_interpolation.c), unless
+	the camera is already there */
+	if (camera_time <= 0 &&
+		(camera_script_globals.timer > 0.f ||
+		camera_script_globals.mode != _camera_script_mode_point ||
+		camera_script_globals.camera_point_index != camera_point_index ||
+		camera_script_globals.relative_object_index != relative_object_index))
+	{
+		render_interpolation_cut();
+	}
 	camera_script_globals.mode = _camera_script_mode_point;
 	camera_script_globals.first_update = TRUE;
 	camera_script_globals.camera_point_index = camera_point_index;

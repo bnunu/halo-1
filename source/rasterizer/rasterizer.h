@@ -762,6 +762,9 @@ void rasterizer_memory_pool_dispose(void);
 
 void rasterizer_lights_reset_for_new_map(
 	void);
+/* port: (scenario_switch_structure_bsp) */
+void rasterizer_lights_reset_for_new_structure_bsp(
+	void);
 void rasterizer_lights_begin(
 	void);
 void rasterizer_lights_end(

@@ -101,3 +101,16 @@ def test_negative_control(control):
     fault, case = NEGATIVE_CONTROLS[control]
     status, output = run(build("lens_flare_occlusion", generated(fault)), case)
     assert status == CHECK_FAILED, f"the occlusion code with a fault ({control}) passed '{case}': the test cannot see it"
+
+
+def test_new_structure_bsp_sees_its_flares_anew():
+    """A structure bsp switched to clears the bsp lens flare markers' visibilities and the occlusion slots, which the
+    old bsp's markers at the same indices left; the switch calls it once the new bsp is current."""
+    lights = read("source/rasterizer/rasterizer_lights.c").replace("\r\n", "\n")
+    reset = function(lights, "rasterizer_lights_reset_for_new_structure_bsp")
+    assert "memset(local_lens_flare_occlusion_test_results2, 0, sizeof(local_lens_flare_occlusion_test_results2));" \
+        in reset
+    assert "memset(lens_flare_occlusion_slots, 0, sizeof(lens_flare_occlusion_slots));" in reset
+    switch = function(read("source/scenario/scenario.c").replace("\r\n", "\n"), "scenario_switch_structure_bsp")
+    assert switch.index("global_structure_bsp_index = structure_bsp_index;") < \
+        switch.index("rasterizer_lights_reset_for_new_structure_bsp();")
