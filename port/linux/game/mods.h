@@ -126,4 +126,11 @@ void mod_models_tags_unloaded(boolean give_back);
 nodes is drawn with, by its vertex buffer: their count, 0 for any other */
 short mod_models_part_palette(struct vertex_buffer const *vertex_buffer, byte const **nodes);
 
+/* ---------- prototypes/MOD_SHADERS.C */
+
+long mod_shaders_update(boolean remove_all, boolean at_load);
+/* (before the tags go: the map's model and environment shaders are given
+back, unless give_back is FALSE (the tags are gone already)) */
+void mod_shaders_tags_unloaded(boolean give_back);
+
 #endif

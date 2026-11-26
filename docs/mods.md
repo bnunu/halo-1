@@ -2,8 +2,9 @@
 
 A mod is a folder of Halo PC tag files that the game plays over a map's own
 tags on your machine, as a resource pack does: sounds (a high-res audio
-pack), bitmaps (a texture pack, a HUD redraw), text (a translation) and
-models (higher-detail weapons, vehicles and scenery). Only the machine that
+pack), bitmaps (a texture pack, a HUD redraw), text (a translation), models
+(higher-detail weapons, vehicles and scenery) and model and environment
+shaders (how those are lit and shine). Only the machine that
 has a mod plays it. Nothing of a mod is sent to another machine, and a mod
 changes nothing that the machines of a network game must agree on, so you
 can play with mods in any game, with players who have other mods or none. (A host's mod sounds of other lengths change how long
@@ -11,8 +12,8 @@ the host's scripts and AI wait for dialogue to end; the host decides those
 for every machine, so they still agree.)
 
 The game's code is `port/linux/game/mods.c` (with `mod_sounds.c`,
-`mod_bitmaps.c`, `mod_strings.c` and `mod_models.c`, one for each kind of
-tag) and `port/linux/src/port_mods.c` (the mods folder and its files).
+`mod_bitmaps.c`, `mod_strings.c`, `mod_models.c` and `mod_shaders.c`, one
+for each kind of tag) and `port/linux/src/port_mods.c` (the mods folder and its files).
 
 ## A mod's folder
 
@@ -167,6 +168,8 @@ game must agree on.
 | Unicode string list | `.unicode_string_list` | The text the game shows |
 | String list | `.string_list` | Other text |
 | Model | `.gbxmodel` (Halo PC's), `.model` (the Xbox's) | What objects look like: weapons, first-person weapons and arms, vehicles, scenery, characters |
+| Model shader | `.shader_model` | How an object's model is drawn: its maps, self-illumination, specular and reflection |
+| Environment shader | `.shader_environment` | How a level's surfaces are drawn: base, detail, bump, self-illumination, specular and reflection maps |
 
 A file must be a Halo PC tag file of its group, as the Halo Editing Kit's
 tools and Invader write them (a model also as `invader-extract` writes an
@@ -254,7 +257,7 @@ permutation draws at each detail level, the detail levels' cutoffs, the
 base map's scale, and which shaders each part is drawn with. A detail level
 the map draws must draw one of the mod's geometries, and one the map draws
 nothing at stays so. Every shader must be one the map has (a mod cannot add
-tags); a mod's bitmaps can redraw them.
+tags); a mod's shaders and bitmaps can redraw them.
 
 The model is checked against each map's own model of its name as that map
 loads. On a map whose model of that name has other nodes, markers or
@@ -285,6 +288,30 @@ made for.
 
 ### Shaders
 
+A mod's `.shader_model` and `.shader_environment` files replace the map's
+model and environment shaders of their names: everything Halo PC's tag has
+(its flags, maps, scales, functions, colors, self-illumination, specular and
+reflection) is the file's. The other shader groups (transparent, glass,
+water, meter, plasma and the chicago shaders) are the map's.
+
+- A shader's material type says how projectiles, footsteps and impacts meet
+  what it covers, and the machines of a network game agree on those: it is
+  the map's, as are its physics flags (a mod's shader of another material
+  is drawn as the file has it but hit as the map's is).
+- A mod cannot add tags: every bitmap the file names, and an environment's
+  lens flare, must be one the map has, of the kind the field draws (a cube
+  map where a reflection is drawn, a 2D texture elsewhere), and an
+  environment's base map must have bitmaps. A mod's bitmaps can redraw them. A
+  file that names a tag the map has not got is left out on that map.
+- Every enum must be within its values and every number finite, as for a
+  map's own shader.
+- What the tool works out as it builds a map is worked out as it does: an
+  environment's bump map scale for x and y is its bump map scale, a black
+  material color is white, a model's map scales of 0 are 1, and a
+  reflection falloff distance past its cutoff makes both 0.
+- What Halo PC's tag has not got (where it is padding, the Xbox has fields)
+  is the map's.
+
 A model's parts can be drawn with a shader of every group Halo PC has but
 one: `shader_transparent_chicago_extended`, which Gearbox added for Halo PC.
 The Xbox game does not have it, so do not use it: use a
@@ -314,14 +341,15 @@ mods: 66 HUD placements scaled to draw larger bitmaps at the map's size
 mods: 354 bitmaps from their files (354 new), 0 given back, 6 left out
 mods: 313 sounds from their files (313 new), 0 given back, 2 left out
 mods: 4 models from their files (4 new), 0 given back, 1 left out
+mods: 12 shaders from their files (12 new), 0 given back, 0 left out
 ```
 
 ## How it operates
 
 - When a map's tags load, at `mods_reload` and at the Mods menu's **OK**,
   the game lists the files of the mods that are on, once, in a table of
-  their tag paths. Each of the map's sound, bitmap, string list and model
-  tags is looked up in it.
+  their tag paths. Each of the map's sound, bitmap, string list, model and
+  model and environment shader tags is looked up in it.
 - A tag replaced by a mod takes the file's values in place, so everything
   that holds the tag keeps it, and the map's own values come back when the
   file goes. A sound playing or a texture in the cache is never changed
