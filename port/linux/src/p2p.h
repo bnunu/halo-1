@@ -102,6 +102,11 @@ void p2p_set_hosting_public(int public);
 /* whether the game this machine hosts is listed in everyone's server
 browser (PUBLIC, and network.public_lobby) */
 int p2p_hosting_listed(void);
+/* the network version a host advertises (its game's advertisement, its
+server browser listing): network.advertise_version's when this build plays
+with it, else HALO_PORT_NETWORK_VERSION_ADVERTISED; in a game on an MCC map
+(mcc) one an MCC game plays with (halo_port_limits.h) */
+unsigned int network_version_advertised(int mcc);
 /* the password of the game hosted for the internet (Server Setup's
 PASSWORD; NULL or empty: none): its listing lets only those who know it
 join from the server browser (its invite link still joins it). Setting or

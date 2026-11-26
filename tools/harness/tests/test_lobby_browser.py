@@ -14,7 +14,9 @@ from harness import CHECK_FAILED, build, constant, enum_with, function, mutated,
 def generated(fault=None):
     header = read('port/linux/src/p2p.h')
     version = constant(read('port/linux/include/halo_port_limits.h'), 'HALO_PORT_NETWORK_VERSION')
-    enums = '\n'.join([f'#define HALO_PORT_NETWORK_VERSION {version}',
+    ranges = re.findall(r'^#define HALO_PORT_NETWORK_VERSION_\w+(?:.*\\\n)*.*',
+                        read('port/linux/include/halo_port_limits.h'), re.M)
+    enums = '\n'.join([f'#define HALO_PORT_NETWORK_VERSION {version}'] + ranges + [
                        enum_with(header, 'P2P_LISTING_NAME_SIZE = 32'),
                        enum_with(header, 'P2P_LOBBY_SOURCE_ALL'),
                        enum_with(header, 'P2P_LOBBY_MAPS_YES'),
@@ -33,7 +35,7 @@ def generated(fault=None):
     return (('enums.inc', enums), ('under_test.inc', code))
 
 
-CASES = ['source', 'empty_full', 'game_type', 'maps', 'dedicated_first', 'sort_each_way', 'other_version',
+CASES = ['source', 'empty_full', 'game_type', 'maps', 'dedicated_first', 'sort_each_way', 'other_version', 'older_in_range',
          'sort_text']
 
 
@@ -56,6 +58,8 @@ def test_case(case):
     (('*reverse = text && *text == \'-\';', '*reverse = 0;'), 'sort_text'),
     (('\treturn P2P_LOBBY_SORT_PLAYERS;', '\treturn P2P_LOBBY_SORT_DEDICATED;'), 'sort_text'),
     (('"dedicated", "players",', '"servers", "players",'), 'sort_text'),
+    (('int other_version = !HALO_PORT_NETWORK_VERSION_PLAYS(game.network_version, 0);',
+      'int other_version = game.network_version != HALO_PORT_NETWORK_VERSION;'), 'older_in_range'),
 ])
 def test_negative_control(fault, case):
     status, output = run(build('lobby_browser', generated(fault)), case)

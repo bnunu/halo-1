@@ -589,6 +589,7 @@ the setting for one start of the game. It has priority over the file.
 | `network.join_from_clipboard` | `true` | `HALO_NET_JOIN_FROM_CLIPBOARD` | `true`: when the game comes to the front, it joins the game of an invite link on the clipboard. |
 | `network.tunnel_port` | `0` | `HALO_NET_TUNNEL_PORT` | The UDP port for internet play. `0`: the game selects a port. Refer to "Internet play". |
 | `network.allow_upnp` | `true` | `HALO_NET_ALLOW_UPNP` | `true`: internet play can ask the router to forward its port (UPnP). `false`: the game does not ask. Refer to "Internet play". |
+| `network.advertise_version` | `0` | `HALO_NET_ADVERTISE_VERSION` | When you host: the network version your game says it is of. `0`: this build's. Builds from before this setting join only a host of their own version: an older version this build plays with (`43`) lets that version's players join, and turns away those of this version. This build and later ones join either. On an MCC map the game says `44` at least. |
 | `network.public_lobby` | `true` | `HALO_NET_PUBLIC_LOBBY` | `true`: the server browser. Public games are listed, and Join Game > Server Browser shows them. `false`: no games are listed or shown. Refer to "Server browser". |
 | `network.host_public` | `true` | `HALO_NET_HOST_PUBLIC` | `true`: a new game of Create Game > Internet starts as PUBLIC. `false`: it starts as PRIVATE. LISTING in Server Setup changes it for each game. Refer to "Server browser". |
 | `network.coop_friendly_fire` | `"on"` | `HALO_NET_COOP_FRIENDLY_FIRE` | Whether the players of an online co-op game hurt each other: `"off"`, `"on"`, `"shields_only"` or `"explosives_only"`. FRIENDLY FIRE in co-op's Server Setup > Co-op Options writes its choice here. Their AI allies they hurt as `network.coop_ally_friendly_fire` says. |
@@ -753,8 +754,9 @@ Steam is asked once a run, without signing in, so the name shows a moment
 after the map is shown, and not at all offline or in the web build (Steam
 does not answer a web page's requests).
 
-All map families use network version 44 (camera mode 32745); older peers
-cannot join, including OpenCE protocol 43 peers. MCC content identity, sharing
+All map families use network version 44 (camera mode 32745). Version 43
+(Build 344) plays with 44, except on an MCC
+map: refer to "Versions" in `NETCODE.md` and `network.advertise_version`. MCC content identity, sharing
 consent and load-progress checks remain separate from the existing Xbox/CE paths;
 see [the network agreement](NETCODE.md#opence-network-agreement).
 
@@ -1227,9 +1229,10 @@ master servers, or only the brokers.
 - A dedicated server's row shows the dedicated icon of Custom Edition.
   Instead of a ping, a dedicated server shows its region (EU, NA-E),
   because the browser does not ping the servers that the master servers
-  list. The row shows JOINING while a join runs. A game of another network
-  version stays in the list in grey, after the other games, with NEWER or
-  OLDER. Its row does not join the game: it shows the message about the
+  list. The row shows JOINING while a join runs. A game of a network
+  version this build does not play with stays in the list in grey, after
+  the other games, with NEWER or OLDER (a game of an older version it plays
+  with, such as 43, is listed as any other). Its row does not join the game: it shows the message about the
   version. The server count above the list adds the number of dedicated
   servers (`SERVERS: 8 (5 dedicated)`) when the list shows all the games on
   one page. PAGE shows only when the list has more than one page.

@@ -316,12 +316,42 @@ static int put_text(unsigned char *bytes, const char *text, int maximum)
 	return 1 + length;
 }
 
+/* (p2p.h: the host's advertisement's version, and its listing's) */
+unsigned int network_version_advertised(int mcc)
+{
+	long chosen = config_integer("network.advertise_version");
+	unsigned int version = HALO_PORT_NETWORK_VERSION_ADVERTISED;
+
+	if (chosen > 0 && chosen <= 0xFFFF && HALO_PORT_NETWORK_VERSION_PLAYS(chosen, 0))
+		version = (unsigned int)chosen;
+	if (mcc && !HALO_PORT_NETWORK_VERSION_PLAYS(version, 1))
+		version = HALO_PORT_NETWORK_VERSION;
+	return version;
+}
+
+/* whether a map is an MCC map's level: "mcc_maps", then a separator, in
+either case (as port/linux/game/mcc_cache.c's mcc_level_name has it) */
+static int listing_mcc_map(const char *map)
+{
+	static const char prefix[] = "mcc_maps";
+	size_t index;
+
+	for (index = 0; index < sizeof(prefix) - 1; index++)
+	{
+		if ((map[index] >= 'A' && map[index] <= 'Z' ? map[index] + 'a' - 'A' : map[index]) != prefix[index])
+			return 0;
+	}
+	return map[index] == '\\' || map[index] == '/';
+}
+
 /* the listing of the game hosted, signed: flags (_listing_closed for a
 tombstone), with the invite's token */
 static int listing_make_token(unsigned char *bytes, int flags, const unsigned char *token)
 {
 	unsigned char *signed_part = bytes;
 	unsigned char data[sizeof(signature_label) - 1 + MAXIMUM_LISTING_SIZE];
+	/* (the version advertised: network.advertise_version's) */
+	unsigned int version = network_version_advertised(listing_mcc_map(lobby.map));
 	int size = 0;
 
 	if (lobby.has_password && !(flags & _listing_closed))
@@ -331,8 +361,8 @@ static int listing_make_token(unsigned char *bytes, int flags, const unsigned ch
 	bytes[size++] = 'H';
 	bytes[size++] = 'L';
 	bytes[size++] = LISTING_FORMAT;
-	bytes[size++] = (unsigned char)(HALO_PORT_NETWORK_VERSION >> 8);
-	bytes[size++] = (unsigned char)HALO_PORT_NETWORK_VERSION;
+	bytes[size++] = (unsigned char)(version >> 8);
+	bytes[size++] = (unsigned char)version;
 	bytes[size++] = (unsigned char)flags;
 	put_long(bytes + size, ++lobby.sequence);
 	size += 4;
@@ -842,7 +872,7 @@ static int listing_wanted(const unsigned char *payload, int size, int retained, 
 
 	if (!listing_read(payload, size, &listing))
 		return 0;
-	if (listing.version != HALO_PORT_NETWORK_VERSION)
+	if (!HALO_PORT_NETWORK_VERSION_PLAYS(listing.version, 0))
 	{
 		if (listing.version > HALO_PORT_NETWORK_VERSION && !(listing.flags & _listing_closed))
 			newer_heard(key_hash);
@@ -873,7 +903,7 @@ static void update_browsing(void)
 		/* (listing_wanted let it in; its key and its time are checked
 		again here, where its signature is: the time it was queued at may
 		have run out) */
-		if (!listing_read(queued.payload, queued.size, &listing) || listing.version != HALO_PORT_NETWORK_VERSION ||
+		if (!listing_read(queued.payload, queued.size, &listing) || !HALO_PORT_NETWORK_VERSION_PLAYS(listing.version, 0) ||
 			!signing_key_hash(listing.key, key_hash) || memcmp(key_hash, queued.key_hash, P2P_KEY_HASH_SIZE) ||
 			!listing_current(&listing, queued.retained))
 		{
@@ -1391,13 +1421,13 @@ void p2p_lobby_sort(struct p2p_listing *games, int count, int order, int reverse
 	for (index = 1; index < count; index++)
 	{
 		struct p2p_listing game = games[index];
-		int other_version = game.network_version != HALO_PORT_NETWORK_VERSION;
+		int other_version = !HALO_PORT_NETWORK_VERSION_PLAYS(game.network_version, 0);
 		int place = index;
 
 		while (place > 0)
 		{
 			const struct p2p_listing *before = &games[place - 1];
-			int before_other = before->network_version != HALO_PORT_NETWORK_VERSION;
+			int before_other = !HALO_PORT_NETWORK_VERSION_PLAYS(before->network_version, 0);
 			int difference = sort_order(before, &game, order);
 
 			if (before_other != other_version ? !before_other : (reverse ? -difference : difference) <= 0)

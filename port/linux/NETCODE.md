@@ -198,8 +198,9 @@ lockstep netcode was removed, set to play it): it tells the player why.
 
 OpenCE network version 42 replaced version 41 for Xbox, Custom Edition and MCC sessions;
 version 44 (below, "Versions") replaces it.
-Advertisements and ordinary join requests carry this one version; mismatched
-versions are rejected before admission. There is no separate MCC capability
+Advertisements and ordinary join requests carry a version; one this build
+does not play with is rejected before admission ("Versions": version 43
+plays with 44, but not on an MCC map). There is no separate MCC capability
 envelope or optional shoulder-camera protocol. Retired fork message IDs 101 and
 102 remain unused. The historical version-41 record is retained as a test fixture,
 not a crossplay promise.
@@ -239,12 +240,35 @@ passing unit checks alone does not establish every-map compatibility.
 
 The native builds' network code has a version, an unsigned 16-bit number
 (`HALO_PORT_NETWORK_VERSION` in `port/linux/include/halo_port_limits.h`),
-raised with any change to what the machines send each other. A host puts it
-in its game's advertisement (reserved bytes that hosts built before there
-was a version send as zeros, so they are version 0). A client does not join
-a host of another version: it shows a message box that says which of the
-two is newer, with both versions ("update the game" or "ask the host to
-update"), and stays in the list of games. Version 1 was the first of this
+raised with any change to what the machines send each other. A host puts a
+version in its game's advertisement (reserved bytes that hosts built before
+there was a version send as zeros, so they are version 0). A build plays
+with a range of versions, from `HALO_PORT_NETWORK_VERSION_OLDEST` to its own
+(`HALO_PORT_NETWORK_VERSION_PLAYS`): a client joins a host of any of them,
+and says the host's version in its join request when it is older (a host of
+a build before the range takes only its own); a host takes a client of any
+of them, in a game on an MCC map from `HALO_PORT_NETWORK_VERSION_OLDEST_MCC`.
+A client does not join a host of a version outside it: it shows a message
+box that says which of the two is newer, with both versions ("update the
+game" or "ask the host to update"), and stays in the list of games.
+
+A version raised for a change that the version before it still plays with
+(the wire format recorded in `network_format.txt` the same, and nothing
+either side does that the other's game needs to know) keeps
+`HALO_PORT_NETWORK_VERSION_OLDEST`; a change it cannot play with raises
+`HALO_PORT_NETWORK_VERSION_OLDEST` to the new version. A host advertises
+`HALO_PORT_NETWORK_VERSION_ADVERTISED`, or `network.advertise_version` when
+this build plays with it (an MCC map's game at least
+`HALO_PORT_NETWORK_VERSION_OLDEST_MCC`), in its advertisement and its server
+browser listing: builds released before the range join only a host that
+advertises their own version, so it is kept at the version players have
+while a newer one plays with it. Version 43, as released (Build 344 on,
+with vehicle riding), sends what 44 sends; 44 changed MCC package sharing
+alone, so 43 plays with 44 but not on an MCC map, where a host of 44 leaves
+out the base resources a machine of 43 cannot find on its own. A host of
+44 that changes to an MCC map with a machine of 43 in its lobby goes on:
+that machine's package check fails, as it does for any machine without the
+map, and the start leaves it out. Version 1 was the first of this
 netcode; version 2 lets a machine join a game in progress; version 3 puts
 each player in its slot of the host's player list on every machine;
 version 4 plays the European (PAL) maps as the North American ones

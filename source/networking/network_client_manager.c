@@ -828,6 +828,11 @@ network_game_client_link_down is set): network_game_client_network_lost */
 static unsigned long network_game_client_link_down_time;
 static unsigned long network_game_client_link_checked_time;
 static boolean network_game_client_link_down;
+/* the network version the join's request says: the host's advertised one
+when it is older and this build plays with it (a host of a build before
+the range takes only its own), else this build's
+(network_game_client_initiate_join_game) */
+static word network_game_client_join_version = HALO_PORT_NETWORK_VERSION;
 
 /* each advertised game's host's network version and netcode, and the game's
 kind (game_modes_kind), by its place in the client's available_games
@@ -2146,6 +2151,16 @@ boolean network_game_client_initiate_join_game(
 		&client->join_parameters,
 		join_parameters,
 		sizeof(*join_parameters));
+	/* port: the version to say (a game not of the list, as a direct
+	join's, this build's) */
+	{
+		long game_index = game - client->available_games;
+		word advertised = game_index >= 0 && game_index < MAXIMUM_NETWORK_ADVERTISED_GAMES ?
+			network_game_client_advertised_versions[game_index].version : 0;
+
+		network_game_client_join_version = advertised && advertised < HALO_PORT_NETWORK_VERSION &&
+			HALO_PORT_NETWORK_VERSION_PLAYS(advertised, FALSE) ? advertised : HALO_PORT_NETWORK_VERSION;
+	}
 
 	success = network_connection_connect(client->connection, address, 0);
 
@@ -2978,7 +2993,7 @@ static boolean network_game_client_idle_joining(
 				message_header *message;
 
 				csmemset(&join_game_request, 0, sizeof(join_game_request));
-				join_game_request.network_version = HALO_PORT_NETWORK_VERSION; /* port: explicit shared agreement */
+				join_game_request.network_version = network_game_client_join_version; /* port: explicit shared agreement */
 				network_game_generate_local_machine_name(join_game_request.machine_name);
 				csmemcpy(
 					join_game_request.join_token,
@@ -3298,17 +3313,16 @@ the system link list does (network_game_join_game_from_server_list) */
 void platform_show_message(char const *title, char const *message);
 
 /* whether this client can join the advertised game: its host's network
-version is this machine's (HALO_PORT_NETWORK_VERSION), and it plays the
-distributed netcode (a host of this version built before the lockstep
-netcode was removed may play that). If not the player is told why (when
-tell), and nothing is joined. */
+version is one this machine plays with (HALO_PORT_NETWORK_VERSION_PLAYS),
+and it plays the distributed netcode (a host of this version built before
+the lockstep netcode was removed may play that). If not the player is told
+why (when tell), and nothing is joined. */
 boolean network_game_client_advertised_game_compatible(
 	struct network_game_client *client,
 	struct network_advertised_game const *game,
 	boolean tell)
 {
 	long game_index = client ? game - client->available_games : NONE;
-	unsigned int ours = HALO_PORT_NETWORK_VERSION;
 	unsigned int theirs;
 	boolean distributed;
 
@@ -3317,7 +3331,7 @@ boolean network_game_client_advertised_game_compatible(
 	theirs = network_game_client_advertised_versions[game_index].version;
 	distributed = (network_game_client_advertised_versions[game_index].flags &
 		HALO_PORT_ADVERTISED_DISTRIBUTED_FLAG) != 0;
-	if (theirs == ours && distributed)
+	if (HALO_PORT_NETWORK_VERSION_PLAYS(theirs, FALSE) && distributed)
 	{
 		network_event("joining a host of network version %u", theirs);
 		return TRUE;
@@ -3336,7 +3350,7 @@ void network_game_client_tell_version(
 	unsigned int ours = HALO_PORT_NETWORK_VERSION;
 	char message[400];
 
-	if (theirs == ours)
+	if (HALO_PORT_NETWORK_VERSION_PLAYS(theirs, FALSE))
 	{
 		csprintf(message,
 			"The host is using the lockstep network code, which this version no longer has.\n\n"
