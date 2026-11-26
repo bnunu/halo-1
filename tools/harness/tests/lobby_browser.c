@@ -134,11 +134,11 @@ int main(int argc, char **argv)
 		choices.maps = P2P_LOBBY_MAPS_YES;
 		shown = p2p_lobby_filter(games, count, &choices, map_state);
 		CHECK(shown == 6, "YES: every map");
-	} else CASE("servers_default") {
+	} else CASE("dedicated_first") {
 		static const char *const expected[] = { "Bravo dedicated", "Echo dedicated empty", "delta full",
 			"alpha player", "Charlie empty" };
 
-		p2p_lobby_sort(games, count, P2P_LOBBY_SORT_SERVERS, 0);
+		p2p_lobby_sort(games, count, P2P_LOBBY_SORT_DEDICATED, 0);
 		CHECK(order_is(expected, count), "dedicated servers first, then the most players, then by name");
 	} else CASE("sort_each_way") {
 		static const char *const names[] = { "alpha player", "Bravo dedicated", "Charlie empty", "delta full",
@@ -171,7 +171,7 @@ int main(int argc, char **argv)
 		games[count - 1].network_version = HALO_PORT_NETWORK_VERSION + 1;
 		shown = p2p_lobby_filter(games, count, &choices, NULL);
 		CHECK(shown == 6 && has(shown, "Golf newer"), "kept: shown greyed");
-		p2p_lobby_sort(games, shown, P2P_LOBBY_SORT_SERVERS, 0);
+		p2p_lobby_sort(games, shown, P2P_LOBBY_SORT_DEDICATED, 0);
 		CHECK(!strcmp(games[shown - 1].name, "Golf newer"), "last, though it has the most players");
 		p2p_lobby_sort(games, shown, P2P_LOBBY_SORT_PLAYERS, 1);
 		CHECK(!strcmp(games[shown - 1].name, "Golf newer"), "last the other way too");
@@ -183,12 +183,20 @@ int main(int argc, char **argv)
 
 		CHECK(p2p_lobby_sort_parse("players", &reverse) == P2P_LOBBY_SORT_PLAYERS && !reverse, "players");
 		CHECK(p2p_lobby_sort_parse("-map", &reverse) == P2P_LOBBY_SORT_MAP && reverse, "-map: reversed");
-		CHECK(p2p_lobby_sort_parse("nonsense", &reverse) == P2P_LOBBY_SORT_SERVERS && !reverse, "unknown: servers");
-		CHECK(p2p_lobby_sort_parse("-", &reverse) == P2P_LOBBY_SORT_SERVERS && !reverse, "a lone -: servers");
+		CHECK(p2p_lobby_sort_parse("dedicated", &reverse) == P2P_LOBBY_SORT_DEDICATED && !reverse, "dedicated");
+		CHECK(p2p_lobby_sort_parse("servers", &reverse) == P2P_LOBBY_SORT_PLAYERS && !reverse,
+			"servers, the old default's name: players");
+		CHECK(p2p_lobby_sort_parse("-servers", &reverse) == P2P_LOBBY_SORT_PLAYERS && !reverse,
+			"-servers: players, not reversed");
+		CHECK(p2p_lobby_sort_parse("nonsense", &reverse) == P2P_LOBBY_SORT_PLAYERS && !reverse, "unknown: players");
+		CHECK(p2p_lobby_sort_parse("-", &reverse) == P2P_LOBBY_SORT_PLAYERS && !reverse, "a lone -: players");
+		CHECK(p2p_lobby_sort_parse(NULL, &reverse) == P2P_LOBBY_SORT_PLAYERS && !reverse, "none: players");
 		p2p_lobby_sort_text(P2P_LOBBY_SORT_TYPE, 1, text, sizeof(text));
 		CHECK(!strcmp(text, "-type"), "written back");
 		p2p_lobby_sort_text(99, 0, text, sizeof(text));
-		CHECK(!strcmp(text, "servers"), "an unknown order written as servers");
+		CHECK(!strcmp(text, "players"), "an unknown order written as players");
+		p2p_lobby_sort_text(P2P_LOBBY_SORT_DEDICATED, 0, text, sizeof(text));
+		CHECK(!strcmp(text, "dedicated"), "dedicated's name");
 	} else return 2;
 	return 0;
 }

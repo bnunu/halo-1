@@ -523,7 +523,7 @@ static void probe_order_checks(void)
 	{
 		lobby_update(token, 0, 16);
 		check(probe_count == 0, "no probe starts while listings wait to be checked");
-		show(P2P_LOBBY_SORT_SERVERS, 0, 4);
+		show(P2P_LOBBY_SORT_DEDICATED, 0, 4);
 	}
 	lobby_update(token, 0, 16);
 	check_cost = 0;

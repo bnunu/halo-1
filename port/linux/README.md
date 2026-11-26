@@ -633,7 +633,7 @@ the setting for one start of the game. It has priority over the file.
 | `network.browser_show_empty`, `network.browser_show_full` | `true` | `HALO_NET_BROWSER_SHOW_EMPTY`, `HALO_NET_BROWSER_SHOW_FULL` | `false`: the server browser does not list the games with no player, the full games. The server browser's Filters screen sets them. |
 | `network.browser_maps` | `"yes"` | `HALO_NET_BROWSER_MAPS` | `"yes"`: the server browser lists the games on maps this computer does not have. `"no"`: it does not. `"downloadable"`: only those of a Custom Edition map that the host shares. |
 | `network.browser_gametype` | `"any"` | `HALO_NET_BROWSER_GAMETYPE` | The server browser lists the games of one kind only: `"any"`, `"ctf"`, `"slayer"`, `"oddball"`, `"king"` or `"race"` (the Filters screen). |
-| `network.browser_sort` | `"servers"` | `HALO_NET_BROWSER_SORT` | The server browser's order. `"servers"`: dedicated servers first, then by players. `"players"`, `"name"`, `"map"`, `"type"` or `"locked"` (games with a password first). A `-` before one reverses it (`"-players"`). A column's title sorts by it, and again the other way. |
+| `network.browser_sort` | `"players"` | `HALO_NET_BROWSER_SORT` | The server browser's order. `"players"`: the games with the most players first. `"dedicated"`: dedicated servers first, then by players. `"name"`, `"map"`, `"type"` or `"locked"` (games with a password first). `"servers"`, the name `"dedicated"` had while it was the default, reads as `"players"`. A `-` before one reverses it (`"-players"`). A column's title sorts by it, and again the other way. |
 | `server.enabled` | `false` | `HALO_SERVER` | `true`: run as a dedicated server, as `halo --server` does. Refer to "Dedicated server". The `server.*` settings are written to `config.toml` only by a dedicated server. |
 | `server.name` | `"OpenCE Server"` | `HALO_SERVER_NAME` | The game's name in the lobby and the server browser: 15 characters of printable ASCII. |
 | `server.max_players` | `16` | `HALO_SERVER_MAX_PLAYERS` | The most players (2 to 127). |
@@ -1210,16 +1210,16 @@ master servers, or only the brokers.
   The titles are: server name, map, game, players, the lock (the games
   with a password first) and the dedicated icon (dedicated servers first).
   A second choice of the same title reverses the order, and an arrow on
-  the title shows the direction. The default order is dedicated servers
-  first, then the games with the most players, then by name. The browser
-  keeps the order in `network.browser_sort`.
+  the title shows the direction. The default order is the games with the
+  most players first, then by name, dedicated or not. The browser keeps the
+  order in `network.browser_sort`.
 - FILTERS opens the Filters screen of Custom Edition. It has SHOW EMPTY
   SERVERS, SHOW FULL SERVERS, GAME TYPE (ANY or one game engine) and SHOW
   MISSING MAPS (NO, YES, or IF DOWNLOADABLE, for a Custom Edition map that
   Map Sharing can download when you join). OK writes the
   `network.browser_*` settings. Settings > Network Setup > SERVER BROWSER
-  writes the same settings, and also shows LISTS, SORT BY (DEDICATED FIRST,
-  PLAYERS, NAME, MAP, GAME TYPE or LOCKED FIRST; an order that a title reversed
+  writes the same settings, and also shows LISTS, SORT BY (PLAYERS,
+  DEDICATED FIRST, NAME, MAP, GAME TYPE or LOCKED FIRST; an order that a title reversed
   shows as the same choice) and MASTER SERVERS
   (the number of master servers that answered the last request of the
   browser, for example `2 OF 2`). The PING and TEAMPLAY OPTIONS rows of
