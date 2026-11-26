@@ -1,6 +1,5 @@
 """The rules of network_chat.c's text chat: a line's text (another machine's is untrusted), the lines the host takes
-from a machine, who hears a team's line and a vehicle's, how long a line shows, whether a public game has the chat (a
-dedicated server's may), and the host's /mute: what it reads from a typed line, the player a name means, and how long a
+from a machine, who hears a team's line and a vehicle's, how long a line shows, and the host's /mute: what it reads from a typed line, the player a name means, and how long a
 mute lasts."""
 
 import re
@@ -15,12 +14,12 @@ from harness import CHECK_FAILED, build, constant, enum_with, function, mutated,
 CASES = ["text-printable", "text-control-characters", "text-pipe", "text-bounds", "text-empty", "append", "rate-burst",
          "rate-refill", "rate-wrap", "hears", "hears-vehicle", "flags", "alpha", "command-mute", "command-unmute",
          "command-not", "command-usage", "name-match", "name-bounds", "mute-time", "mute-wrap", "mute-again",
-         "mute-full", "link-found", "link-written-out", "link-spaced", "link-word-domains", "link-not", "refused", "listing", "filter", "keyboard-character",
+         "mute-full", "link-found", "link-written-out", "link-spaced", "link-word-domains", "link-not", "refused", "filter", "keyboard-character",
          "keyboard-move", "keyboard-tap"]
 FUNCTIONS = ("chat_text_clean", "chat_text_append", "chat_rate_take", "chat_hears", "chat_channel_from_flags",
              "chat_channel_flags", "chat_line_alpha", "chat_lower", "chat_command_word", "chat_command_parse",
              "chat_name_match", "chat_names_equal", "chat_mute_minutes_left", "chat_mute_find", "chat_mute_set", "chat_minutes_plural",
-             "chat_alphanumeric", "chat_link_domain", "chat_text_has_link", "chat_refused", "chat_listing_allows",
+             "chat_alphanumeric", "chat_link_domain", "chat_text_has_link", "chat_refused",
              "chat_filter_mode", "chat_filter_level", "chat_filter_star",
              "chat_keyboard_character",
              "chat_keyboard_move", "chat_keyboard_key_at")
@@ -90,8 +89,6 @@ NEGATIVE_CONTROLS = {
                              "chat_refused", "refused"),
     "chat-always-allowed": (("if (!TEST_FLAG(flags, _chat_config_allowed_bit))", "if (0)"), "chat_refused",
                             "refused"),
-    "dedicated-chat-off": (("return !listed || dedicated;", "return !listed;"), "chat_listing_allows", "listing"),
-    "public-chat-on": (("return !listed || dedicated;", "return TRUE;"), "chat_listing_allows", "listing"),
     "filter-blocks-for-censor": (('chat_names_equal(setting, "censor"))\n\t\treturn _chat_filter_censor;',
                                   'chat_names_equal(setting, "censor"))\n\t\treturn _chat_filter_block;'),
                                  "chat_filter_mode", "filter"),
