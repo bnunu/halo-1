@@ -100,8 +100,7 @@ reached only by its invite. Going private makes a new invite, if the old one
 was listed */
 void p2p_set_hosting_public(int public);
 /* whether the game this machine hosts is listed in everyone's server
-browser (PUBLIC, and network.public_lobby): the text chat is off in one a
-player hosts (a dedicated server's follows network.text_chat) */
+browser (PUBLIC, and network.public_lobby) */
 int p2p_hosting_listed(void);
 /* the password of the game hosted for the internet (Server Setup's
 PASSWORD; NULL or empty: none): its listing lets only those who know it
@@ -189,14 +188,8 @@ invite), remembering its host: nonzero if it held an invite */
 int p2p_join_listing(const struct p2p_listing *listing);
 /* whether this machine is in the public game it joined from the server
 browser: the tunnel still reaches its host, and no other invite was joined
-since. Such a game has no text chat, whatever its host says
-(port/linux/game/network_chat.c), unless it is a dedicated server's: */
+since */
 int p2p_joined_listed_host(void);
-/* whether the public game joined (p2p_joined_listed_host) is a dedicated
-server's that a master server lists: an approved operator's, whose chat
-follows its network.text_chat (a listing's own dedicated flag, which any
-host may set, is not enough) */
-int p2p_joined_listed_dedicated(void);
 /* the key ids of the masters that listed the game being joined, if it was
 joined from the server browser (master_key_ids): how many, 0 if not known (an
 invite's, a LAN's) */

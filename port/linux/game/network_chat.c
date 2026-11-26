@@ -41,18 +41,12 @@ connection's stream, which no other machine can send as the host. A build
 without the chat drops the three kinds as unknown: its players neither send
 nor see lines.
 
-The host's settings (network.text_chat: on, links allowed, or off; off in a
-game a player hosts that is listed in the server browser) go to every
-client (_distributed_message_chat_config). A line they refuse is refused by
-its sender's machine and again by the host, which tells the sender why; a
-client without them (from a host without the chat) has the chat off. A
-client in a public game it joined from the server browser has the chat off
-whatever the host says (a changed host could turn it on): it takes no line
-from it and sends none. A dedicated server is the exception on both sides
-(chat_listing_allows): its network.text_chat holds when it is listed, and
-a client that joined it from a master server's list (an approved
-operator's, by its key, not the listing's own word) follows it.
-display.text_chat hides the chat on this machine.
+The host's settings (network.text_chat: on, links allowed, or off) go to
+every client (_distributed_message_chat_config), in every game: a private
+or LAN one, a public one a player hosts and a dedicated server's alike. A
+line they refuse is refused by its sender's machine and again by the host,
+which tells the sender why; a client without them (from a host without the
+chat) has the chat off. display.text_chat hides the chat on this machine.
 
 The host may type "/mute <player> [minutes]" (20 when it gives none, a day
 at most) or "/unmute <player>", the player as the console's kick finds one
@@ -109,10 +103,6 @@ int platform_clipboard_get(char *text, int size);
 int config_boolean(const char *name);
 const char *config_string(const char *name);
 unsigned long config_changes(void);
-/* p2p_lobby.c's, p2p.c's */
-int p2p_hosting_listed(void);
-int p2p_joined_listed_host(void);
-int p2p_joined_listed_dedicated(void);
 /* server_mode.c's: a dedicated server (halo --server) */
 int halo_server_mode(void);
 void platform_log(char const *format, ...);
@@ -992,21 +982,7 @@ static boolean chat_host(
 	return game_connection() == _game_connection_network_server;
 }
 
-/* whether a game's text chat may be on: not in a public game (listed in
-the server browser), unless its host is a dedicated server, whose own
-network.text_chat then decides. On the host, listed is its listing and
-dedicated whether it runs halo --server; on a client, listed is the game
-joined from the browser and dedicated whether a master server listed it as
-a dedicated server's */
-static boolean chat_listing_allows(
-	boolean listed,
-	boolean dedicated)
-{
-	return !listed || dedicated;
-}
-
-/* (the host) its chat settings: network.text_chat's, the chat off in a game
-a player hosts that is listed in the server browser */
+/* (the host) its chat settings: network.text_chat's */
 static byte chat_host_config_flags(
 	void)
 {
@@ -1014,8 +990,7 @@ static byte chat_host_config_flags(
 	byte flags = 0;
 
 	/* (in either case: HALO_NET_TEXT_CHAT=OFF is off) */
-	if (setting && !chat_names_equal(setting, "off") &&
-		chat_listing_allows(p2p_hosting_listed() != 0, halo_server_mode() != 0))
+	if (setting && !chat_names_equal(setting, "off"))
 	{
 		flags |= (byte)FLAG(_chat_config_allowed_bit);
 		if (chat_names_equal(setting, "links"))
@@ -1024,25 +999,14 @@ static byte chat_host_config_flags(
 	return flags;
 }
 
-/* (a client) whether its game is a public one it joined from the server
-browser (p2p.c): no chat, whatever its host says, unless a master server
-lists it as a dedicated server's (chat_listing_allows) */
-static boolean chat_joined_listed(
-	void)
-{
-	return !chat_host() && p2p_joined_listed_host();
-}
-
 /* the host's chat settings: the host's own, or as it sent them (none, and
-no chat, till it does; none in a public game a player hosts, joined from
-the browser) */
+no chat, till it does) */
 static byte chat_config_flags(
 	void)
 {
 	if (chat_host())
 		return chat_host_config_flags();
-	return chat_config.known && chat_listing_allows(chat_joined_listed(), p2p_joined_listed_dedicated() != 0) ?
-		chat_config.flags : 0;
+	return chat_config.known ? chat_config.flags : 0;
 }
 
 static void chat_send_to_clients(void *message, byte type, word size);
@@ -1759,11 +1723,7 @@ void network_chat_handle_down(
 	struct distributed_chat_line line;
 	char text[CHAT_TEXT_SIZE];
 
-	/* (none in a public game a player hosts, joined from the server
-	browser, the host's notices too: its chat is off, whatever the host
-	says; a master's dedicated server's are taken) */
-	if (game_connection() != _game_connection_network_client || !from_stream ||
-		!chat_listing_allows(chat_joined_listed(), p2p_joined_listed_dedicated() != 0))
+	if (game_connection() != _game_connection_network_client || !from_stream)
 		return;
 	csmemcpy(&line, entries, sizeof(line));
 	if (!chat_text_clean(text, line.text, CHAT_TEXT_SIZE))

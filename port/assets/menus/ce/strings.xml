@@ -1091,8 +1091,8 @@
 		<string text="Players 150 metres apart or less are near\nfor voice chat."/>
 		<string text="Players can vote to kick a player, from the\nscoreboard."/>
 		<string text="Players cannot vote to kick anyone."/>
-		<string text="Players can type to each other; lines with links\nare refused. Off in a public internet game."/>
-		<string text="Players can type to each other, links too. Off\nin a public internet game."/>
+		<string text="Players can type to each other; lines with links\nare refused."/>
+		<string text="Players can type to each other, links too."/>
 		<string text="No text chat in the game."/>
 	</strings>
 	<strings name="main_menu/settings_select/multiplayer_setup/teamplay_options_edit/teamplay_options_labels" map="ui\shell\main_menu\settings_select\multiplayer_setup\teamplay_options_edit\teamplay_options_labels">

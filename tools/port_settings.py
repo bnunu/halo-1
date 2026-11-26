@@ -622,8 +622,8 @@ TEAMPLAY_ROWS = [
     # (network_chat.c: one row for the chat and its links, as Teamplay
     # Options has room for one more)
     ("text_chat", "TEXT CHAT:", ["ON", "WITH LINKS", "OFF"], [
-        "Players can type to each other; lines with links\\nare refused. Off in a public internet game.",
-        "Players can type to each other, links too. Off\\nin a public internet game.",
+        "Players can type to each other; lines with links\\nare refused.",
+        "Players can type to each other, links too.",
         "No text chat in the game.",
     ]),
 ]
