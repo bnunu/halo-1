@@ -252,11 +252,11 @@ enum
 };
 /* network.browser_sort's orders (a column title's), each in its own first
 direction: dedicated servers first, then the most players, then by name
-(servers); the most players; by name, map or type (A to Z); those with a
-password first */
+(dedicated); the most players (players, the default); by name, map or type
+(A to Z); those with a password first */
 enum
 {
-	P2P_LOBBY_SORT_SERVERS,
+	P2P_LOBBY_SORT_DEDICATED,
 	P2P_LOBBY_SORT_PLAYERS,
 	P2P_LOBBY_SORT_NAME,
 	P2P_LOBBY_SORT_MAP,
@@ -283,7 +283,9 @@ int p2p_lobby_filter(struct p2p_listing *games, int count, const struct p2p_lobb
 network version last; equal ones keep their order */
 void p2p_lobby_sort(struct p2p_listing *games, int count, int order, int reverse);
 /* network.browser_sort's text: an order's name, "-" before it reversed
-("-players"); an unknown one is servers' */
+("-players"); an unknown one is players', and so is "servers" (the name
+dedicated's order had while it was the default, which every config.toml
+was written with) */
 int p2p_lobby_sort_parse(const char *text, int *reverse);
 void p2p_lobby_sort_text(int order, int reverse, char *text, int size);
 

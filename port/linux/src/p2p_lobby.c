@@ -1299,7 +1299,7 @@ int p2p_lobby_brokers_reached(void)
 
 static const char *const sort_names[NUMBER_OF_P2P_LOBBY_SORTS] =
 {
-	"servers", "players", "name", "map", "type", "locked",
+	"dedicated", "players", "name", "map", "type", "locked",
 };
 
 int p2p_lobby_filter(struct p2p_listing *games, int count, const struct p2p_lobby_choices *choices,
@@ -1368,7 +1368,7 @@ static int sort_order(const struct p2p_listing *first, const struct p2p_listing 
 	case P2P_LOBBY_SORT_LOCKED:
 		difference = second->locked - first->locked;
 		break;
-	case P2P_LOBBY_SORT_SERVERS:
+	case P2P_LOBBY_SORT_DEDICATED:
 		/* (as p2p_lobby_games has them: then those joining has not failed,
 		and the open ones) */
 		difference = second->dedicated - first->dedicated;
@@ -1420,12 +1420,12 @@ int p2p_lobby_sort_parse(const char *text, int *reverse)
 			return order;
 	}
 	*reverse = 0;
-	return P2P_LOBBY_SORT_SERVERS;
+	return P2P_LOBBY_SORT_PLAYERS;
 }
 
 void p2p_lobby_sort_text(int order, int reverse, char *text, int size)
 {
 	if (order < 0 || order >= NUMBER_OF_P2P_LOBBY_SORTS)
-		order = P2P_LOBBY_SORT_SERVERS;
+		order = P2P_LOBBY_SORT_PLAYERS;
 	snprintf(text, (size_t)size, "%s%s", reverse ? "-" : "", sort_names[order]);
 }

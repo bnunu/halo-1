@@ -861,12 +861,12 @@ static const struct config_setting config_settings[] =
 		_platform_all,
 		"The server browser lists games of one kind only: \"any\", \"ctf\",\n"
 		"\"slayer\", \"oddball\", \"king\" or \"race\" (its Filters screen)." },
-	{ "network.browser_sort", _config_string, "\"servers\"", "HALO_NET_BROWSER_SORT", _environment_value,
+	{ "network.browser_sort", _config_string, "\"players\"", "HALO_NET_BROWSER_SORT", _environment_value,
 		_platform_all,
-		"The server browser's order: \"servers\" (dedicated servers first, then by\n"
-		"players), \"players\", \"name\", \"map\", \"type\" or \"locked\" (a password's\n"
-		"first); \"-\" before one reverses it (\"-players\"). A column title sorts by\n"
-		"it, and again the other way." },
+		"The server browser's order: \"players\" (the most players first),\n"
+		"\"dedicated\" (dedicated servers first, then by players), \"name\", \"map\",\n"
+		"\"type\" or \"locked\" (a password's first); \"-\" before one reverses it\n"
+		"(\"-players\"). A column title sorts by it, and again the other way." },
 	{ "network.stun_servers", _config_string, "\"stun.l.google.com:19302,stun.cloudflare.com:3478\"",
 		"HALO_NET_STUN", _environment_value, _platform_all,
 		"Public STUN servers that tell this machine its internet address;\n"

@@ -19,7 +19,7 @@ def generated(fault=None):
                        enum_with(header, 'P2P_LOBBY_SOURCE_ALL'),
                        enum_with(header, 'P2P_LOBBY_MAPS_YES'),
                        enum_with(header, 'P2P_LOBBY_MAP_INSTALLED'),
-                       enum_with(header, 'P2P_LOBBY_SORT_SERVERS'),
+                       enum_with(header, 'P2P_LOBBY_SORT_DEDICATED'),
                        structure(header, 'p2p_listing'),
                        structure(header, 'p2p_lobby_choices')]) + '\n'
     source = read('port/linux/src/p2p_lobby.c')
@@ -33,7 +33,7 @@ def generated(fault=None):
     return (('enums.inc', enums), ('under_test.inc', code))
 
 
-CASES = ['source', 'empty_full', 'game_type', 'maps', 'servers_default', 'sort_each_way', 'other_version',
+CASES = ['source', 'empty_full', 'game_type', 'maps', 'dedicated_first', 'sort_each_way', 'other_version',
          'sort_text']
 
 
@@ -49,11 +49,13 @@ def test_case(case):
     (('game->player_count >= game->maximum_player_count', 'game->player_count > game->maximum_player_count'),
      'empty_full'),
     (('state == P2P_LOBBY_MAP_MISSING))', 'state != P2P_LOBBY_MAP_INSTALLED))'), 'maps'),
-    (('difference = second->dedicated - first->dedicated;', 'difference = 0;'), 'servers_default'),
+    (('difference = second->dedicated - first->dedicated;', 'difference = 0;'), 'dedicated_first'),
     (('(reverse ? -difference : difference) <= 0', 'difference <= 0'), 'sort_each_way'),
     (('before_other != other_version ? !before_other :', 'before_other != other_version ? before_other :'),
      'other_version'),
     (('*reverse = text && *text == \'-\';', '*reverse = 0;'), 'sort_text'),
+    (('\treturn P2P_LOBBY_SORT_PLAYERS;', '\treturn P2P_LOBBY_SORT_DEDICATED;'), 'sort_text'),
+    (('"dedicated", "players",', '"servers", "players",'), 'sort_text'),
 ])
 def test_negative_control(fault, case):
     status, output = run(build('lobby_browser', generated(fault)), case)

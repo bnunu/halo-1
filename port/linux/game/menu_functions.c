@@ -4905,7 +4905,7 @@ static struct
 	{ "op_sort_header_type", P2P_LOBBY_SORT_TYPE },
 	{ "op_sort_header_players", P2P_LOBBY_SORT_PLAYERS },
 	{ "op_sort_header_locked", P2P_LOBBY_SORT_LOCKED },
-	{ "op_sort_header_dedicated", P2P_LOBBY_SORT_SERVERS },
+	{ "op_sort_header_dedicated", P2P_LOBBY_SORT_DEDICATED },
 	{ "op_sort_header_classic", NONE },
 	{ "op_sort_header_ping", NONE },
 };
