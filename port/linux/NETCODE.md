@@ -605,21 +605,14 @@ machine's voice either (`network_voice.c`'s `voice_host_relay`, by the
 names of the network game's players, which the lobby has too). A
 machine's own scoreboard mute stays its own: it plays none of that
 machine's voice and shows none of its players' lines, and tells no one.
-The host's chat settings (`network.text_chat`: on, links allowed, or off;
-always off while a player's game is listed in the server browser,
-`p2p_hosting_listed`, but a dedicated server's own, `chat_listing_allows`)
-go to every client in
+The host's chat settings (`network.text_chat`: on, links allowed, or off),
+in every game, listed in the server browser or not, go to every client in
 `_distributed_message_chat_config` (one byte of flags), reliably, as they
 change and every 3 seconds. A client without them (from a host without the
-chat, or before they come) has the chat off, and so does a client in a
-public game it joined from the server browser, whatever its host sends (a
-changed host could turn the chat on): while the tunnel reaches the host of
-the listing it joined (`p2p_join_listing`, `p2p_joined_listed_host`; any
-other invite joined since forgets it), it takes no chat line or notice and
-sends none, unless the listing was a dedicated server's that a master
-server lists (`p2p_joined_listed_dedicated`: the master's word, from an
-approved operator's key; a listing's own dedicated flag, which any host can
-set, does not count), whose settings it follows. A client refuses a line the
+chat, or before they come) has the chat off. (Older builds keep the chat
+off in a public game a player hosts, whatever its host sends: they take no
+line from that host and send none, so their players there have no chat;
+the messages are unchanged, and the network version with them.) A client refuses a line the
 settings refuse before sending it, and the host refuses it again whatever
 the client knew, telling its machine why: a changed build gets no further.
 Links are found in the line's text (`chat_text_has_link`): a scheme, `www.`,
