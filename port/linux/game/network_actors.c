@@ -847,6 +847,24 @@ void network_actors_handle_states(
 		actor_state_apply(&states[index], now);
 }
 
+/* Client: the unit no longer driven by the host's control: no longer
+actively controlled, and a vehicle left as a recording leaves it when it ends
+(recorded_animations_update) */
+static void client_actor_release(
+	struct client_actor *actor)
+{
+	if (actor->driven && object_try_and_get_and_verify_type(actor->unit_index, _object_mask_unit))
+	{
+		unit_set_actively_controlled(actor->unit_index, FALSE);
+		if (object_get(actor->unit_index)->object.type == _object_type_vehicle)
+		{
+			unit_set_possessed(actor->unit_index, FALSE);
+			object_set_automatic_deactivation(actor->unit_index, TRUE);
+		}
+	}
+	actor->driven = FALSE;
+}
+
 /* Client: called at the point in the tick where the host runs the AI.
 Drives each AI unit with the last control the host sent. */
 void network_actors_drive(
@@ -858,20 +876,47 @@ void network_actors_drive(
 	for (index = 0; index < client_actor_count; index++)
 	{
 		struct client_actor *actor = &client_actors[index];
+		boolean vehicle;
 
 		if (!actor_unit_valid(actor->unit_index) || now - actor->received_time > CONTROL_HELD_TICKS)
 		{
-			if (actor->driven && object_try_and_get_and_verify_type(actor->unit_index, _object_mask_unit))
-				unit_set_actively_controlled(actor->unit_index, FALSE);
+			client_actor_release(actor);
 			client_actors[index--] = client_actors[--client_actor_count];
 			continue;
 		}
-		/* vehicles follow the host's transform instead (network_objects.c) */
-		if (object_get(actor->unit_index)->object.type == _object_type_vehicle)
+		/* port: a vehicle too, as a recording takes it on the host
+		(recorded_animation_play_internal): possessed, and kept active away
+		from the players. Only a recording gives a vehicle a control of its own
+		(the AI and the players drive bipeds, whose vehicles take their
+		driver's): a cutscene's dropships, Mercury Rising II's Falcons, which
+		fly the dropships' recordings, and its intro's Warthog. A possessed
+		vehicle keeps that control rather than take its driver's
+		(unit_update), and what it makes of the control is what its functions
+		read: its speed, its wheels' turn, its driver seat's power, so its
+		rotors, wheels and engine animate by them. Kept active, it updates
+		where a cutscene's camera watches it, far from the players, who alone
+		keep the objects about them active. Its place is still the host's:
+		network_objects.c carries a vehicle no player drives along the host's
+		path after the tick's physics. Left out, a client's copy kept none of
+		that (a Falcon flew with its rotors still). But not out of the map,
+		where the host's flies on unseen and sends no place of it
+		(distributed_host_placed_object): there the copy is left as it was
+		until the host's states bring it back in, rather than fly the control
+		by itself from wherever it last was. */
+		vehicle = object_get(actor->unit_index)->object.type == _object_type_vehicle;
+		if (vehicle && TEST_FLAG(object_get(actor->unit_index)->object.flags, _object_outside_of_map_bit))
+		{
+			client_actor_release(actor);
 			continue;
+		}
 		if (!actor->driven)
 		{
 			unit_set_actively_controlled(actor->unit_index, TRUE);
+			if (vehicle)
+			{
+				unit_set_possessed(actor->unit_index, TRUE);
+				object_set_automatic_deactivation(actor->unit_index, FALSE);
+			}
 			actor->driven = TRUE;
 		}
 		unit_control(actor->unit_index, &actor->control);
