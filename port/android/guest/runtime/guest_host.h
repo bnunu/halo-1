@@ -72,6 +72,9 @@ unsigned int host_sdl_gl_create_context(unsigned int window);
 int host_sdl_gl_make_current(unsigned int window, unsigned int context);
 int host_sdl_gl_set_swap_interval(int interval);
 int host_sdl_gl_swap_window(unsigned int window);
+/* the frame starts now, after the frame limiter's sleep, which spaces frames
+interval nanoseconds apart (0: no limit): the performance hint's (host_sdl.c) */
+void host_frame_paced(long long interval);
 int host_sdl_poll_event(void *event);
 /* SDL's text input for the window (Android's keyboard while a name or a chat
 line is typed: sdl_platform.c), started as the SDL_TextInputType given, one
