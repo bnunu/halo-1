@@ -657,6 +657,13 @@ static const struct config_setting config_settings[] =
 		"The server browser: public games are listed through the signalling\n"
 		"brokers, and Join Game > Server Browser shows them. False lists no\n"
 		"game of this machine's and shows none." },
+	{ "network.advertise_version", _config_integer, "0", "HALO_NET_ADVERTISE_VERSION", _environment_value,
+		_platform_all,
+		"When you host: the network version your game says it is of. 0: this\n"
+		"build's. Builds from before this setting join only a host of their own\n"
+		"version: an older one this build plays with (43) lets that version's\n"
+		"players join, and turns away those of this version; this build and\n"
+		"later ones join either. An MCC map's game says 44 at least." },
 	{ "network.host_public", _config_boolean, "true", "HALO_NET_HOST_PUBLIC", _environment_value, _platform_all,
 		"Whether a new game of Create Game > Internet starts as PUBLIC (listed\n"
 		"in everyone's server browser: anyone can see and join it) or, false,\n"

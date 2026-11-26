@@ -78,7 +78,10 @@ int main(int argc, char **argv)
 		CHECK(wanted(current, _listing_closed, 60, 1), "a host's recent tombstone (it ends a game)");
 		CHECK(!wanted(current, _listing_open, RETAINED_WINDOW + 60, 1), "a kept slot of a game long gone");
 		CHECK(!wanted(current, _listing_open, LIVE_WINDOW + 60, 0), "a live listing long gone, sent again");
-		CHECK(!wanted(current - 1, _listing_open, 0, 0) && newer_count == 0, "an older version's: not counted");
+		CHECK(wanted(HALO_PORT_NETWORK_VERSION_OLDEST, _listing_open, 0, 0) && newer_count == 0,
+			"an older version this build plays with: let in, not counted");
+		CHECK(!wanted(HALO_PORT_NETWORK_VERSION_OLDEST - 1, _listing_open, 0, 0) && newer_count == 0,
+			"a version older than the oldest it plays with: not counted");
 		CHECK(!wanted(current + 1, _listing_open, 0, 0) && newer_count == 1, "a newer version's: counted");
 		CHECK(!wanted(current + 1, _listing_closed, 0, 0) && newer_count == 1, "a newer version's tombstone");
 		CHECK(!listing_wanted((const unsigned char *)"HL", 2, 0, key_hash), "a short message");
@@ -101,9 +104,10 @@ int main(int argc, char **argv)
 			else if (heard % 3 == 0)
 				is_wanted = wanted(current, _listing_open, 86400 * (1 + heard % 30), 1);
 			else if (heard % 3 == 1)
-				is_wanted = wanted(current - 1 - heard % 20, _listing_open, heard % 2 ? 30 : 86400, 1);
+				is_wanted = wanted(HALO_PORT_NETWORK_VERSION_OLDEST - 1 - heard % 20, _listing_open,
+					heard % 2 ? 30 : 86400, 1);
 			else
-				is_wanted = wanted(heard % 50 ? current - 3 : current + 1, _listing_open, 5, 1);
+				is_wanted = wanted(heard % 50 ? HALO_PORT_NETWORK_VERSION_OLDEST - 2 : current + 1, _listing_open, 5, 1);
 			if (is_wanted && queued < MAXIMUM_QUEUED)
 			{
 				queued++;

@@ -177,6 +177,22 @@ int main(int argc, char **argv)
 		CHECK(!strcmp(games[shown - 1].name, "Golf newer"), "last the other way too");
 		CHECK(!strcmp(games[0].name, "Charlie empty") || !strcmp(games[0].name, "Echo dedicated empty"),
 			"the fewest first");
+	} else CASE("older_in_range") {
+		/* an older version this build plays with: listed as any other; one
+		older than the oldest, last */
+		add("Golf older", "bloodgulch", 1, 15, 16, 0, 0);
+		games[count - 1].network_version = HALO_PORT_NETWORK_VERSION_OLDEST;
+		add("Hotel too old", "bloodgulch", 1, 14, 16, 0, 0);
+		games[count - 1].network_version = HALO_PORT_NETWORK_VERSION_OLDEST - 1;
+		shown = p2p_lobby_filter(games, count, &choices, NULL);
+		p2p_lobby_sort(games, shown, P2P_LOBBY_SORT_PLAYERS, 0);
+		CHECK(!strcmp(games[0].name, "Golf older"), "the oldest version played with: first, with the most players");
+		CHECK(!strcmp(games[shown - 1].name, "Hotel too old"), "older than the oldest: last");
+		CHECK(HALO_PORT_NETWORK_VERSION_PLAYS(HALO_PORT_NETWORK_VERSION, 1) &&
+			!HALO_PORT_NETWORK_VERSION_PLAYS(HALO_PORT_NETWORK_VERSION + 1, 0) &&
+			HALO_PORT_NETWORK_VERSION_PLAYS(HALO_PORT_NETWORK_VERSION_OLDEST, 0) &&
+			!HALO_PORT_NETWORK_VERSION_PLAYS(HALO_PORT_NETWORK_VERSION_OLDEST_MCC - 1, 1),
+			"the range: this version always, a newer one never, an MCC map's from its own oldest");
 	} else CASE("sort_text") {
 		int reverse;
 		char text[32];

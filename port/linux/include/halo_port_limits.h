@@ -60,11 +60,12 @@ protocol version and never see the Xbox game's, or it theirs. */
 #define HALO_PORT_NETWORK_GAME_MESSAGE_VERSION 2
 
 /* The native builds' network code has a version of its own (an unsigned
-16-bit number): machines of different versions cannot play together, and a
-client does not join a host of another version, but tells the player which
-is newer (network_client_manager.c). A host advertises it, with its netcode,
-in its game's advertisement's reserved bytes (network_server_message_handler.c),
-which hosts built before there was a version send as zeros: version 0.
+16-bit number). A host advertises a version, with its netcode, in its game's
+advertisement's reserved bytes (network_server_message_handler.c), which
+hosts built before there was a version send as zeros: version 0. A client
+joins a host of a version this build plays with
+(HALO_PORT_NETWORK_VERSION_PLAYS), and otherwise tells the player which is
+newer (network_client_manager.c); a host takes a client of one.
 Raise it with any change to what the machines send each other. */
 /* Version 42 integrates MCC admission/sharing and shared checkpoint, boat,
 clock and scripted-pose agreement. Every map family uses the same version.
@@ -77,6 +78,30 @@ riding choice has its own message: port/linux/NETCODE.md).
 Version 44: MCC package offers are automatic under Map Sharing, and a joiner
 may satisfy omitted base resources with its own validated local files. */
 #define HALO_PORT_NETWORK_VERSION 44
+/* The oldest network version this build plays with. A version raised for a
+change that machines of the version before it still play with (what they
+send each other laid out as before, and nothing either side does that the
+other's game needs to know) leaves it where it is; a change that older
+machines cannot play with raises it to the new version. 43 plays with 44:
+44 changed MCC package sharing alone (port/linux/network_format.txt is the
+same; NETCODE.md, "Versions"), so a build of 44 joins a host of 43 and takes
+its machines, but not on an MCC map: a host of 44 leaves out of a package
+the base resources a machine of 43 cannot find on its own, so an MCC game
+takes no machine older than HALO_PORT_NETWORK_VERSION_OLDEST_MCC. */
+#define HALO_PORT_NETWORK_VERSION_OLDEST 43
+#define HALO_PORT_NETWORK_VERSION_OLDEST_MCC 44
+/* The version a host advertises when network.advertise_version chooses no
+other (p2p_lobby.c's network_version_advertised). A build released before
+there was a range joins only a host that advertises its own version, so
+while a newer version plays with an older one, keep this at the version the
+builds players have are of: theirs still join, and this build's join a host
+of either. */
+#define HALO_PORT_NETWORK_VERSION_ADVERTISED HALO_PORT_NETWORK_VERSION
+/* whether a machine of network version theirs plays with this one (mcc: in
+a game on an MCC map) */
+#define HALO_PORT_NETWORK_VERSION_PLAYS(theirs, mcc) \
+	((unsigned int)(theirs) >= ((mcc) ? HALO_PORT_NETWORK_VERSION_OLDEST_MCC : HALO_PORT_NETWORK_VERSION_OLDEST) && \
+	(unsigned int)(theirs) <= HALO_PORT_NETWORK_VERSION)
 /* ... the advertisement's reserved bytes: the version (a little-endian word),
 then flags, then the game's kind (an OpenCE gametype's mode, and Hardcore:
 port/linux/game/game_modes.h's game_modes_kind), for the server browser */
