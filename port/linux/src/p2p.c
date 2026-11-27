@@ -1532,8 +1532,7 @@ static void public_address_update(void)
 		p2p.has_public = 0;
 		return;
 	}
-	p2p.public_candidate.address = address;
-	p2p.public_candidate.port = port ? network_short((unsigned short)port) : p2p.tunnel_port;
+	p2p_candidate_ipv4(&p2p.public_candidate, address, port ? network_short((unsigned short)port) : p2p.tunnel_port);
 	if (!p2p.has_public || !p2p.public_logged)
 	{
 		char text[64];
@@ -2628,9 +2627,9 @@ static void tunnel_received(const unsigned char *packet, int size, const struct 
 		int answer_size;
 
 		/* (a master server's probe of a dedicated server's port, answered
-		to where it came from: server_master.c) */
-		if (server_master_probe(packet, size, from->sin_addr.s_addr, answer, &answer_size))
-			posix_socket_sendto(p2p.tunnel_socket, answer, answer_size, 0, from, sizeof(*from));
+		to where it came from: server_master.c; the masters probe over IPv4) */
+		if (!from->ipv6 && server_master_probe(packet, size, from->address, answer, &answer_size))
+			p2p_tunnel_send(from->address, from->port, answer, answer_size);
 		else if (size >= 20 && packet[4] == 0x21 && packet[5] == 0x12 && packet[6] == 0xA4 && packet[7] == 0x42)
 			stun_received(packet, size, from);
 		return;

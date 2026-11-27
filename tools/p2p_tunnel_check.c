@@ -26,6 +26,9 @@ the game's own list otherwise).
 #include "port_config.h"
 #include "p2p_internal.h"
 
+#ifndef _WIN32
+#include <pthread.h>
+#endif
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -184,6 +187,87 @@ void posix_upnp_stop_forwarding_udp(unsigned short external_port)
 {
 	(void)external_port;
 }
+
+void posix_upnp_cancel(void)
+{
+}
+
+/* (no dedicated server here: server_master.c) */
+int server_master_probe(const unsigned char *data, int size, unsigned long address, unsigned char *answer,
+	int *answer_size)
+{
+	(void)data;
+	(void)size;
+	(void)address;
+	(void)answer;
+	(void)answer_size;
+	return 0;
+}
+
+#ifndef _WIN32
+/* the threads p2p.c starts (xbox_kernel.c's): a pthread each */
+struct check_thread
+{
+	pthread_t thread;
+	LPTHREAD_START_ROUTINE start;
+	LPVOID parameter;
+	int joined;
+};
+
+static void *check_thread_start(void *thread)
+{
+	struct check_thread *check = thread;
+
+	check->start(check->parameter);
+	return NULL;
+}
+
+HANDLE WINAPI CreateThread(LPSECURITY_ATTRIBUTES attributes, DWORD stack_size,
+	LPTHREAD_START_ROUTINE start, LPVOID parameter, DWORD flags, LPDWORD thread_id)
+{
+	struct check_thread *thread = calloc(1, sizeof(*thread));
+
+	(void)attributes;
+	(void)stack_size;
+	(void)flags;
+	if (!thread)
+		return NULL;
+	thread->start = start;
+	thread->parameter = parameter;
+	if (pthread_create(&thread->thread, NULL, check_thread_start, thread))
+	{
+		free(thread);
+		return NULL;
+	}
+	if (thread_id)
+		*thread_id = 1;
+	return (HANDLE)thread;
+}
+
+/* (whatever the wait: p2p.c's threads end once p2p.stopping is set) */
+DWORD WINAPI WaitForSingleObject(HANDLE object, DWORD milliseconds)
+{
+	struct check_thread *thread = (struct check_thread *)object;
+
+	(void)milliseconds;
+	if (!thread->joined)
+	{
+		pthread_join(thread->thread, NULL);
+		thread->joined = 1;
+	}
+	return WAIT_OBJECT_0;
+}
+
+BOOL WINAPI CloseHandle(HANDLE object)
+{
+	struct check_thread *thread = (struct check_thread *)object;
+
+	if (!thread->joined)
+		pthread_detach(thread->thread);
+	free(thread);
+	return TRUE;
+}
+#endif
 
 /* ---------- WebRTC: a native build's, which connects no browser here, and
 the addresses offered of the family asked */
