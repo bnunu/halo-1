@@ -1,4 +1,37 @@
 /* halo.exe's resources (tools/windows_build.py): its icon (tools/app_icon.py),
 which Explorer and the taskbar show and SDL's windows take, as the first icon
-of the executable */
+of the executable; and its version information, which Explorer's Properties >
+Details shows and antivirus programs read (an executable without any looks
+more suspicious to their models). tools/windows_build.py writes a copy into
+build/windows with the build's number (HALO_BUILD_NUMBER, 0 outside the
+release workflow) in place of the placeholder below, and compiles that. */
 1 ICON "opence-icon.ico"
+
+1 VERSIONINFO
+FILEVERSION 1,0,@BUILD_NUMBER@,0
+PRODUCTVERSION 1,0,@BUILD_NUMBER@,0
+FILEFLAGSMASK 0x3F
+FILEFLAGS 0x0
+FILEOS 0x40004
+FILETYPE 0x1
+FILESUBTYPE 0x0
+BEGIN
+	BLOCK "StringFileInfo"
+	BEGIN
+		BLOCK "040904B0"
+		BEGIN
+			VALUE "CompanyName", "OpenCE (Open Community Edition)"
+			VALUE "FileDescription", "OpenCE"
+			VALUE "FileVersion", "build-@BUILD_NUMBER@"
+			VALUE "InternalName", "halo"
+			VALUE "LegalCopyright", "OpenCE contributors. AGPL-3.0-or-later."
+			VALUE "OriginalFilename", "halo.exe"
+			VALUE "ProductName", "OpenCE"
+			VALUE "ProductVersion", "build-@BUILD_NUMBER@"
+		END
+	END
+	BLOCK "VarFileInfo"
+	BEGIN
+		VALUE "Translation", 0x409, 1200
+	END
+END

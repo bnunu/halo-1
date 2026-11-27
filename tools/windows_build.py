@@ -159,6 +159,8 @@ def windows_configure_inputs() -> List[Path]:
         Path(__file__),
         Path(__file__).with_name("windows_cross_build.py"),
         PORT_CONFIG,
+        # (copied into build/windows by windows_resources)
+        PORT_DIR / "halo.rc",
         PORT_DIR / "src",
         LINUX_DIR / "src",
         LINUX_DIR / "game",
@@ -204,6 +206,23 @@ PROFILE_RUNTIME_HEADERS = [
     "lib/profile/InstrProfilingUtil.h", "lib/profile/WindowsMMap.h", "include/profile/InstrProfData.inc",
     "include/profile/instr_prof_interface.h", "include/profile/MIBEntryDef.inc", "include/profile/MemProfData.inc",
 ]
+
+
+def windows_resources() -> Path:
+    """port/windows/halo.rc with the build's number (HALO_BUILD_NUMBER, as
+    updater_defines takes it) in place of @BUILD_NUMBER@, written to
+    build/windows (only when it changes, so that nothing is rebuilt for
+    nothing): the resource compiler runs with /no-preprocess, which leaves it
+    no #define to take the number from"""
+    number = os.environ.get("HALO_BUILD_NUMBER", "0")
+    if not number.isdigit():
+        number = "0"
+    text = (PORT_DIR / "halo.rc").read_text(encoding="utf-8").replace("@BUILD_NUMBER@", number)
+    path = BUILD / "halo.rc"
+    if not path.is_file() or path.read_text(encoding="utf-8") != text:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    return path
 
 
 def windows_rc(cc: str) -> str:
@@ -331,16 +350,19 @@ def generate_windows_build(n: Writer, sln: Any) -> None:
         rspfile="$out.rsp",
         rspfile_content="$in_newline",
     )
-    # the executable's resources (port/windows/halo.rc: its icon), compiled
-    # by LLVM's resource compiler, beside the clang that builds the game
+    # the executable's resources (port/windows/halo.rc: its icon and version
+    # information, with the build's number written in: windows_resources),
+    # compiled by LLVM's resource compiler, beside the clang that builds the
+    # game; the icon is found through /I, as the copy is in build/windows
     n.variable("windows_rc", windows_rc(cc))
     n.rule(
         name="windows_rc",
-        command="$windows_rc /no-preprocess /FO $out $in",
+        command=f"$windows_rc /no-preprocess /I {_quote(PORT_DIR)} /FO $out $in",
         description="WINDOWS RC $out",
     )
     resources = BUILD / "halo.res"
-    n.build(outputs=resources, rule="windows_rc", inputs=PORT_DIR / "halo.rc", implicit=[PORT_DIR / "opence-icon.ico"])
+    n.build(outputs=resources, rule="windows_rc", inputs=windows_resources(),
+            implicit=[PORT_DIR / "opence-icon.ico"])
     n.rule(
         name="windows_copy",
         command="$python -c \"import shutil,sys; shutil.copyfile(sys.argv[1], sys.argv[2])\" $in $out",
