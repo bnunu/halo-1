@@ -128,6 +128,7 @@ void p2p_discord_sanitize(char *destination, int size, const char *source, int n
 void p2p_discord_identity(char *id, int id_size, char *name, int name_size);
 unsigned long p2p_peer_endpoint_address(unsigned long virtual_address);
 int p2p_peer_endpoint_text(unsigned long virtual_address, char *text, int size);
+int p2p_address_text_normal(const char *text, int length, char *normal, int size);
 /* network_connection.c's */
 boolean network_connection_last_read_was_unreliable(void);
 unsigned long system_milliseconds(void);
@@ -5663,12 +5664,19 @@ boolean network_distributed_banned(
 			continue;
 		ip = ip ? ip + 1 : strstr(line, "ip=");
 
-		/* (the whole address: 1.2.3.4 is not 1.2.3.45) */
-		if (length && ip && !strncmp(ip + 3, text, length) &&
-			(ip[3 + length] == '\t' || ip[3 + length] == '\n' || ip[3 + length] == '\r' ||
-				ip[3 + length] == ' ' || ip[3 + length] == 0))
+		/* (the whole address: 1.2.3.4 is not 1.2.3.45; an IPv6 /64 however
+		a person wrote it, p2p_peer_endpoint_text's way or another) */
+		if (length && ip)
 		{
-			banned = TRUE;
+			char const *value = ip + 3;
+			size_t value_length = strcspn(value, "\t\n\r ");
+			char normal[64];
+
+			if (p2p_address_text_normal(value, (int)value_length, normal, sizeof(normal)) ?
+				!strcmp(normal, text) : value_length == length && !strncmp(value, text, length))
+			{
+				banned = TRUE;
+			}
 		}
 		/* (or the whole hardware id) */
 		if (hardware_id_length && hwid && !strncmp(hwid + 5, kept_hardware_id, hardware_id_length) &&

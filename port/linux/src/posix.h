@@ -150,16 +150,19 @@ address as its 16 bytes, first byte first, and a port in network byte
 order. */
 
 /* a UDP socket of IPv6 alone (no IPv4-mapped addresses), bound to port
-(0: any) on every address, not blocking; its port through bound_port. -1 if
-the system has no IPv6 */
-int posix_socket_udp6(unsigned short port, unsigned short *bound_port);
+(0: any) on address (NULL: every address), not blocking; its port through
+bound_port. -1 if the system has no IPv6, or not that address */
+int posix_socket_udp6(const unsigned char *address, unsigned short port, unsigned short *bound_port);
 int posix_socket_sendto6(int socket, const void *buffer, int length, const unsigned char *address,
 	unsigned short port);
 /* the sender's address and port through address (16 bytes) and port */
 int posix_socket_recvfrom6(int socket, void *buffer, int length, unsigned char *address, unsigned short *port);
 /* the IPv6 address this machine's default route leaves from, into address
-(16 bytes): nonzero if it has one */
+(16 bytes), a temporary (privacy) one where the system has one: nonzero if it
+has one */
 int posix_local_ipv6_address(unsigned char *address);
+/* whether address is still one of this machine's (deprecated or not) */
+int posix_ipv6_address_present(const unsigned char *address);
 
 /* ---------- UPnP (internet play, p2p.c; posix_upnp.c, with
 port/third_party/miniupnpc) */

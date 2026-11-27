@@ -391,7 +391,7 @@ posix_ulong posix_resolve_ipv4(const char *host)
 
 /* ---------- IPv6 (internet play's tunnel) */
 
-int posix_socket_udp6(unsigned short port, unsigned short *bound_port)
+int posix_socket_udp6(const unsigned char *bind_address, unsigned short port, unsigned short *bound_port)
 {
 	struct sockaddr_in6 address;
 	int length = sizeof(address);
@@ -404,6 +404,8 @@ int posix_socket_udp6(unsigned short port, unsigned short *bound_port)
 	address.sin6_family = AF_INET6;
 	address.sin6_port = port;
 	address.sin6_addr = in6addr_any;
+	if (bind_address)
+		memcpy(&address.sin6_addr, bind_address, 16);
 	/* (the IPv4 tunnel has its own socket, on the same port) */
 	if (setsockopt((SOCKET)result, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&only, sizeof(only)) == SOCKET_ERROR ||
 		bind((SOCKET)result, (struct sockaddr *)&address, sizeof(address)) == SOCKET_ERROR ||
@@ -475,4 +477,23 @@ int posix_local_ipv6_address(unsigned char *address)
 	}
 	closesocket(probe);
 	return found;
+}
+
+int posix_ipv6_address_present(const unsigned char *address)
+{
+	/* (binding to it succeeds while the machine has it, deprecated or not) */
+	struct sockaddr_in6 local;
+	int present;
+	SOCKET probe;
+
+	start_winsock();
+	probe = WSASocketW(AF_INET6, SOCK_DGRAM, IPPROTO_UDP, NULL, 0, WSA_FLAG_NO_HANDLE_INHERIT);
+	if (probe == INVALID_SOCKET)
+		return 0;
+	memset(&local, 0, sizeof(local));
+	local.sin6_family = AF_INET6;
+	memcpy(&local.sin6_addr, address, 16);
+	present = bind(probe, (struct sockaddr *)&local, sizeof(local)) == 0;
+	closesocket(probe);
+	return present;
 }

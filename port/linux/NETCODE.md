@@ -538,7 +538,8 @@ machine tells them: anyone with administrator or root access can change
 them, and players behind one address share it. An internet play peer the
 tunnel reaches over IPv6 is known by its /64, the network its router hands
 out, in which it picks its addresses at will: `ip=2001:db8:1:2::/64`
-(`p2p_peer_endpoint_text`), and for the votes a stand-in address in
+(`p2p_peer_endpoint_text`, as RFC 5952 writes it; a line's IPv6 address or
+/64 matches however it is written, `2001:DB8:1:2:0::/64` or an address in it), and for the votes a stand-in address in
 240.0.0.0/4 made from it (`p2p_peer_endpoint_address`). The console's `kick <player
 name>` drops a player as `ban` does (every machine told), but adds no line
 and keeps no address out: the player may join again at once. Besides

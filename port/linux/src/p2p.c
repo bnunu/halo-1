@@ -41,7 +41,17 @@ link games as if they were on one LAN, without a server of this project's.
   two machines behind carrier NATs that let no IPv4 connection through
   usually reach each other over it, as both send at once and their routers'
   firewalls take the other's packets as answers. Whichever address answers
-  first carries the tunnel; the packets are the same on either.
+  first carries the tunnel; the packets are the same on either. The socket
+  is bound to the address offered (tunnel6_update), so it stays the source
+  when the system prefers a newer privacy address, and the peer's router
+  keeps taking its packets; it moves to the newest once no peer uses it, or
+  at once when the machine lost it. A packet longer than IPv6's least path
+  (1280 bytes) goes in two (_packet_part): routers do not split IPv6, and many
+  firewalls drop what a machine split itself. Only builds with IPv6 reach
+  each other over it, so no older build is sent one.
+- A connected peer not heard for a while (FAILOVER_SILENCE) is pinged at
+  every address it gave, as while punching: when its path went (IPv6 lost,
+  a NAT's mapping gone), one still open takes over (peer_heard).
 - Each peer gets a virtual address in 100.64.0.0/10, which the game sees
   (XNetXnAddrToInAddr maps the peer's XNADDR to it). The game's datagrams
   to a peer go onto the tunnel from xnet.c at once (p2p_send_datagram);
@@ -94,6 +104,15 @@ enum
 	datagram (WSAStartup's iMaxUdpDg) with its ports */
 	MAXIMUM_INNER_SIZE = 1400,
 	MAXIMUM_PACKET_SIZE = TUNNEL_HEADER_SIZE + MAXIMUM_INNER_SIZE + P2P_TAG_SIZE,
+	/* the most plaintext a packet over IPv6 carries whole: what fits IPv6's
+	least MTU (1280) with its header (40) and UDP's (8); more goes in two
+	parts (_packet_part), each its id (2 bytes) and which it is (1) */
+	IPV6_MAXIMUM_INNER_SIZE = 1280 - 40 - 8 - TUNNEL_HEADER_SIZE - P2P_TAG_SIZE,
+	PART_HEADER_SIZE = 4,
+	MAXIMUM_PART_SIZE = (MAXIMUM_INNER_SIZE + 1) / 2,
+	/* the packets in parts a peer has under way at once, and for how long */
+	MAXIMUM_PEER_PARTS = 2,
+	PART_TIMEOUT = 2000,
 	/* the packets received out of order that are still taken */
 	REPLAY_WINDOW = 64,
 
@@ -134,6 +153,11 @@ enum
 	LOOP_INTERVAL = 10,
 	PUNCH_INTERVAL = 200,
 	PING_INTERVAL = 1000,
+	/* a connected peer not heard for this long is pinged at all its
+	addresses (update_peers), once each PING_INTERVAL */
+	FAILOVER_SILENCE = 3000,
+	/* how often the IPv6 socket's address is looked at (tunnel6_update) */
+	IPV6_CHECK_INTERVAL = 5000,
 	ENDPOINT_SWITCH_TIME = 3000,
 	PEER_TIMEOUT = 20000,
 	PUNCH_TIMEOUT = 30000,
@@ -173,6 +197,9 @@ enum
 	_packet_datagram,
 	_packet_stream,
 	_packet_bye,
+	/* half of a packet too long for IPv6's least path: its id, 0 or 1, and
+	its bytes (over IPv6 alone, which only builds that have this reach) */
+	_packet_part,
 };
 
 /* the messages of a stream, inside KCP */
@@ -227,6 +254,19 @@ struct peer
 	unsigned long heard_time;
 	unsigned long endpoint_heard_time;
 	unsigned long sent_time;
+	/* when its addresses were last pinged for its silence (update_peers) */
+	unsigned long failover_time;
+	/* packets in parts: the last id sent, and those arriving */
+	unsigned short part_id;
+	struct
+	{
+		int used;
+		unsigned short id;
+		unsigned char have;
+		unsigned short sizes[2];
+		unsigned char bytes[2][MAXIMUM_PART_SIZE];
+		unsigned long time;
+	} parts[MAXIMUM_PEER_PARTS];
 	unsigned long round_trip;
 	/* the pings answered, and the shortest round trip of them */
 	int pongs;
@@ -358,9 +398,13 @@ static struct
 	int tunnel_socket;
 	unsigned short tunnel_port;
 	int handoff_socket;
-	/* the tunnel's IPv6 socket, or -1 (none: no IPv6, or network.ipv6 off) */
+	/* the tunnel's IPv6 socket, or -1 (none: no global IPv6 address, or
+	network.ipv6 off), bound to tunnel6_address; when that was last looked at */
+	int ipv6_allowed;
 	int tunnel6_socket;
 	unsigned short tunnel6_port;
+	unsigned char tunnel6_address[16];
+	unsigned long tunnel6_time;
 
 	struct peer peers[P2P_MAXIMUM_PEERS];
 	struct retired_session retired[MAXIMUM_RETIRED_SESSIONS];
@@ -881,6 +925,109 @@ unsigned long p2p_peer_endpoint_address(unsigned long virtual_address)
 	return address;
 }
 
+/* an IPv6 address's /64 as RFC 5952 writes it: "2001:db8:b::/64" (its
+groups, but the zero ones the end's run of zeros takes) */
+static void prefix_text(const unsigned char *bytes, char *text, int size)
+{
+	int groups = 4;
+	int length = 0;
+	int index;
+
+	while (groups > 0 && !bytes[2 * groups - 2] && !bytes[2 * groups - 1])
+		groups--;
+	text[0] = 0;
+	for (index = 0; index < groups && length < size; index++)
+	{
+		length += snprintf(text + length, (size_t)(size - length), "%s%x", index ? ":" : "",
+			bytes[2 * index] << 8 | bytes[2 * index + 1]);
+	}
+	if (length < size)
+		snprintf(text + length, (size_t)(size - length), "::/64");
+}
+
+/* the 16 bytes of an IPv6 address written as text (hexadecimal groups, one
+"::"; no IPv4 part): nonzero if it is one */
+static int parse_ipv6(const char *text, int length, unsigned char *bytes)
+{
+	unsigned short groups[8];
+	int count = 0;
+	int gap = -1;
+	int index = 0;
+
+	if (length >= 2 && text[0] == ':' && text[1] == ':')
+	{
+		gap = 0;
+		index = 2;
+	}
+	else if (length >= 1 && text[0] == ':')
+		return 0;
+	while (index < length)
+	{
+		unsigned int value = 0;
+		int digits = 0;
+
+		while (index < length && digits < 5)
+		{
+			char digit = text[index];
+			int nibble = digit >= '0' && digit <= '9' ? digit - '0' : digit >= 'a' && digit <= 'f' ?
+				digit - 'a' + 10 : digit >= 'A' && digit <= 'F' ? digit - 'A' + 10 : -1;
+
+			if (nibble < 0)
+				break;
+			value = value << 4 | (unsigned int)nibble;
+			digits++;
+			index++;
+		}
+		if (!digits || digits > 4 || count == 8)
+			return 0;
+		groups[count++] = (unsigned short)value;
+		if (index == length)
+			break;
+		if (text[index] != ':')
+			return 0;
+		index++;
+		if (index < length && text[index] == ':')
+		{
+			if (gap >= 0)
+				return 0;
+			gap = count;
+			index++;
+			if (index == length)
+				break;
+		}
+		else if (index == length)
+			return 0;
+	}
+	if (gap < 0 ? count != 8 : count > 7)
+		return 0;
+	memset(bytes, 0, 16);
+	for (index = 0; index < count; index++)
+	{
+		int at = gap >= 0 && index >= gap ? 8 - count + index : index;
+
+		bytes[2 * at] = (unsigned char)(groups[index] >> 8);
+		bytes[2 * at + 1] = (unsigned char)groups[index];
+	}
+	return 1;
+}
+
+int p2p_address_text_normal(const char *text, int length, char *normal, int size)
+{
+	unsigned char bytes[16];
+	const char *slash = memchr(text, '/', (size_t)length);
+	int address_length = slash ? (int)(slash - text) : length;
+
+	if (size <= 0 || !memchr(text, ':', (size_t)length))
+		return 0;
+	/* (a /64, or an address in it) */
+	if (slash && !(length - address_length == 3 && slash[1] == '6' && slash[2] == '4'))
+		return 0;
+	if (!parse_ipv6(text, address_length, bytes))
+		return 0;
+	prefix_text(bytes, normal, size);
+	return 1;
+}
+
 int p2p_peer_endpoint_text(unsigned long virtual_address, char *text, int size)
 {
 	struct peer *peer;
@@ -894,10 +1041,7 @@ int p2p_peer_endpoint_text(unsigned long virtual_address, char *text, int size)
 	real = peer ? peer_real_candidate(peer) : NULL;
 	if (real && real->ipv6)
 	{
-		const unsigned char *bytes = real->address6;
-
-		snprintf(text, (size_t)size, "%x:%x:%x:%x::/64", bytes[0] << 8 | bytes[1], bytes[2] << 8 | bytes[3],
-			bytes[4] << 8 | bytes[5], bytes[6] << 8 | bytes[7]);
+		prefix_text(real->address6, text, size);
 		found = 1;
 	}
 	else if (real && real->address)
@@ -983,6 +1127,22 @@ static void peer_send_to(struct peer *peer, const struct p2p_candidate *to, cons
 
 	if ((p2p.tunnel_socket < 0 && peer->connection < 0) || size > MAXIMUM_INNER_SIZE)
 		return;
+	if (to->ipv6 && peer->connection < 0 && size > IPV6_MAXIMUM_INNER_SIZE)
+	{
+		unsigned char part[PART_HEADER_SIZE + MAXIMUM_PART_SIZE];
+		int first = (size + 1) / 2;
+
+		part[0] = _packet_part;
+		peer->part_id++;
+		memcpy(part + 1, &peer->part_id, 2);
+		part[3] = 0;
+		memcpy(part + PART_HEADER_SIZE, inner, (size_t)first);
+		peer_send_to(peer, to, part, PART_HEADER_SIZE + first);
+		part[3] = 1;
+		memcpy(part + PART_HEADER_SIZE, inner + first, (size_t)(size - first));
+		peer_send_to(peer, to, part, PART_HEADER_SIZE + size - first);
+		return;
+	}
 	/* the header, authenticated with the rest */
 	counter = ++peer->send_counter;
 	packet[0] = TUNNEL_MAGIC;
@@ -1382,11 +1542,29 @@ static void update_peers(void)
 		if (peer->connected)
 		{
 			if (elapsed(peer->heard_time, PEER_TIMEOUT))
+			{
 				drop_peer(peer, "lost the connection");
-			else if (elapsed(peer->sent_time, PING_INTERVAL))
+				continue;
+			}
+			if (elapsed(peer->sent_time, PING_INTERVAL))
 			{
 				peer_ping(peer, &peer->endpoint);
 				peer->sent_time = p2p_now();
+			}
+			/* (silent: its path may be gone, the game's traffic still going
+			to it. Every other address it gave, as while punching; one that
+			answers becomes its endpoint) */
+			if (peer->connection < 0 && elapsed(peer->heard_time, FAILOVER_SILENCE) &&
+				elapsed(peer->failover_time, PING_INTERVAL))
+			{
+				int candidate;
+
+				for (candidate = 0; candidate < peer->candidate_count; candidate++)
+				{
+					if (!p2p_candidate_equal(&peer->candidates[candidate], &peer->endpoint))
+						peer_ping(peer, &peer->candidates[candidate]);
+				}
+				peer->failover_time = p2p_now();
 			}
 		}
 		else if (elapsed(peer->offered_time, PUNCH_TIMEOUT))
@@ -1683,22 +1861,100 @@ static void stun_received(const unsigned char *packet, int size, const struct p2
 	}
 }
 
-/* this machine's IPv6 address the tunnel's IPv6 socket is reached at: a
-global one (2000::/3), not a tunnel's of IPv4 (Teredo's 2001::/32 and
-6to4's 2002::/16, whose relays mostly are gone); nonzero if it has one */
+/* whether an IPv6 address is one the internet reaches: a global one
+(2000::/3), not a tunnel's of IPv4 (Teredo's 2001::/32 and 6to4's
+2002::/16, whose relays mostly are gone) */
+static int ipv6_global(const unsigned char *address)
+{
+	return (address[0] & 0xE0) == 0x20 && !(address[0] == 0x20 && address[1] == 0x01 && !address[2] && !address[3]) &&
+		!(address[0] == 0x20 && address[1] == 0x02);
+}
+
+/* this machine's IPv6 address the tunnel's IPv6 socket is reached at (its
+own, tunnel6_update); nonzero if it has one */
 static int local_ipv6_candidate(struct p2p_candidate *candidate)
 {
-	unsigned char address[16];
-
-	if (p2p.tunnel6_socket < 0 || !posix_local_ipv6_address(address))
+	if (p2p.tunnel6_socket < 0)
 		return 0;
-	if ((address[0] & 0xE0) != 0x20 || (address[0] == 0x20 && address[1] == 0x01 && !address[2] && !address[3]) ||
-		(address[0] == 0x20 && address[1] == 0x02))
-	{
-		return 0;
-	}
-	p2p_candidate_ipv6(candidate, address, p2p.tunnel6_port);
+	p2p_candidate_ipv6(candidate, p2p.tunnel6_address, p2p.tunnel6_port);
 	return 1;
+}
+
+static void close_socket(int *socket);
+
+/* whether a peer is reached, or being reached, over IPv6 (the socket's
+address is what it was given), or a join under way offered it */
+static int ipv6_in_use(void)
+{
+	int index;
+
+	if (p2p.joining)
+		return 1;
+	for (index = 0; index < P2P_MAXIMUM_PEERS; index++)
+	{
+		const struct peer *peer = &p2p.peers[index];
+		int candidate;
+
+		if (!peer->used)
+			continue;
+		if (peer->connected ? peer->endpoint.ipv6 : 0)
+			return 1;
+		for (candidate = 0; candidate < peer->candidate_count && !peer->connected; candidate++)
+		{
+			if (peer->candidates[candidate].ipv6)
+				return 1;
+		}
+	}
+	return 0;
+}
+
+/* the IPv6 socket, on the machine's preferred global address: kept on the
+one it has while the machine still has it and a peer uses it (a privacy
+address, deprecated, lasts days), else moved to the newest (or closed, with
+none). Under the lock, on the p2p thread or before it starts */
+static void tunnel6_update(void)
+{
+	unsigned char preferred[16];
+	int has_preferred;
+	char text[LOG_ADDRESS_SIZE];
+	struct p2p_candidate shown;
+
+	if (!p2p.ipv6_allowed)
+		return;
+	p2p.tunnel6_time = p2p_now();
+	has_preferred = posix_local_ipv6_address(preferred) && ipv6_global(preferred);
+	if (p2p.tunnel6_socket >= 0)
+	{
+		int present = posix_ipv6_address_present(p2p.tunnel6_address);
+
+		if (present && (!has_preferred || !memcmp(preferred, p2p.tunnel6_address, 16) || ipv6_in_use()))
+			return;
+		p2p_candidate_ipv6(&shown, p2p.tunnel6_address, p2p.tunnel6_port);
+		platform_log("Internet play: IPv6 leaves %s (%s)", log_candidate(&shown, text, sizeof(text)),
+			present ? "a newer address is preferred" : "the machine no longer has it");
+		close_socket(&p2p.tunnel6_socket);
+	}
+	if (!has_preferred)
+		return;
+	/* (its port the IPv4 socket's if it is free, so that one firewall rule,
+	or forwarded port, is for both) */
+	p2p.tunnel6_socket = posix_socket_udp6(preferred, p2p.tunnel_port, &p2p.tunnel6_port);
+	if (p2p.tunnel6_socket < 0)
+		p2p.tunnel6_socket = posix_socket_udp6(preferred, 0, &p2p.tunnel6_port);
+	if (p2p.tunnel6_socket < 0)
+	{
+		platform_log("Internet play: cannot open its IPv6 socket; it uses IPv4 alone");
+		return;
+	}
+	{
+		int size = 1 << 20;
+
+		posix_socket_setsockopt(p2p.tunnel6_socket, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
+		posix_socket_setsockopt(p2p.tunnel6_socket, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+	}
+	memcpy(p2p.tunnel6_address, preferred, 16);
+	p2p_candidate_ipv6(&shown, p2p.tunnel6_address, p2p.tunnel6_port);
+	platform_log("Internet play: IPv6 at %s", log_candidate(&shown, text, sizeof(text)));
 }
 
 int p2p_local_candidates(struct p2p_candidate *candidates, int maximum_count)
@@ -2610,6 +2866,11 @@ static void stream_writeable(struct stream *stream)
 
 /* ---------- the tunnel */
 
+static void inner_received(struct peer *peer, const struct p2p_candidate *from, unsigned char *inner,
+	int inner_size);
+static void part_received(struct peer *peer, const struct p2p_candidate *from, const unsigned char *part,
+	int size);
+
 static void tunnel_received(const unsigned char *packet, int size, const struct p2p_candidate *from)
 {
 	unsigned char inner[MAXIMUM_INNER_SIZE];
@@ -2652,6 +2913,13 @@ static void tunnel_received(const unsigned char *packet, int size, const struct 
 	newest = counter > peer->receive_highest;
 	packet_received(peer, counter);
 	peer_heard(peer, from, newest);
+	inner_received(peer, from, inner, inner_size);
+}
+
+/* a packet's plaintext, from a peer, which from carried */
+static void inner_received(struct peer *peer, const struct p2p_candidate *from, unsigned char *inner,
+	int inner_size)
+{
 	switch (inner[0])
 	{
 	case _packet_ping:
@@ -2682,7 +2950,61 @@ static void tunnel_received(const unsigned char *packet, int size, const struct 
 	case _packet_bye:
 		drop_peer(peer, "left");
 		break;
+	case _packet_part:
+		part_received(peer, from, inner, inner_size);
+		break;
 	}
+}
+
+/* half of a packet (peer_send_to): the whole, once both are here */
+static void part_received(struct peer *peer, const struct p2p_candidate *from, const unsigned char *part, int size)
+{
+	unsigned char whole[MAXIMUM_INNER_SIZE];
+	unsigned short id;
+	int which;
+	int slot;
+	int oldest = 0;
+
+	if (size <= PART_HEADER_SIZE || size > PART_HEADER_SIZE + MAXIMUM_PART_SIZE || part[3] > 1)
+		return;
+	memcpy(&id, part + 1, 2);
+	which = part[3];
+	for (slot = 0; slot < MAXIMUM_PEER_PARTS; slot++)
+	{
+		if (peer->parts[slot].used && elapsed(peer->parts[slot].time, PART_TIMEOUT))
+			peer->parts[slot].used = 0;
+		if (peer->parts[slot].used && peer->parts[slot].id == id)
+			break;
+	}
+	if (slot == MAXIMUM_PEER_PARTS)
+	{
+		/* (an unused one, else the oldest: its other half was lost) */
+		for (slot = 0; slot < MAXIMUM_PEER_PARTS && peer->parts[slot].used; slot++)
+		{
+			if (peer->parts[slot].time - peer->parts[oldest].time > 0x7FFFFFFFUL)
+				oldest = slot;
+		}
+		if (slot == MAXIMUM_PEER_PARTS)
+			slot = oldest;
+		peer->parts[slot].used = 1;
+		peer->parts[slot].id = id;
+		peer->parts[slot].have = 0;
+		peer->parts[slot].time = p2p_now();
+	}
+	peer->parts[slot].sizes[which] = (unsigned short)(size - PART_HEADER_SIZE);
+	memcpy(peer->parts[slot].bytes[which], part + PART_HEADER_SIZE, (size_t)(size - PART_HEADER_SIZE));
+	peer->parts[slot].have |= (unsigned char)(1 << which);
+	if (peer->parts[slot].have != 3)
+		return;
+	peer->parts[slot].used = 0;
+	size = peer->parts[slot].sizes[0] + peer->parts[slot].sizes[1];
+	if (size > MAXIMUM_INNER_SIZE)
+		return;
+	memcpy(whole, peer->parts[slot].bytes[0], peer->parts[slot].sizes[0]);
+	memcpy(whole + peer->parts[slot].sizes[0], peer->parts[slot].bytes[1], peer->parts[slot].sizes[1]);
+	/* (parts of parts are none's) */
+	if (whole[0] != _packet_part)
+		inner_received(peer, from, whole, size);
 }
 
 void p2p_tunnel_packet(const unsigned char *packet, int size, unsigned long address, unsigned short port)
@@ -4044,6 +4366,8 @@ static DWORD WINAPI p2p_thread(void *unused)
 		profile_trace_end(p2p_profile_names.kcp_update);
 #endif
 		update_peers();
+		if (elapsed(p2p.tunnel6_time, IPV6_CHECK_INTERVAL))
+			tunnel6_update();
 		update_probes();
 		webrtc_busy = p2p_webrtc_update();
 		expire_proxies();
@@ -4117,21 +4441,8 @@ void p2p_initialize(unsigned long local_address)
 		posix_socket_setsockopt(p2p.tunnel_socket, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
 		posix_socket_setsockopt(p2p.tunnel_socket, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
 #ifndef HALO_WEB
-		/* (its port the IPv4 socket's if it is free, so that one firewall
-		rule, or forwarded port, is for both) */
-		if (config_boolean("network.ipv6"))
-		{
-			p2p.tunnel6_socket = posix_socket_udp6(p2p.tunnel_port, &p2p.tunnel6_port);
-			if (p2p.tunnel6_socket < 0)
-				p2p.tunnel6_socket = posix_socket_udp6(0, &p2p.tunnel6_port);
-			if (p2p.tunnel6_socket >= 0)
-			{
-				posix_socket_setsockopt(p2p.tunnel6_socket, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
-				posix_socket_setsockopt(p2p.tunnel6_socket, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
-			}
-			else
-				platform_log("Internet play: cannot open its IPv6 socket (no IPv6 here?); it uses IPv4 alone");
-		}
+		p2p.ipv6_allowed = config_boolean("network.ipv6");
+		tunnel6_update();
 #endif
 	}
 #ifndef HALO_ANDROID

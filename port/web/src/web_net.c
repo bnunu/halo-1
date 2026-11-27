@@ -1539,8 +1539,9 @@ posix_ulong posix_resolve_ipv4(const char *host)
 /* ---------- IPv6: none in a page (its WebRTC connections carry its
 tunnel, web_p2p.c) */
 
-int posix_socket_udp6(unsigned short port, unsigned short *bound_port)
+int posix_socket_udp6(const unsigned char *address, unsigned short port, unsigned short *bound_port)
 {
+	(void)address;
 	(void)port;
 	(void)bound_port;
 	return fail(WSAEAFNOSUPPORT);
@@ -1568,6 +1569,12 @@ int posix_socket_recvfrom6(int socket, void *buffer, int length, unsigned char *
 }
 
 int posix_local_ipv6_address(unsigned char *address)
+{
+	(void)address;
+	return 0;
+}
+
+int posix_ipv6_address_present(const unsigned char *address)
 {
 	(void)address;
 	return 0;

@@ -30,6 +30,15 @@ with the host ABI.
 
 #include "posix.h"
 
+/* (the source address preferences of RFC 5014, which older C libraries'
+headers lack) */
+#ifndef IPV6_ADDR_PREFERENCES
+#define IPV6_ADDR_PREFERENCES 72
+#endif
+#ifndef IPV6_PREFER_SRC_TMP
+#define IPV6_PREFER_SRC_TMP 0x0001
+#endif
+
 /* Winsock error codes (winsockx.h) */
 #define WSAEINTR 10004
 #define WSAEBADF 10009
@@ -560,7 +569,7 @@ posix_ulong posix_resolve_ipv4(const char *host)
 
 /* ---------- IPv6 (internet play's tunnel) */
 
-int posix_socket_udp6(unsigned short port, unsigned short *bound_port)
+int posix_socket_udp6(const unsigned char *bind_address, unsigned short port, unsigned short *bound_port)
 {
 	struct sockaddr_in6 address;
 	socklen_t length = sizeof(address);
@@ -573,6 +582,8 @@ int posix_socket_udp6(unsigned short port, unsigned short *bound_port)
 	address.sin6_family = AF_INET6;
 	address.sin6_port = port;
 	address.sin6_addr = in6addr_any;
+	if (bind_address)
+		memcpy(&address.sin6_addr, bind_address, 16);
 	/* (the IPv4 tunnel has its own socket, on the same port) */
 	if (setsockopt(result, IPPROTO_IPV6, IPV6_V6ONLY, &only, sizeof(only)) < 0 ||
 		bind(result, (struct sockaddr *)&address, sizeof(address)) < 0 ||
@@ -626,10 +637,14 @@ int posix_local_ipv6_address(unsigned char *address)
 	struct sockaddr_in6 route;
 	socklen_t length = sizeof(route);
 	int found = 0;
+	int preferences = IPV6_PREFER_SRC_TMP;
 	int probe = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 
 	if (probe < 0)
 		return 0;
+	/* (a temporary address, which the machine changes, over its stable one,
+	which would be the same in every game: RFC 4941. Ignored if not had) */
+	setsockopt(probe, IPPROTO_IPV6, IPV6_ADDR_PREFERENCES, &preferences, sizeof(preferences));
 	memset(&route, 0, sizeof(route));
 	route.sin6_family = AF_INET6;
 	route.sin6_port = htons(9);
@@ -642,6 +657,23 @@ int posix_local_ipv6_address(unsigned char *address)
 	}
 	close(probe);
 	return found;
+}
+
+int posix_ipv6_address_present(const unsigned char *address)
+{
+	/* (binding to it succeeds while the machine has it, deprecated or not) */
+	struct sockaddr_in6 local;
+	int present;
+	int probe = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+
+	if (probe < 0)
+		return 0;
+	memset(&local, 0, sizeof(local));
+	local.sin6_family = AF_INET6;
+	memcpy(&local.sin6_addr, address, 16);
+	present = bind(probe, (struct sockaddr *)&local, sizeof(local)) == 0;
+	close(probe);
+	return present;
 }
 
 /* ---------- the process and the desktop */
